@@ -1,0 +1,61 @@
+# Сборка C++
+build/
+build-*/
+cmake-build-*/
+out/
+_deps/
+CMakeCache.txt
+CMakeFiles/
+CMakeUserPresets.json
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+.cache/
+*.o
+*.a
+*.so
+*.so.*
+*.dylib
+*.d
+
+# Отчёты инструментов
+Testing/
+coverage/
+*.gcda
+*.gcno
+*.profraw
+*.profdata
+
+# Клиенты: TypeScript + React + Vite
+node_modules/
+dist/
+.vite/
+*.tsbuildinfo
+.eslintcache
+npm-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ml/: веса и результаты экспорта — артефакты, в гите им не место
+*.onnx
+*.gguf
+*.pt
+*.safetensors
+*.bin
+__pycache__/
+*.py[cod]
+.venv/
+
+# Секреты и локальные настройки: значений по умолчанию не существует
+.env
+.env.*
+*.pem
+*.key
+secrets/
+
+# Редакторы и ОС
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+*.swp

@@ -1,0 +1,42 @@
+# Стиль зафиксирован файлом, чтобы о форматировании больше не спорили.
+# Проверка (clang-format --dry-run --Werror) заводится вместе с CI.
+Language: Cpp
+BasedOnStyle: Google
+Standard: c++20
+
+ColumnLimit: 100
+IndentWidth: 4
+ContinuationIndentWidth: 4
+TabWidth: 4
+UseTab: Never
+AccessModifierOffset: -4
+NamespaceIndentation: None
+FixNamespaceComments: true
+
+AllowShortFunctionsOnASingleLine: Empty
+AllowShortIfStatementsOnASingleLine: Never
+AllowShortLoopsOnASingleLine: false
+AllowShortCaseLabelsOnASingleLine: false
+
+BinPackArguments: false
+BinPackParameters: false
+BreakBeforeBraces: Attach
+BreakBeforeBinaryOperators: None
+BreakConstructorInitializers: BeforeColon
+
+DerivePointerAlignment: false
+PointerAlignment: Left
+SpaceAfterTemplateKeyword: false
+
+# Порядок включений: стандартная библиотека, прочее системное, userver, локальное.
+SortIncludes: true
+IncludeBlocks: Regroup
+IncludeCategories:
+  - Regex: '^<[^/.]+>$'
+    Priority: 1
+  - Regex: '^<userver/.*>$'
+    Priority: 3
+  - Regex: '^<.*>$'
+    Priority: 2
+  - Regex: '.*'
+    Priority: 4
