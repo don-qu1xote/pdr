@@ -30,3 +30,20 @@ jobs:
 
       - name: Сборка pdr_core и pdr_application
         run: cmake --build build --target pdr_core pdr_application --parallel
+
+  tests:
+    name: Тесты ядра и сценариев
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Конфигурация
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Сборка
+        run: cmake --build build --parallel
+
+      # Среди тестов есть такие, которые ОБЯЗАНЫ не собираться: они собирают
+      # свою цель сами и ждут провала компилятора.
+      - name: ctest
+        run: ctest --test-dir build --output-on-failure

@@ -7,23 +7,15 @@ namespace pdr::application {
 QuoteLessonPackage::QuoteLessonPackage(const ports::TariffRepository& tariffs) noexcept
     : tariffs_{tariffs} {}
 
-QuoteLessonPackage::Result QuoteLessonPackage::Execute(const Request& request) const {
+core::Result<core::Money> QuoteLessonPackage::Execute(const Request& request) const {
     const auto tariff = tariffs_.FindByCode(request.tariff_code);
-    if (!tariff.has_value())
-        return Error::kTariffNotFound;
-
-    const auto price = core::PackagePrice(*tariff, request.lessons);
-    if (const auto* money = std::get_if<core::Money>(&price))
-        return *money;
-
-    switch (std::get<core::PackagePriceError>(price)) {
-        case core::PackagePriceError::kLessonsNotPositive:
-            return Error::kLessonsNotPositive;
-        case core::PackagePriceError::kOverflow:
-            return Error::kPriceOverflow;
+    if (!tariff.has_value()) {
+        return core::Error{core::ErrorKind::kNotFound,
+                           "tariff_not_found",
+                           "тарифа " + request.tariff_code.View() + " нет"};
     }
 
-    return Error::kPriceOverflow;  // недостижимо: перечисление разобрано целиком
+    return core::PackagePrice(*tariff, request.lessons);
 }
 
 }  // namespace pdr::application

@@ -1,8 +1,7 @@
 #pragma once
 
-#include <variant>
-
 #include "application/ports/tariff_repository.hpp"
+#include "core/errors.hpp"
 #include "core/money.hpp"
 #include "core/tariff.hpp"
 
@@ -20,17 +19,11 @@ public:
         int lessons{0};
     };
 
-    enum class Error {
-        kTariffNotFound,
-        kLessonsNotPositive,
-        kPriceOverflow,
-    };
-
-    using Result = std::variant<core::Money, Error>;
-
     explicit QuoteLessonPackage(const ports::TariffRepository& tariffs) noexcept;
 
-    Result Execute(const Request& request) const;
+    /// Отказ домена возвращается как есть: сценарий не переписывает его своими
+    /// словами и не превращает в исключение.
+    core::Result<core::Money> Execute(const Request& request) const;
 
 private:
     const ports::TariffRepository& tariffs_;

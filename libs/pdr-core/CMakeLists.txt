@@ -3,9 +3,12 @@
 # их туда нельзя — сборка остановится (см. pdr_forbid_external_links ниже).
 
 add_library(pdr_core STATIC
+    src/core/errors.cpp
     src/core/lesson_package.cpp
     src/core/money.cpp
     src/core/tariff.cpp
+    src/core/types/ids.cpp
+    src/core/types/time.cpp
 )
 target_include_directories(pdr_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_compile_features(pdr_core PUBLIC cxx_std_20)
@@ -30,6 +33,29 @@ if(userver_FOUND)
 else()
     message(STATUS "pdr: userver не найден, цель pdr_infrastructure пропущена; "
                    "pdr_core и pdr_application собираются как обычно")
+endif()
+
+if(PDR_BUILD_TESTS)
+    # Тест — обычная программа: код возврата ноль, если все проверки прошли.
+    # Никакого фреймворка, никакой базы, никакого докера; полноценный gtest
+    # заводится отдельной задачей области TST.
+    foreach(suite IN ITEMS errors ids time)
+        add_executable(pdr_core_${suite}_test tests/${suite}_test.cpp)
+        target_link_libraries(pdr_core_${suite}_test PRIVATE pdr_testing)
+        add_test(NAME core.${suite} COMMAND pdr_core_${suite}_test)
+    endforeach()
+
+    # Отрицательный тест типизации: эти цели ОБЯЗАНЫ не собираться. Без него
+    # StrongId не проверен — «перепутать нельзя» превращается в обещание.
+    # Цели исключены из ALL, тест собирает их отдельно и ждёт провала.
+    foreach(case IN ITEMS ids_person_as_tenant ids_implicit_to_string ids_implicit_to_int)
+        add_executable(pdr_compile_fail_${case} EXCLUDE_FROM_ALL tests/compile_fail/${case}.cpp)
+        target_link_libraries(pdr_compile_fail_${case} PRIVATE pdr_core)
+        add_test(NAME core.compile_fail.${case}
+                 COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}"
+                         --target pdr_compile_fail_${case} --config $<CONFIG>)
+        set_tests_properties(core.compile_fail.${case} PROPERTIES WILL_FAIL TRUE)
+    endforeach()
 endif()
 
 # «Ядро не линкуется с userver» — проверка, а не договорённость. Функция читает

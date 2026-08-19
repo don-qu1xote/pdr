@@ -15,6 +15,13 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE Debug CACHE STRING "Тип сборки" FORCE)
 endif()
 
+# Тесты собираются по умолчанию: unit-тесты ядра и сценариев идут за
+# миллисекунды и не требуют ни базы, ни докера, ни сети.
+option(PDR_BUILD_TESTS "Собирать тесты" ON)
+if(PDR_BUILD_TESTS)
+    enable_testing()
+endif()
+
 # Подкаталог участвует в сборке, как только в нём появляется свой CMakeLists.txt.
 # Пока их нет, конфигурация проходит и не собирает ничего.
 function(pdr_add_subprojects root)
