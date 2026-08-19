@@ -1,0 +1,32 @@
+name: architecture
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  layers:
+    name: Направление зависимостей
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Проверка самой проверки (отрицательный случай)
+        run: python3 scripts/check_layers.py --selftest
+
+      - name: Слои
+        run: python3 scripts/check_layers.py
+
+  core-without-userver:
+    name: Домен собирается без userver
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # userver в этом окружении не установлен намеренно: если pdr_core или
+      # pdr_application от него зависят, шаг не соберётся.
+      - name: Конфигурация
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Сборка pdr_core и pdr_application
+        run: cmake --build build --target pdr_core pdr_application --parallel
