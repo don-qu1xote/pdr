@@ -2,9 +2,9 @@
 
 #include <optional>
 
-#include "core/tariff.hpp"
+#include "billing/core/tariff.hpp"
 
-namespace pdr::application::ports {
+namespace pdr::billing::ports {
 
 /// Порт объявлен здесь, в application, а реализован в infrastructure — ради
 /// этого разворота зависимости всё и затевалось: сценарий не знает, лежит тариф
@@ -22,10 +22,10 @@ public:
     virtual ~TariffRepository() = default;
 
     /// Тариф по его коду; std::nullopt, если такого кода нет.
-    virtual std::optional<core::Tariff> FindByCode(const core::TariffCode& code) const = 0;
+    virtual std::optional<Tariff> FindByCode(const TariffCode& code) const = 0;
 
 protected:
     TariffRepository() = default;
 };
 
-}  // namespace pdr::application::ports
+}  // namespace pdr::billing::ports

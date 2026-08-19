@@ -1,12 +1,14 @@
+# Платформа: то, чем пользуются все контексты и что не принадлежит ни одному.
 # Три цели — по одной на слой. Граница слоёв здесь не комментарий, а то, что
 # видит компоновщик: pdr_core не знает ни о userver, ни о Postgres, и добавить
 # их туда нельзя — сборка остановится (см. pdr_forbid_external_links ниже).
+#
+# Доменных правил здесь нет: они живут в модулях контекстов (libs/pdr-<контекст>),
+# см. docs/architecture/context-map.md.
 
 add_library(pdr_core STATIC
     src/core/errors.cpp
-    src/core/lesson_package.cpp
     src/core/money.cpp
-    src/core/tariff.cpp
     src/core/types/ids.cpp
     src/core/types/time.cpp
 )
@@ -15,33 +17,28 @@ target_compile_features(pdr_core PUBLIC cxx_std_20)
 # Список зависимостей пуст, и это содержательный факт: домен собирается и
 # тестируется без единой внешней библиотеки.
 
-add_library(pdr_application STATIC
-    src/application/quote_lesson_package.cpp
-)
-target_link_libraries(pdr_application PUBLIC pdr_core)
+# Порты платформы — часы и генератор идентификаторов — только заголовки:
+# у слоя application здесь нет ни строчки реализации, и цель это показывает.
+add_library(pdr_application INTERFACE)
+target_link_libraries(pdr_application INTERFACE pdr_core)
 
-# userver появляется ровно на одном уровне — на самом внешнем. Пока его нет в
-# окружении, два внутренних слоя собираются как обычно: это и есть проверка
-# того, что домен от него не зависит.
-find_package(userver QUIET COMPONENTS core postgresql)
-if(userver_FOUND)
-    add_library(pdr_infrastructure STATIC
-        src/infrastructure/postgres_tariff_repository.cpp
-        src/infrastructure/tariff_repository_component.cpp
-    )
-    target_link_libraries(pdr_infrastructure PUBLIC pdr_application userver::postgresql)
-else()
-    message(STATUS "pdr: userver не найден, цель pdr_infrastructure пропущена; "
-                   "pdr_core и pdr_application собираются как обычно")
-endif()
+# Настоящие часы и настоящий генератор идентификаторов. userver им не нужен,
+# поэтому цель собирается везде: подменить часы в тесте можно, а вот собрать
+# сервис без них — нет.
+add_library(pdr_infrastructure STATIC
+    src/infrastructure/random_id_generator.cpp
+    src/infrastructure/system_clock.cpp
+)
+target_include_directories(pdr_infrastructure PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_link_libraries(pdr_infrastructure PUBLIC pdr_core pdr_application)
 
 if(PDR_BUILD_TESTS)
     # Тест — обычная программа: код возврата ноль, если все проверки прошли.
     # Никакого фреймворка, никакой базы, никакого докера; полноценный gtest
     # заводится отдельной задачей области TST.
-    foreach(suite IN ITEMS errors ids time)
+    foreach(suite IN ITEMS errors ids infrastructure time)
         add_executable(pdr_core_${suite}_test tests/${suite}_test.cpp)
-        target_link_libraries(pdr_core_${suite}_test PRIVATE pdr_testing)
+        target_link_libraries(pdr_core_${suite}_test PRIVATE pdr_infrastructure pdr_testing)
         add_test(NAME core.${suite} COMMAND pdr_core_${suite}_test)
     endforeach()
 
@@ -58,8 +55,8 @@ if(PDR_BUILD_TESTS)
     endforeach()
 endif()
 
-# «Ядро не линкуется с userver» — проверка, а не договорённость. Функция читает
-# итоговые зависимости цели и роняет конфигурацию, если кто-то их дописал.
+# «Платформа не линкуется с userver» — проверка, а не договорённость. Функция
+# читает итоговые зависимости цели и роняет конфигурацию, если кто-то их дописал.
 function(pdr_forbid_external_links target)
     set(forbidden userver pqxx PostgreSQL libpq)
     foreach(property IN ITEMS LINK_LIBRARIES INTERFACE_LINK_LIBRARIES)
@@ -83,3 +80,4 @@ endfunction()
 # Проверка откладывается на конец конфигурации: к этому моменту видны и те
 # зависимости, которые дописали в другом каталоге.
 cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL pdr_forbid_external_links pdr_core)
+cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL pdr_forbid_external_links pdr_application)

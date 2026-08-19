@@ -14,8 +14,14 @@ jobs:
       - name: Проверка самой проверки (отрицательный случай)
         run: python3 scripts/check_layers.py --selftest
 
-      - name: Слои
+      - name: Слои и контексты
         run: python3 scripts/check_layers.py
+
+      - name: Проверка самой сверки владения (отрицательный случай)
+        run: python3 scripts/check_table_owners.py --selftest
+
+      - name: Владение таблицами
+        run: python3 scripts/check_table_owners.py
 
   core-without-userver:
     name: Домен собирается без userver

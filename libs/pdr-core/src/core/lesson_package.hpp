@@ -1,10 +1,10 @@
 #pragma once
 
+#include "billing/core/tariff.hpp"
 #include "core/errors.hpp"
 #include "core/money.hpp"
-#include "core/tariff.hpp"
 
-namespace pdr::core {
+namespace pdr::billing {
 
 /// Правило: пакет стоит ровно столько, сколько занятий в нём, умноженных на цену
 /// занятия. Ни скидок, ни округлений здесь нет — появятся, когда появятся, и
@@ -16,6 +16,6 @@ namespace pdr::core {
 ///
 /// Отказ возвращается значением: «занятий не больше нуля» — обычный ответ, а не
 /// авария.
-Result<Money> PackagePrice(const Tariff& tariff, int lessons);
+core::Result<core::Money> PackagePrice(const Tariff& tariff, int lessons);
 
-}  // namespace pdr::core
+}  // namespace pdr::billing

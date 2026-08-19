@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Проверка направления зависимостей между слоями по директивам #include.
+"""Проверка границ по директивам #include: между слоями и между контекстами.
 
 Слой файла определяется каталогом: ближайший к файлу каталог с именем core,
 application или infrastructure. Запрещено:
@@ -11,6 +11,15 @@ application или infrastructure. Запрещено:
 Там же запрещено прямое обращение к системному времени: <ctime>, <time.h>,
 system_clock::now() и подобное. Часы приходят портом application::ports::Clock,
 иначе тест расписания зависит от секунды, в которую его запустили.
+
+Вторая граница — между модулями контекстов (libs/pdr-<контекст>). Чужой модуль
+виден ровно одним заголовком — его публичным контрактом <контекст>/contract.hpp.
+Всё остальное под <контекст>/ для соседей не существует. Платформенные
+библиотеки (libs/pdr-core, libs/pdr-events, libs/pdr-testing) не зависят от
+контекстов вовсе: зависимость направлена в одну сторону.
+
+Каталоги compile_fail/ пропускаются: в них лежит заведомо неправильный код,
+который обязан не собираться, и проверяет его компилятор.
 
 Нарушение печатается как <файл>:<строка>: <причина> и даёт код возврата 1.
 
@@ -34,8 +43,14 @@ from pathlib import Path, PurePosixPath
 from typing import Callable, Iterable, Iterator, Sequence
 
 SOURCE_SUFFIXES = frozenset({".h", ".hh", ".hpp", ".hxx", ".ipp", ".c", ".cc", ".cpp", ".cxx"})
-SKIPPED_DIRS = frozenset({"build", "out", "node_modules", "_deps", "third_party"})
+SKIPPED_DIRS = frozenset({"build", "out", "node_modules", "_deps", "third_party", "compile_fail"})
 LAYERS = ("core", "application", "infrastructure")
+
+# Библиотеки платформы: ими пользуются все контексты, сами они не знают ни об
+# одном. Всё остальное в libs/ с префиксом pdr- — модуль контекста.
+LIBRARY_PREFIX = "pdr-"
+PLATFORM_LIBRARIES = frozenset({"pdr-core", "pdr-events", "pdr-testing"})
+CONTRACT_HEADER = "contract.hpp"
 
 PQ_ROOTS = frozenset({"pqxx", "libpq"})
 PQ_HEADERS = frozenset({"libpq-fe.h", "libpq-events.h", "postgres_fe.h"})
@@ -177,6 +192,33 @@ def includes(text: str) -> Iterator[tuple[int, str, str]]:
         yield number, rest[1:end], f"#include {rest[: end + 1]}"
 
 
+def discover_modules(root: Path) -> dict[str, Path]:
+    """Модули контекстов: libs/pdr-<контекст>, кроме библиотек платформы."""
+    libraries = root / "libs"
+    if not libraries.is_dir():
+        return {}
+
+    modules: dict[str, Path] = {}
+    for entry in sorted(libraries.iterdir()):
+        if not entry.is_dir() or not entry.name.startswith(LIBRARY_PREFIX):
+            continue
+        if entry.name in PLATFORM_LIBRARIES:
+            continue
+        modules[entry.name[len(LIBRARY_PREFIX) :]] = entry
+    return modules
+
+
+def owning_library(path: Path, root: Path) -> str | None:
+    """Имя каталога в libs/, которому принадлежит файл, если он оттуда."""
+    try:
+        parts = path.relative_to(root).parts
+    except ValueError:
+        return None
+    if len(parts) >= 2 and parts[0] == "libs":
+        return parts[1]
+    return None
+
+
 def clock_calls(text: str) -> Iterator[tuple[int, str]]:
     """(номер строки, вызов) для каждого прямого обращения к системному времени."""
     without_literals = strip_comments(text, strip_literals=True)
@@ -247,16 +289,17 @@ def source_files(paths: Iterable[Path]) -> Iterator[Path]:
             yield candidate
 
 
-def check_file(path: Path, display: Path) -> list[str]:
+def check_file(path: Path, display: Path, root: Path, modules: dict[str, Path]) -> list[str]:
     layer = layer_of(path)
-    if layer is None:
-        return []
-    rules = FORBIDDEN[layer]
-    if not rules:
-        return []
+    library = owning_library(path, root)
+    own_module = None
+    if library is not None and library not in PLATFORM_LIBRARIES:
+        own_module = library[len(LIBRARY_PREFIX) :] if library.startswith(LIBRARY_PREFIX) else None
+
+    rules = FORBIDDEN[layer] if layer is not None else ()
+    text = path.read_text(encoding="utf-8", errors="replace")
 
     violations: list[str] = []
-    text = path.read_text(encoding="utf-8", errors="replace")
     for number, include, directive in includes(text):
         parts = PurePosixPath(include).parts
         for name, predicate in rules:
@@ -264,6 +307,20 @@ def check_file(path: Path, display: Path) -> list[str]:
                 violations.append(
                     f"{display}:{number}: слой {layer} не может включать {name}: {directive}"
                 )
+
+        context = parts[0] if parts else ""
+        if context not in modules or context == own_module:
+            continue
+        if library in PLATFORM_LIBRARIES:
+            violations.append(
+                f"{display}:{number}: платформенная библиотека {library} не может зависеть "
+                f"от контекста {context}: {directive}"
+            )
+        elif include != f"{context}/{CONTRACT_HEADER}":
+            violations.append(
+                f"{display}:{number}: чужой контекст {context} виден только своим публичным "
+                f"контрактом \"{context}/{CONTRACT_HEADER}\", а не внутренностями: {directive}"
+            )
 
     if layer in CLOCK_FORBIDDEN_IN:
         for number, call in clock_calls(text):
@@ -274,7 +331,30 @@ def check_file(path: Path, display: Path) -> list[str]:
     return violations
 
 
+def check_contracts(root: Path, modules: dict[str, Path]) -> list[str]:
+    """Публичный контракт — один заголовок на модуль, и ровно с этим именем."""
+    violations: list[str] = []
+    for context, directory in sorted(modules.items()):
+        contract_root = directory / "contract"
+        if not contract_root.is_dir():
+            # Контракта нет вовсе — так и должно быть, пока никто не спрашивает
+            # этот контекст синхронно. Заводить пустой заранее незачем.
+            continue
+
+        expected = contract_root / context / CONTRACT_HEADER
+        published = sorted(entry for entry in contract_root.rglob("*") if entry.is_file())
+        for entry in published:
+            if entry != expected:
+                violations.append(
+                    f"{entry.relative_to(root)}: наружу отдаётся ровно один заголовок — "
+                    f"{context}/{CONTRACT_HEADER}; всё остальное живёт в src/"
+                )
+    return violations
+
+
 def check(paths: Sequence[Path], root: Path) -> tuple[list[str], int]:
+    modules = discover_modules(root)
+
     violations: list[str] = []
     checked = 0
     for path in source_files(paths):
@@ -283,7 +363,9 @@ def check(paths: Sequence[Path], root: Path) -> tuple[list[str], int]:
             display = path.relative_to(root)
         except ValueError:
             display = path
-        violations.extend(check_file(path, display))
+        violations.extend(check_file(path, display, root, modules))
+
+    violations.extend(check_contracts(root, modules))
     return violations, checked
 
 
@@ -322,6 +404,17 @@ SELFTEST_FILES = {
         '#include "application/ports/tariff_repository.hpp"\n'
         'auto Now() { return std::chrono::system_clock::now(); }\n'
     ),
+    # Границы между контекстами.
+    "libs/pdr-alpha/contract/alpha/contract.hpp": "#pragma once\n",
+    "libs/pdr-alpha/src/alpha/application/allowed.cpp": '#include "beta/contract.hpp"\n',
+    "libs/pdr-alpha/src/alpha/application/forbidden.cpp": (
+        '#include "beta/contract.hpp"\n'
+        '#include "beta/core/thing.hpp"\n'
+    ),
+    "libs/pdr-alpha/tests/compile_fail/on_purpose.cpp": '#include "beta/core/thing.hpp"\n',
+    "libs/pdr-beta/contract/beta/contract.hpp": "#pragma once\n",
+    "libs/pdr-beta/contract/beta/extra.hpp": "#pragma once\n",
+    "libs/pdr-core/src/core/platform.cpp": '#include "alpha/contract.hpp"\n',
 }
 
 SELFTEST_EXPECTED = {
@@ -333,7 +426,12 @@ SELFTEST_EXPECTED = {
     ("src/application/bad.cpp", 3),
     ("src/core/clock.cpp", 6),
     ("src/core/clock.cpp", 7),
+    ("libs/pdr-alpha/src/alpha/application/forbidden.cpp", 2),
+    ("libs/pdr-core/src/core/platform.cpp", 1),
 }
+
+# Нарушение без строки: лишний публичный заголовок у модуля.
+SELFTEST_EXPECTED_WITHOUT_LINE = {"libs/pdr-beta/contract/beta/extra.hpp"}
 
 
 def selftest() -> int:
@@ -348,21 +446,31 @@ def selftest() -> int:
         violations, checked = check([root], root)
 
         found = set()
+        without_line = set()
         for line in violations:
             location, _, _ = line.partition(": ")
             name, _, number = location.rpartition(":")
-            found.add((name.replace("\\", "/"), int(number)))
+            if number.isdigit():
+                found.add((name.replace("\\", "/"), int(number)))
+            else:
+                without_line.add(location.replace("\\", "/"))
 
-        if checked != len(SELFTEST_FILES):
-            print(f"самопроверка: проверено {checked} файлов из {len(SELFTEST_FILES)}",
+        # Каталог compile_fail пропускается, поэтому проверенных файлов на один
+        # меньше, чем заведено.
+        expected_checked = sum(1 for name in SELFTEST_FILES if "compile_fail" not in name)
+        if checked != expected_checked:
+            print(f"самопроверка: проверено {checked} файлов из {expected_checked}",
                   file=sys.stderr)
             return 1
-        if found != SELFTEST_EXPECTED:
-            print("самопроверка: ожидались нарушения " + str(sorted(SELFTEST_EXPECTED)), file=sys.stderr)
-            print("самопроверка: получены нарушения " + str(sorted(found)), file=sys.stderr)
+        if found != SELFTEST_EXPECTED or without_line != SELFTEST_EXPECTED_WITHOUT_LINE:
+            print("самопроверка: ожидались нарушения " + str(sorted(SELFTEST_EXPECTED)) +
+                  " и " + str(sorted(SELFTEST_EXPECTED_WITHOUT_LINE)), file=sys.stderr)
+            print("самопроверка: получены нарушения " + str(sorted(found)) +
+                  " и " + str(sorted(without_line)), file=sys.stderr)
             return 1
 
-    print(f"Самопроверка пройдена: {len(SELFTEST_EXPECTED)} нарушений найдено там, где они есть, "
+    total = len(SELFTEST_EXPECTED) + len(SELFTEST_EXPECTED_WITHOUT_LINE)
+    print(f"Самопроверка пройдена: {total} нарушений найдено там, где они есть, "
           f"и ни одного там, где их нет.")
     return 0
 
@@ -389,7 +497,8 @@ def main(argv: Sequence[str]) -> int:
 
     if violations:
         print(f"Нарушений: {len(violations)}. Зависимости направлены только внутрь: "
-              f"core ничего не знает, application знает core, infrastructure знает обоих.",
+              f"core ничего не знает, application знает core, infrastructure знает обоих; "
+              f"чужой контекст виден только своим публичным контрактом.",
               file=sys.stderr)
         return 1
 

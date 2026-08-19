@@ -1,85 +1,68 @@
 #include "core/errors.hpp"
 
-#include <optional>
 #include <stdexcept>
 #include <string>
-#include <utility>
 
-#include "application/quote_lesson_package.hpp"
-#include "core/lesson_package.hpp"
-#include "core/money.hpp"
-#include "core/tariff.hpp"
 #include "testing/check.hpp"
 
 namespace {
 
-using pdr::application::QuoteLessonPackage;
 using pdr::core::Error;
 using pdr::core::ErrorKind;
-using pdr::core::Money;
 using pdr::core::Result;
-using pdr::core::Tariff;
-using pdr::core::TariffCode;
 
-/// Фейк узкого порта: четыре строки, потому что порт узкий.
-class FakeTariffRepository final : public pdr::application::ports::TariffRepository {
-public:
-    explicit FakeTariffRepository(std::optional<Tariff> tariff) : tariff_{std::move(tariff)} {}
-
-    std::optional<Tariff> FindByCode(const TariffCode&) const override {
-        return tariff_;
+/// Внутренний расчёт: отказывает значением.
+Result<int> Halved(int value) {
+    if (value % 2 != 0) {
+        return Error{ErrorKind::kValidation, "not_even", "нечётное пополам не делится"};
     }
-
-private:
-    std::optional<Tariff> tariff_;
-};
-
-Tariff MakeTariff() {
-    const auto currency = pdr::core::CurrencyCode::Parse("RUB");
-    const auto code = TariffCode::Parse("MATH-EGE-90");
-    return Tariff{*code, Money::FromMinorUnits(250000, *currency)};
+    return value / 2;
 }
 
-void DomainRefusalIsAValue() {
-    const auto refused = pdr::core::PackagePrice(MakeTariff(), 0);
+/// Тот, кто его вызывает, отказ не переписывает и не глотает.
+Result<int> HalvedTwice(int value) {
+    const auto once = Halved(value);
+    if (!once.HasValue()) {
+        return once.Failure();
+    }
+    return Halved(once.Value());
+}
+
+void RefusalIsAValueNotAnException() {
+    const auto refused = Halved(3);
 
     PDR_CHECK(!refused.HasValue());
     PDR_CHECK(!static_cast<bool>(refused));
     PDR_CHECK(refused.Failure().Kind() == ErrorKind::kValidation);
-    PDR_CHECK(refused.Failure().Code() == "lessons_not_positive");
+    PDR_CHECK(refused.Failure().Code() == "not_even");
     PDR_CHECK(!refused.Failure().Detail().empty());
 
-    const auto priced = pdr::core::PackagePrice(MakeTariff(), 8);
-    PDR_CHECK(priced.HasValue());
-    PDR_CHECK(priced.Value().MinorUnits() == 2000000);
+    const auto value = Halved(8);
+    PDR_CHECK(value.HasValue());
+    PDR_CHECK(static_cast<bool>(value));
+    PDR_CHECK(value.Value() == 4);
 }
 
 void RefusalSurvivesTheWayOut() {
-    const FakeTariffRepository tariffs{MakeTariff()};
-    const QuoteLessonPackage quote{tariffs};
+    const auto deep = Halved(3);
+    const auto out = HalvedTwice(3);
 
-    // Отказ пришёл из домена и вышел из сценария тем же самым значением:
-    // ни рода, ни кода, ни подробности по дороге не потеряли и не переписали.
-    const auto from_domain = pdr::core::PackagePrice(MakeTariff(), -1);
-    const auto from_scenario = quote.Execute({*TariffCode::Parse("MATH-EGE-90"), -1});
+    PDR_CHECK(!out.HasValue());
+    // Тот же самый отказ, а не «что-то пошло не так» на два этажа выше.
+    PDR_CHECK(out.Failure() == deep.Failure());
 
-    PDR_CHECK(!from_scenario.HasValue());
-    PDR_CHECK(from_scenario.Failure() == from_domain.Failure());
+    const auto second_floor = HalvedTwice(6);
+    PDR_CHECK(!second_floor.HasValue());
+    PDR_CHECK(second_floor.Failure().Code() == "not_even");
 
-    const auto priced = quote.Execute({*TariffCode::Parse("MATH-EGE-90"), 8});
-    PDR_CHECK(priced.HasValue());
-    PDR_CHECK(priced.Value().MinorUnits() == 2000000);
+    PDR_CHECK(HalvedTwice(8).Value() == 2);
 }
 
-void MissingTariffIsNotFoundAndNotAnException() {
-    const FakeTariffRepository empty{std::nullopt};
-    const QuoteLessonPackage quote{empty};
-
-    const auto answer = quote.Execute({*TariffCode::Parse("MATH-EGE-90"), 8});
-    PDR_CHECK(!answer.HasValue());
-    PDR_CHECK(answer.Failure().Kind() == ErrorKind::kNotFound);
-    PDR_CHECK(answer.Failure().Code() == "tariff_not_found");
-    PDR_CHECK(pdr::core::Name(answer.Failure().Kind()) == "not_found");
+void KindHasAStableName() {
+    PDR_CHECK(pdr::core::Name(ErrorKind::kValidation) == "validation");
+    PDR_CHECK(pdr::core::Name(ErrorKind::kNotFound) == "not_found");
+    PDR_CHECK(pdr::core::Name(ErrorKind::kConflict) == "conflict");
+    PDR_CHECK(pdr::core::Name(ErrorKind::kForbidden) == "forbidden");
 }
 
 void ScenarioWithoutPayloadAlsoReturnsRefusal() {
@@ -98,8 +81,7 @@ void ScenarioWithoutPayloadAlsoReturnsRefusal() {
 void WrongStateIsAProgrammersMistake() {
     bool value_threw = false;
     try {
-        const auto refused = pdr::core::PackagePrice(MakeTariff(), 0);
-        (void)refused.Value();
+        (void)Halved(3).Value();
     } catch (const std::logic_error&) {
         value_threw = true;
     }
@@ -107,8 +89,7 @@ void WrongStateIsAProgrammersMistake() {
 
     bool failure_threw = false;
     try {
-        const auto priced = pdr::core::PackagePrice(MakeTariff(), 1);
-        (void)priced.Failure();
+        (void)Halved(4).Failure();
     } catch (const std::logic_error&) {
         failure_threw = true;
     }
@@ -118,9 +99,9 @@ void WrongStateIsAProgrammersMistake() {
 }  // namespace
 
 int main() {
-    DomainRefusalIsAValue();
+    RefusalIsAValueNotAnException();
     RefusalSurvivesTheWayOut();
-    MissingTariffIsNotFoundAndNotAnException();
+    KindHasAStableName();
     ScenarioWithoutPayloadAlsoReturnsRefusal();
     WrongStateIsAProgrammersMistake();
     return pdr::testing::Summary("core.errors");

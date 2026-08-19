@@ -6,10 +6,10 @@
 #include <userver/components/component_config.hpp>
 #include <userver/components/component_context.hpp>
 
-#include "application/ports/tariff_repository.hpp"
-#include "infrastructure/postgres_tariff_repository.hpp"
+#include "billing/application/ports/tariff_repository.hpp"
+#include "billing/infrastructure/postgres_tariff_repository.hpp"
 
-namespace pdr::infrastructure {
+namespace pdr::billing {
 
 /// Тонкая обёртка: компонент собирает адаптер из кластера Postgres и отдаёт
 /// наружу ссылку на порт. Ничего доменного в нём нет и быть не должно — всё,
@@ -21,7 +21,7 @@ public:
     TariffRepositoryComponent(const userver::components::ComponentConfig& config,
                               const userver::components::ComponentContext& context);
 
-    const application::ports::TariffRepository& Repository() const noexcept {
+    const ports::TariffRepository& Repository() const noexcept {
         return repository_;
     }
 
@@ -29,4 +29,4 @@ private:
     PostgresTariffRepository repository_;
 };
 
-}  // namespace pdr::infrastructure
+}  // namespace pdr::billing

@@ -1,8 +1,8 @@
-#include "application/quote_lesson_package.hpp"
+#include "billing/application/quote_lesson_package.hpp"
 
-#include "core/lesson_package.hpp"
+#include "billing/core/lesson_package.hpp"
 
-namespace pdr::application {
+namespace pdr::billing {
 
 QuoteLessonPackage::QuoteLessonPackage(const ports::TariffRepository& tariffs) noexcept
     : tariffs_{tariffs} {}
@@ -15,7 +15,7 @@ core::Result<core::Money> QuoteLessonPackage::Execute(const Request& request) co
                            "тарифа " + request.tariff_code.View() + " нет"};
     }
 
-    return core::PackagePrice(*tariff, request.lessons);
+    return PackagePrice(*tariff, request.lessons);
 }
 
-}  // namespace pdr::application
+}  // namespace pdr::billing

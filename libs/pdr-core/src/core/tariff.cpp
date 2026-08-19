@@ -1,6 +1,6 @@
-#include "core/tariff.hpp"
+#include "billing/core/tariff.hpp"
 
-namespace pdr::core {
+namespace pdr::billing {
 namespace {
 
 constexpr std::size_t kMinLength = 3;
@@ -26,4 +26,4 @@ std::optional<TariffCode> TariffCode::Parse(std::string_view text) {
     return TariffCode{std::string{text}};
 }
 
-}  // namespace pdr::core
+}  // namespace pdr::billing

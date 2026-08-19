@@ -1,4 +1,4 @@
-#include "infrastructure/postgres_tariff_repository.hpp"
+#include "billing/infrastructure/postgres_tariff_repository.hpp"
 
 #include <cstdint>
 #include <stdexcept>
@@ -9,7 +9,7 @@
 
 #include "core/money.hpp"
 
-namespace pdr::infrastructure {
+namespace pdr::billing {
 namespace {
 
 /// Условия по tenant_id в запросе нет намеренно: арендатора отсекает RLS в базе.
@@ -25,8 +25,7 @@ const userver::storages::postgres::Query kFindByCode{
 PostgresTariffRepository::PostgresTariffRepository(userver::storages::postgres::ClusterPtr cluster)
     : cluster_{std::move(cluster)} {}
 
-std::optional<core::Tariff> PostgresTariffRepository::FindByCode(
-    const core::TariffCode& code) const {
+std::optional<Tariff> PostgresTariffRepository::FindByCode(const TariffCode& code) const {
     const auto result = cluster_->Execute(
         userver::storages::postgres::ClusterHostType::kSlave, kFindByCode, code.View());
     if (result.IsEmpty())
@@ -44,7 +43,7 @@ std::optional<core::Tariff> PostgresTariffRepository::FindByCode(
                                  currency_text};
     }
 
-    return core::Tariff{code, core::Money::FromMinorUnits(minor_units, *currency)};
+    return Tariff{code, core::Money::FromMinorUnits(minor_units, *currency)};
 }
 
-}  // namespace pdr::infrastructure
+}  // namespace pdr::billing

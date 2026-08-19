@@ -1,11 +1,11 @@
 #pragma once
 
-#include "application/ports/tariff_repository.hpp"
+#include "billing/application/ports/tariff_repository.hpp"
+#include "billing/core/tariff.hpp"
 #include "core/errors.hpp"
 #include "core/money.hpp"
-#include "core/tariff.hpp"
 
-namespace pdr::application {
+namespace pdr::billing {
 
 /// Сценарий: сколько стоит пакет из N занятий по такому-то тарифу.
 ///
@@ -15,7 +15,7 @@ namespace pdr::application {
 class QuoteLessonPackage final {
 public:
     struct Request final {
-        core::TariffCode tariff_code;
+        TariffCode tariff_code;
         int lessons{0};
     };
 
@@ -29,4 +29,4 @@ private:
     const ports::TariffRepository& tariffs_;
 };
 
-}  // namespace pdr::application
+}  // namespace pdr::billing
