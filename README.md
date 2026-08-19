@@ -156,7 +156,10 @@ CI — GitHub Actions.
 заводят.
 
 * [`docs/adr/`](docs/adr/) — принятые решения и их причины.
-* [`docs/architecture/`](docs/architecture/) — контексты, слои, потоки данных.
+* [`docs/architecture/`](docs/architecture/) — контексты, слои, потоки данных:
+  [`layers.md`](docs/architecture/layers.md) — вертикальная граница (слои),
+  [`context-map.md`](docs/architecture/context-map.md) — горизонтальная
+  (контексты, владение таблицами, группировка в процессы).
 * [`docs/api/`](docs/api/) — OpenAPI, источник типов для клиентов.
 * [`docs/product/`](docs/product/) — правила продукта и интерфейса; двадцать
   девять правил интерфейса и опыта лягут в `docs/product/rules.md`
