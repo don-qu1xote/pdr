@@ -29,6 +29,10 @@ import tempfile
 from pathlib import Path
 from typing import Iterator, Sequence
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+import migration_model as model  # noqa: E402  (после правки sys.path)
+
 CONTEXT_HEADING = re.compile(r"^### ([a-z][a-z0-9_]*) — ", re.M)
 OWNS_HEADING = "**Владеет:**"
 OWNED_TABLE = re.compile(r"^\* `([a-z][a-z0-9_]*)`")
@@ -107,6 +111,10 @@ def check(map_path: Path, migrations: Path, root: Path) -> tuple[list[str], int,
         tables += 1
         if table in owners:
             continue
+        if table in model.META_TABLES:
+            # Таблица самого механизма миграций: контекста-владельца у неё нет
+            # и быть не может. Список исключений — в scripts/migration_model.py.
+            continue
         try:
             display = path.relative_to(root)
         except ValueError:
@@ -153,6 +161,7 @@ SELFTEST_GOOD_MIGRATION = """create table identity_person (
 """
 
 SELFTEST_BAD_MIGRATION = """CREATE TABLE IF NOT EXISTS billing_invoice (id uuid primary key);
+CREATE TABLE schema_version (version integer primary key);
 CREATE TABLE lesson_notes (id uuid primary key);
 """
 
@@ -193,10 +202,12 @@ def selftest() -> int:
         map_path.write_text(SELFTEST_MAP, encoding="utf-8")
         (migrations / "0002_notes.sql").write_text(SELFTEST_BAD_MIGRATION, encoding="utf-8")
         violations, _, _ = check(map_path, migrations, root)
+        # Метатаблица механизма исключением не считается нарушением, а
+        # неизвестная доменная — считается.
         if len(violations) != 1 or "lesson_notes" not in violations[0]:
             print(f"самопроверка: не поймана таблица мимо карты: {violations}", file=sys.stderr)
             return 1
-        if ":2:" not in violations[0]:
+        if ":3:" not in violations[0]:
             print(f"самопроверка: в сообщении нет строки миграции: {violations[0]}",
                   file=sys.stderr)
             return 1

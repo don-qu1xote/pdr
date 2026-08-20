@@ -13,8 +13,14 @@ COMPOSE := docker compose --env-file $(ENV_FILE) -f deploy/docker-compose.yml
 MIGRATIONS := db/migrations
 BUILD_DIR ?= build
 
+# Подключение к базе профиля: psql и scripts/migrate.py читают обычные PG*.
+# Значения берутся из того же файла профиля, второго источника правды нет.
+PG_ENV = set -a; . ./$(ENV_FILE); set +a; \
+	export PGHOST=$${PGHOST:-127.0.0.1} PGPORT=$$POSTGRES_PORT PGUSER=$$POSTGRES_USER \
+	       PGPASSWORD=$$POSTGRES_PASSWORD PGDATABASE=$$POSTGRES_DB;
+
 .DEFAULT_GOAL := help
-.PHONY: help up down test fmt logs migrate ps check-env
+.PHONY: help up down test fmt logs migrate migrate-verify migrate-status schema-doc ps check-env
 
 help:
 	@echo "Цели:"
@@ -24,6 +30,9 @@ help:
 	@echo "  make fmt         привести C++ к .clang-format"
 	@echo "  make logs        смотреть логи (make logs SERVICE=postgres)"
 	@echo "  make migrate     применить миграции из $(MIGRATIONS)"
+	@echo "  make migrate-verify   сверить суммы, ничего не применяя"
+	@echo "  make migrate-status   что применено, что ждёт"
+	@echo "  make schema-doc  пересобрать docs/architecture/schema.md"
 	@echo "  make ps          что сейчас запущено"
 	@echo
 	@echo "Профиль: ENV_PROFILE=$(ENV_PROFILE) (файл $(ENV_FILE))"
@@ -38,7 +47,13 @@ check-env:
 
 up: check-env
 	$(COMPOSE) up --detach --wait
-	@$(MAKE) --no-print-directory migrate
+	@set -a; . ./$(ENV_FILE); set +a; \
+	if [ "$$MIGRATE_ON_START" = "1" ]; then \
+		$(MAKE) --no-print-directory migrate; \
+	else \
+		echo "MIGRATE_ON_START=$$MIGRATE_ON_START — не применяю, только сверяю"; \
+		$(MAKE) --no-print-directory migrate-verify; \
+	fi
 	@echo
 	@echo "поднято. Что дальше:"
 	@echo "    make ps      посмотреть состояние"
@@ -50,19 +65,21 @@ down: check-env
 	@test -z "$(VOLUMES)" && echo "тома остались на месте; убрать: make down VOLUMES=1" || \
 		echo "тома удалены вместе с данными"
 
-# Миграции применяются по порядку имён. Учёта уже применённых здесь нет и не
-# будет: это дело области DB, вместе с первой же миграцией. Пока файлов нет,
-# применять нечего — и цель честно об этом говорит, а не делает вид.
+# Применяет то, чего нет в реестре, и сверяет суммы уже применённого.
+# Применённая миграция никогда не редактируется: расхождение суммы — отказ,
+# а не предупреждение (docs/adr/0010-applied-migrations-are-never-edited.md).
 migrate: check-env
-	@if [ ! -d $(MIGRATIONS) ] || [ -z "$$(ls $(MIGRATIONS)/*.sql 2>/dev/null)" ]; then \
-		echo "миграций нет — применять нечего"; \
-	else \
-		for file in $$(ls $(MIGRATIONS)/*.sql | sort); do \
-			echo "применяю $$file"; \
-			$(COMPOSE) exec -T postgres \
-				sh -c 'psql -v ON_ERROR_STOP=1 -U "$$POSTGRES_USER" -d "$$POSTGRES_DB"' < $$file || exit 1; \
-		done; \
-	fi
+	@$(PG_ENV) python3 scripts/migrate.py apply --dir $(MIGRATIONS)
+
+migrate-verify: check-env
+	@$(PG_ENV) python3 scripts/migrate.py verify --dir $(MIGRATIONS)
+
+migrate-status: check-env
+	@$(PG_ENV) python3 scripts/migrate.py status --dir $(MIGRATIONS)
+
+# Документ схемы не пишется руками — он собирается из миграций.
+schema-doc:
+	python3 scripts/gen_schema_doc.py
 
 ps: check-env
 	$(COMPOSE) ps
@@ -79,6 +96,9 @@ test:
 	python3 scripts/check_layers.py
 	python3 scripts/check_table_owners.py --selftest
 	python3 scripts/check_table_owners.py
+	python3 scripts/check_migrations.py --selftest
+	python3 scripts/check_migrations.py
+	python3 scripts/gen_schema_doc.py --check
 	python3 scripts/verify_env_parity.py --selftest
 	python3 scripts/verify_env_parity.py
 

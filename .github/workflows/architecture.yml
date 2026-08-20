@@ -54,6 +54,49 @@ jobs:
       - name: Сверка профилей
         run: python3 scripts/verify_env_parity.py
 
+  migrations:
+    name: Миграции и документ схемы
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Проверка самого линтера миграций (отрицательный случай)
+        run: python3 scripts/check_migrations.py --selftest
+
+      - name: Правила колонок
+        run: python3 scripts/check_migrations.py
+
+      # Документ схемы собирается из миграций; расхождение означает, что его
+      # правили руками или забыли пересобрать.
+      - name: Документ схемы свежий
+        run: python3 scripts/gen_schema_doc.py --check
+
+  local-install:
+    name: Установка поднимается, миграции применяются
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # Тем же единственным compose, что и на машине разработчика, — профилем ci.
+      - name: Профиль ci
+        run: cp deploy/env/ci.env.example deploy/env/ci.env
+
+      - name: Поднять и применить
+        run: make up ENV_PROFILE=ci
+
+      # Второй прогон обязан ничего не применять: повтор идемпотентен.
+      - name: Повтор ничего не меняет
+        run: |
+          make migrate ENV_PROFILE=ci | tee /tmp/second-run.log
+          grep -q "Применять нечего" /tmp/second-run.log
+
+      - name: Сверка сумм
+        run: make migrate-verify ENV_PROFILE=ci
+
+      - name: Погасить вместе с томами
+        if: always()
+        run: make down ENV_PROFILE=ci VOLUMES=1
+
   tests:
     name: Тесты ядра и сценариев
     runs-on: ubuntu-latest
