@@ -34,8 +34,11 @@ jobs:
       - name: Конфигурация
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 
-      - name: Сборка pdr_core и pdr_application
-        run: cmake --build build --target pdr_core pdr_application --parallel
+      # pdr_application — интерфейсная цель (только порты-заголовки), собирать
+      # в ней нечего. pdr_infrastructure — настоящая цель, линкует pdr_application
+      # и pdr_core, поэтому её сборка компилирует и заголовки слоя application.
+      - name: Сборка pdr_core и pdr_infrastructure
+        run: cmake --build build --target pdr_core pdr_infrastructure --parallel
 
   tests:
     name: Тесты ядра и сценариев
