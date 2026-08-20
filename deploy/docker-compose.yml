@@ -1,0 +1,107 @@
+# Единственный compose на все окружения. Второго не будет.
+#
+# Различия профилей — ТОЛЬКО через переменные (deploy/env/<профиль>.env), а не
+# через второй YAML с дублирующими блоками: два файла расходятся молча, и через
+# полгода никто не знает, чем «прод» отличается от «локали». Совпадение
+# профилей проверяется машиной — scripts/verify_env_parity.py.
+#
+# Живого прода нет и не планируется. Это рабочая локальная установка, а не
+# заготовка под прод: docs/adr/0007-local-without-fake-production.md.
+
+name: "pdr-${ENV_PROFILE:?нет ENV_PROFILE — профиль задаётся файлом deploy/env/<профиль>.env}"
+
+# Общие настройки контейнера. Применяются ко ВСЕМ сервисам — чтобы по мере
+# добавления новых ничего не разъехалось: новый сервис получает ограничения
+# по умолчанию, а отступление от них приходится писать явно и с причиной.
+x-hardening: &hardening
+  restart: unless-stopped
+  init: true
+  read_only: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  mem_limit: ${DEFAULT_MEM_LIMIT:?нет DEFAULT_MEM_LIMIT в профиле}
+  cpus: ${DEFAULT_CPU_LIMIT:?нет DEFAULT_CPU_LIMIT в профиле}
+  pids_limit: 512
+
+# Диск забивается логами всегда, вопрос только когда. Поэтому предел задан
+# явно и тоже на каждом сервисе.
+x-logging: &logging
+  logging:
+    driver: json-file
+    options:
+      max-size: ${LOG_MAX_SIZE:?нет LOG_MAX_SIZE в профиле}
+      max-file: ${LOG_MAX_FILES:?нет LOG_MAX_FILES в профиле}
+
+services:
+  postgres:
+    <<: [*hardening, *logging]
+    # Единственное хранилище проекта: очереди, полнотекстовый и векторный поиск —
+    # тоже здесь (docs/adr/0002-postgres-only-storage.md). Когда первой миграции
+    # понадобится «CREATE EXTENSION vector», меняется POSTGRES_IMAGE в профилях —
+    # а не появляется второй compose.
+    image: ${POSTGRES_IMAGE:?нет POSTGRES_IMAGE в профиле}
+    # Отступление от общего правила, с причиной: официальный образ пишет мимо
+    # тома — сокет в /var/run/postgresql и временные файлы в /tmp. Закрыть это
+    # tmpfs-монтированиями можно, но включать read_only, не проверив запуск на
+    # живом демоне, значит положить «make up» первому, кто его вызовет.
+    read_only: false
+    # Энтрипойнт стартует под root: правит владельца каталога данных и понижает
+    # права до postgres. Пять возможностей ниже — ровно на это, остальные сняты
+    # общим правилом.
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETGID
+      - SETUID
+    mem_limit: ${POSTGRES_MEM_LIMIT:?нет POSTGRES_MEM_LIMIT в профиле}
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?нет POSTGRES_USER в профиле}
+      # Значения по умолчанию у секретов не существует: без переменной
+      # конфигурация не собирается вовсе.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?нет POSTGRES_PASSWORD в профиле}
+      POSTGRES_DB: ${POSTGRES_DB:?нет POSTGRES_DB в профиле}
+      # Время в UTC — правило проекта, и база о нём знает.
+      TZ: UTC
+      PGTZ: UTC
+    ports:
+      - "${POSTGRES_PORT:?нет POSTGRES_PORT в профиле}:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  ml:
+    <<: [*hardening, *logging]
+    # Заглушка. Инференса здесь нет: модели и их запуск наполняет PDR-NOTES-02.
+    # Контейнер честно говорит, что он заглушка, и держится — чтобы состав
+    # сервисов не менялся между профилями и между «до» и «после».
+    image: ${ML_IMAGE:?нет ML_IMAGE в профиле}
+    mem_limit: ${ML_MEM_LIMIT:?нет ML_MEM_LIMIT в профиле}
+    command:
+      - /bin/sh
+      - -c
+      - "echo 'ml: заглушка, инференса нет. Наполняет PDR-NOTES-02.'; exec tail -f /dev/null"
+
+  # Сервисы приложения появятся по одному, вместе со своей фазой, а не все сразу.
+  # Имена — из карты процессов в docs/architecture/context-map.md; там же
+  # написано, какие контексты живут в каждом и по какому наблюдаемому условию
+  # процесс выделяется в отдельный.
+  #
+  # main:        <<: [*hardening, *logging]   # identity, scheduling, billing, notifications — фаза 1
+  #   image: ${MAIN_IMAGE}
+  # chat:        <<: [*hardening, *logging]   # chat — фаза 5, отдельный с рождения: websockets держат соединения
+  # classroom:   <<: [*hardening, *logging]   # video, content, notes — фаза 2
+  # learning:    <<: [*hardening, *logging]   # exercises, practice, media — фаза 3
+  # insight:     <<: [*hardening, *logging]   # progress, recommend — фаза 4
+  # market:      <<: [*hardening, *logging]   # profile, matching, reputation — фаза 5
+  # analytics:   <<: [*hardening, *logging]   # business — фаза 6, отдельный с рождения: пакетные витрины
+
+volumes:
+  pgdata:

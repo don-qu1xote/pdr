@@ -40,6 +40,20 @@ jobs:
       - name: Сборка pdr_core и pdr_infrastructure
         run: cmake --build build --target pdr_core pdr_infrastructure --parallel
 
+  env-parity:
+    name: Профили окружения не разъехались
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # docker compose на раннере уже есть; демон для `config` не нужен —
+      # конфигурация только отрисовывается.
+      - name: Проверка самой сверки профилей (отрицательный случай)
+        run: python3 scripts/verify_env_parity.py --selftest
+
+      - name: Сверка профилей
+        run: python3 scripts/verify_env_parity.py
+
   tests:
     name: Тесты ядра и сценариев
     runs-on: ubuntu-latest
