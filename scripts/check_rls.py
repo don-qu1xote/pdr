@@ -60,18 +60,22 @@ def _place(source: str, line: int) -> str:
     return f"{source}:{line}"
 
 
+def _has_tenant(table: model.Table) -> bool:
+    return any(column.name == TENANT_COLUMN for column in table.columns)
+
+
 def check_migrations(migrations: Sequence[tuple[str, model.Migration]]) -> tuple[list[str], int]:
     """Нарушения изоляции и число проверенных доменных таблиц."""
     violations: list[str] = []
 
-    created: dict[str, str] = {}
+    created: dict[str, tuple[str, model.Table]] = {}
     enabled: dict[str, str] = {}
     forced: dict[str, str] = {}
     policies: dict[str, list[tuple[str, model.Policy]]] = {}
 
     for source, migration in migrations:
         for table in migration.tables:
-            created[table.name] = _place(source, table.line)
+            created[table.name] = (_place(source, table.line), table)
 
         for change in migration.row_security:
             place = _place(source, change.line)
@@ -109,11 +113,16 @@ def check_migrations(migrations: Sequence[tuple[str, model.Migration]]) -> tuple
         )
 
     checked = 0
-    for table, place in sorted(created.items()):
-        if table in model.META_TABLES:
-            # Таблицы самого механизма миграций не про предметную область:
-            # арендатора у них нет, защищать в них нечего. Список закрыт и
-            # объяснён в scripts/migration_model.py.
+    for table, (place, definition) in sorted(created.items()):
+        if table in model.META_TABLES and not _has_tenant(definition):
+            # Таблицы механизма не про предметную область: арендатора у них нет,
+            # защищать в них нечего. Список закрыт и объяснён в
+            # scripts/migration_model.py.
+            #
+            # Исключение действует ровно пока арендатора нет. Появился
+            # tenant_id — таблица проверяется как доменная: иначе список
+            # исключений становится способом завести таблицу с чужими данными
+            # мимо политики.
             continue
         checked += 1
 
@@ -303,6 +312,21 @@ create policy identity_persons_isolation on identity_persons
     using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)
     with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid);
 """,
+    # Метатаблице механизма дописали арендатора: исключение из списка
+    # META_TABLES на этом заканчивается, политика обязана появиться.
+    "V008__meta_with_tenant.sql": """
+create table jobs_lock (
+    key       text not null,
+    tenant_id uuid not null
+);
+""",
+    # А метатаблица без арендатора проходит: защищать в ней нечего.
+    "V009__meta_plain.sql": """
+create table jobs_run (
+    job        text        not null,
+    started_at timestamptz not null
+);
+""",
 }
 
 SELFTEST_EXPECTED = {
@@ -312,6 +336,7 @@ SELFTEST_EXPECTED = {
     ("V005__no_with_check.sql", "with check"),
     ("V006__disabled.sql", "выключают построчную защиту"),
     ("V007__typo.sql", "не заводит ни одна миграция"),
+    ("V008__meta_with_tenant.sql", "без построчной защиты"),
 }
 
 
@@ -344,6 +369,11 @@ def selftest() -> int:
                 return 1
         if any("V001__good.sql" in line for line in violations):
             print("самопроверка: правильная таблица объявлена нарушением", file=sys.stderr)
+            for line in violations:
+                print("    " + line, file=sys.stderr)
+            return 1
+        if any("V009__meta_plain.sql" in line for line in violations):
+            print("самопроверка: метатаблица без арендатора объявлена нарушением", file=sys.stderr)
             for line in violations:
                 print("    " + line, file=sys.stderr)
             return 1

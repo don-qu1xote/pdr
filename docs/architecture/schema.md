@@ -4,7 +4,7 @@
      правка переживёт ровно до следующей пересборки. Изменить схему — значит
      написать новую миграцию. -->
 
-Собрано из миграций: 2. Таблиц: 5.
+Собрано из миграций: 3. Таблиц: 8.
 
 Правила, которым подчиняется каждая колонка, — в
 [migrations.md](migrations.md). Как устроена изоляция арендаторов и почему у
@@ -138,6 +138,84 @@
 
 * `identity_tenant_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
 
+### jobs_effect
+
+След уже произведённого действия задания: (арендатор, задание, ключ действия). Повтор после потери блокировки упирается в первичный ключ и второго действия не производит.
+
+Заведена миграцией `V003__jobs.sql`.
+
+| Колонка | Тип | Определение |
+| --- | --- | --- |
+| `tenant_id` | `uuid` | uuid not null references identity_tenant (tenant_id) |
+| `job` | `text` | text not null |
+| `effect_key` | `text` | text not null |
+| `produced_at` | `timestamptz` | timestamptz not null default now() |
+
+Ограничения:
+
+* `constraint jobs_effect_pk primary key (tenant_id, job, effect_key)`
+* `constraint jobs_effect_job_not_blank check (length(btrim(job)) > 0)`
+* `constraint jobs_effect_key_not_blank check (length(btrim(effect_key)) > 0)`
+
+Индексы:
+
+* `jobs_effect_by_age` — обычный, `(produced_at)`
+
+Построчная защита включена и форсирована.
+
+Политики:
+
+* `jobs_effect_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
+
+### jobs_lock
+
+Распределённая блокировка периодических заданий: одна строка на задание во всём кластере. Форму таблицы задаёт штатный storages::postgres::DistLock.
+
+Заведена миграцией `V003__jobs.sql`.
+
+| Колонка | Тип | Определение |
+| --- | --- | --- |
+| `key` | `text` | text not null |
+| `owner` | `text` | text |
+| `expiration_time` | `timestamptz` | timestamptz |
+
+Ограничения:
+
+* `constraint jobs_lock_pk primary key (key)`
+* `constraint jobs_lock_key_not_blank check (length(btrim(key)) > 0)`
+
+Не доменная таблица: распределённая блокировка периодических заданий, одна на кластер. Арендатора и политики у неё нет.
+
+### jobs_run
+
+Последний прогон задания: начало попытки, начало и конец последнего завершённого прогона, длительность и исход. Возраст этой записи — метрика живости задания.
+
+Заведена миграцией `V003__jobs.sql`.
+
+| Колонка | Тип | Определение |
+| --- | --- | --- |
+| `job` | `text` | text not null |
+| `attempt_at` | `timestamptz` | timestamptz not null |
+| `started_at` | `timestamptz` | timestamptz |
+| `finished_at` | `timestamptz` | timestamptz |
+| `duration_ms` | `bigint` | bigint |
+| `outcome` | `text` | text not null |
+| `produced` | `bigint` | bigint not null default 0 |
+| `repeated` | `bigint` | bigint not null default 0 |
+| `runs` | `bigint` | bigint not null default 0 |
+
+Ограничения:
+
+* `constraint jobs_run_pk primary key (job)`
+* `constraint jobs_run_job_not_blank check (length(btrim(job)) > 0)`
+* `constraint jobs_run_outcome_known check (outcome in ( , , , ))`
+* `constraint jobs_run_finished_is_whole check ((finished_at is null) = (started_at is null) and (finished_at is null) = (duration_ms is null))`
+* `constraint jobs_run_duration_not_negative check (duration_ms is null or duration_ms >= 0)`
+* `constraint jobs_run_finished_after_started check (finished_at is null or finished_at >= started_at)`
+* `constraint jobs_run_counters_not_negative check (produced >= 0 and repeated >= 0 and runs >= 0)`
+
+Не доменная таблица: журнал последнего прогона задания, один на кластер. Арендатора и политики у неё нет.
+
 ### schema_version
 
 Применённые миграции: версия, момент применения в UTC и контрольная сумма файла.
@@ -156,3 +234,4 @@
 
 1. `V001__schema_version.sql` — schema_version
 1. `V002__init.sql` — identity_tenant, identity_person, identity_role_assignment, identity_guardianship
+1. `V003__jobs.sql` — jobs_lock, jobs_run, jobs_effect

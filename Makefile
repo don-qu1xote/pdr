@@ -20,7 +20,7 @@ PG_ENV = set -a; . ./$(ENV_FILE); set +a; \
 	       PGPASSWORD=$$POSTGRES_PASSWORD PGDATABASE=$$POSTGRES_DB;
 
 .DEFAULT_GOAL := help
-.PHONY: help up down test test-isolation fmt logs migrate migrate-verify migrate-status \
+.PHONY: help up down test test-isolation test-jobs fmt logs migrate migrate-verify migrate-status \
         schema-doc ps check-env
 
 help:
@@ -29,6 +29,7 @@ help:
 	@echo "  make down        погасить (make down VOLUMES=1 — вместе с томами)"
 	@echo "  make test        собрать, прогнать тесты и все проверки границ"
 	@echo "  make test-isolation   проверить изоляцию арендаторов на живой базе"
+	@echo "  make test-jobs   проверить одиночные задания на живой базе"
 	@echo "  make fmt         привести C++ к .clang-format"
 	@echo "  make logs        смотреть логи (make logs SERVICE=postgres)"
 	@echo "  make migrate     применить миграции из $(MIGRATIONS)"
@@ -84,6 +85,12 @@ migrate-status: check-env
 # Тест пишет в базу профиля и убирает за собой.
 test-isolation: check-env
 	@$(PG_ENV) python3 scripts/check_isolation.py
+
+# Одиночные задания на живой базе: блокировку берёт один, потеря блокировки не
+# приводит к двойному действию, возраст последнего прогона растёт. Тому же
+# требуется поднятая установка; unit-часть механизма гоняется без базы (ctest).
+test-jobs: check-env
+	@$(PG_ENV) python3 scripts/check_jobs.py
 
 # Документ схемы не пишется руками — он собирается из миграций.
 schema-doc:
