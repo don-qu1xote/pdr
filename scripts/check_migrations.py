@@ -146,6 +146,10 @@ def check(directory: Path, root: Path) -> tuple[list[str], int]:
             source = str(migration.path.relative_to(root))
         except ValueError:
             source = migration.path.name
+        # Непонятый разбором DDL — отказ, а не «пропустим и посмотрим колонки».
+        # Линтер, разобравший половину файла, честно скажет «нарушений нет» и
+        # будет прав ровно про ту половину, которую понял.
+        violations.extend(model.unsupported(migration.sql, source))
         for table in migration.tables:
             tables += 1
             violations.extend(check_table(table, source))
@@ -239,6 +243,17 @@ def selftest() -> int:
                 print("    " + line, file=sys.stderr)
             return 1
 
+        # DDL, которого разбор не понимает, роняет и этот линтер: иначе он
+        # проверит колонки того, что понял, и промолчит про остальное.
+        (migrations / "V006__alters.sql").write_text(
+            "alter table billing_invoice add column note text;\n", encoding="utf-8"
+        )
+        blind, _ = check(migrations, root)
+        if not any("V006__alters.sql" in line and "разбор миграций" in line for line in blind):
+            print("самопроверка: непонятый DDL прошёл мимо линтера", file=sys.stderr)
+            return 1
+        (migrations / "V006__alters.sql").unlink()
+
         # Имя файла не по правилу — тоже отказ.
         (migrations / "V006-wrong-name.sql").write_text("select 1;\n", encoding="utf-8")
         broken, _ = check(migrations, root)
@@ -246,8 +261,8 @@ def selftest() -> int:
             print("самопроверка: имя файла не по правилу не поймано", file=sys.stderr)
             return 1
 
-    print(f"Самопроверка пройдена: {len(SELFTEST_EXPECTED)} нарушений найдено там, где они есть, "
-          f"и ни одного там, где их нет.")
+    print(f"Самопроверка пройдена: {len(SELFTEST_EXPECTED) + 2} нарушений найдено там, где они "
+          f"есть, и ни одного там, где их нет.")
     return 0
 
 

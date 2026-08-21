@@ -32,26 +32,48 @@ add_library(pdr_infrastructure STATIC
 target_include_directories(pdr_infrastructure PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_link_libraries(pdr_infrastructure PUBLIC pdr_core pdr_application)
 
+# Адаптер к Postgres — отдельной целью, потому что он требует userver, а
+# pdr_infrastructure линкуют все тесты. Без userver контекст остаётся собираемым
+# и проверяемым целиком, кроме этого слоя; сам адаптер при этом не остаётся без
+# присмотра — scripts/check_rls.py сверяет имя параметра сессии в нём с именем
+# в политиках миграции.
+find_package(userver QUIET COMPONENTS core postgresql)
+if(userver_FOUND)
+    add_library(pdr_postgres STATIC src/infrastructure/postgres_tenant_aware_repository.cpp)
+    target_include_directories(pdr_postgres PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_link_libraries(pdr_postgres PUBLIC pdr_core pdr_application userver::postgresql)
+else()
+    message(STATUS "pdr: userver не найден, цель pdr_postgres пропущена")
+endif()
+
 if(PDR_BUILD_TESTS)
     # Тест — обычная программа: код возврата ноль, если все проверки прошли.
     # Никакого фреймворка, никакой базы, никакого докера; полноценный gtest
     # заводится отдельной задачей области TST.
-    foreach(suite IN ITEMS errors ids infrastructure time)
+    foreach(suite IN ITEMS errors ids infrastructure tenant_isolation time)
         add_executable(pdr_core_${suite}_test tests/${suite}_test.cpp)
         target_link_libraries(pdr_core_${suite}_test PRIVATE pdr_infrastructure pdr_testing)
         add_test(NAME core.${suite} COMMAND pdr_core_${suite}_test)
     endforeach()
 
-    # Отрицательный тест типизации: эти цели ОБЯЗАНЫ не собираться. Без него
-    # StrongId не проверен — «перепутать нельзя» превращается в обещание.
+    # Отрицательные тесты: эти цели ОБЯЗАНЫ не собираться. Без них «перепутать
+    # нельзя» и «сессию не получить мимо области» — обещания, а не свойства.
     # Цели исключены из ALL, тест собирает их отдельно и ждёт провала.
-    foreach(case IN ITEMS ids_person_as_tenant ids_implicit_to_string ids_implicit_to_int)
-        add_executable(pdr_compile_fail_${case} EXCLUDE_FROM_ALL tests/compile_fail/${case}.cpp)
-        target_link_libraries(pdr_compile_fail_${case} PRIVATE pdr_core)
-        add_test(NAME core.compile_fail.${case}
+    # Через двоеточие — с чем линковать: сессия хранилища живёт в оснастке
+    # тестов, остальным случаям хватает ядра.
+    foreach(case IN ITEMS ids_person_as_tenant:pdr_core
+                          ids_implicit_to_string:pdr_core
+                          ids_implicit_to_int:pdr_core
+                          tenant_session_outside_scope:pdr_testing)
+        string(REPLACE ":" ";" parts "${case}")
+        list(GET parts 0 name)
+        list(GET parts 1 needs)
+        add_executable(pdr_compile_fail_${name} EXCLUDE_FROM_ALL tests/compile_fail/${name}.cpp)
+        target_link_libraries(pdr_compile_fail_${name} PRIVATE ${needs})
+        add_test(NAME core.compile_fail.${name}
                  COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}"
-                         --target pdr_compile_fail_${case} --config $<CONFIG>)
-        set_tests_properties(core.compile_fail.${case} PROPERTIES WILL_FAIL TRUE)
+                         --target pdr_compile_fail_${name} --config $<CONFIG>)
+        set_tests_properties(core.compile_fail.${name} PROPERTIES WILL_FAIL TRUE)
     endforeach()
 endif()
 

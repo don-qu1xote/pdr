@@ -4,11 +4,12 @@
 документа схемы (scripts/gen_schema_doc.py), и применялка (scripts/migrate.py) —
 чтобы «что такое колонка» понималось одинаково во всех трёх местах.
 
-Разбирается ТОТ ПОДМНОЖЕСТВО DDL, которое мы себе разрешаем: create table с
-обычными именами, колонки, табличные ограничения. Всё, чего разбор не понял, он
-называет вслух и роняет проверку — молча пропускать непонятое нельзя, иначе
-правило «tenant_id на каждой таблице» перестаёт что-либо значить ровно в тот
-день, когда кто-то напишет непривычный DDL.
+Разбирается ТО ПОДМНОЖЕСТВО DDL, которое мы себе разрешаем: create table с
+обычными именами, колонки, табличные ограничения, индексы, включение RLS и
+политики. Всё, чего разбор не понял, он называет вслух и роняет проверку —
+молча пропускать непонятое нельзя, иначе правила «tenant_id на каждой таблице»
+и «RLS на каждой таблице» перестают что-либо значить ровно в тот день, когда
+кто-то напишет непривычный DDL.
 """
 
 from __future__ import annotations
@@ -22,6 +23,30 @@ FILE_NAME = re.compile(r"^V(\d{3,})__([a-z0-9_]+)\.sql$")
 CREATE_TABLE = re.compile(r"\bcreate\s+table\s+(?:if\s+not\s+exists\s+)?([^\s(]+)\s*\(", re.I)
 COMMENT_ON_TABLE = re.compile(
     r"comment\s+on\s+table\s+([a-z_][a-z0-9_]*)\s+is\s+'((?:[^']|'')*)'", re.I
+)
+
+# Долларовые кавычки: $$ ... $$ или $tag$ ... $tag$. Внутри может быть что
+# угодно, включая одиночную кавычку, — без этого разбора строковый сканер
+# рассинхронизировался бы и стёр половину файла молча.
+DOLLAR_TAG = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)?\$")
+
+# alter table в ЕДИНСТВЕННОЙ форме, которую разбор понимает: включение,
+# выключение и форсирование построчной защиты. Всякая другая форма alter table
+# по-прежнему отказ (см. unsupported ниже).
+ALTER_ROW_SECURITY = re.compile(
+    r"\balter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?([a-z_][a-z0-9_]*)\s+"
+    r"(enable|disable|force|no\s+force)\s+row\s+level\s+security\b",
+    re.I,
+)
+ALTER_TABLE_ANY = re.compile(r"\balter\s+table\b", re.I)
+
+CREATE_POLICY = re.compile(
+    r"\bcreate\s+policy\s+([a-z_][a-z0-9_]*)\s+on\s+(?:only\s+)?([a-z_][a-z0-9_]*)\b", re.I
+)
+CREATE_INDEX = re.compile(
+    r"\bcreate\s+(unique\s+)?index\s+(?:if\s+not\s+exists\s+)?([a-z_][a-z0-9_]*)\s+"
+    r"on\s+(?:only\s+)?([a-z_][a-z0-9_]*)\b",
+    re.I,
 )
 
 # Типы из нескольких слов: разбирать их как «первое слово» нельзя, иначе
@@ -70,6 +95,34 @@ class Table:
 
 
 @dataclass(frozen=True)
+class Policy:
+    """Политика RLS: чьи строки таблица показывает."""
+
+    name: str
+    table: str
+    body: str
+    line: int
+
+
+@dataclass(frozen=True)
+class RowSecurity:
+    """Одно изменение построчной защиты: enable / force / disable / no force."""
+
+    table: str
+    action: str
+    line: int
+
+
+@dataclass(frozen=True)
+class Index:
+    name: str
+    table: str
+    unique: bool
+    body: str
+    line: int
+
+
+@dataclass(frozen=True)
 class Migration:
     path: Path
     version: int
@@ -77,6 +130,9 @@ class Migration:
     sql: str
     checksum: str
     tables: tuple[Table, ...]
+    policies: tuple[Policy, ...] = ()
+    row_security: tuple[RowSecurity, ...] = ()
+    indexes: tuple[Index, ...] = ()
 
     @property
     def file_name(self) -> str:
@@ -116,6 +172,16 @@ def strip_comments(text: str) -> str:
             out.append("  ")
             index = min(index + 2, size)
             continue
+
+        if symbol == "$":
+            opening = DOLLAR_TAG.match(text, index)
+            if opening:
+                delimiter = opening.group(0)
+                closing = text.find(delimiter, opening.end())
+                end = size if closing < 0 else closing + len(delimiter)
+                out.append("".join("\n" if s == "\n" else " " for s in text[index:end]))
+                index = end
+                continue
 
         if symbol == "'":
             out.append(" ")
@@ -238,14 +304,91 @@ def parse_tables(sql: str, source: str) -> tuple[Table, ...]:
     return tuple(tables)
 
 
-# Разбор понимает create table. Всё, что меняет уже заведённую таблицу, он
-# понимать обязан ДО того, как такая миграция появится: иначе и линтер, и
-# документ схемы начнут тихо врать.
+def _statement_tail(text: str, start: int) -> str:
+    """Хвост оператора от позиции до точки с запятой верхнего уровня."""
+    depth = 0
+    for position in range(start, len(text)):
+        symbol = text[position]
+        if symbol == "(":
+            depth += 1
+        elif symbol == ")":
+            depth -= 1
+        elif symbol == ";" and depth == 0:
+            return text[start:position]
+    return text[start:]
+
+
+def parse_policies(sql: str) -> tuple[Policy, ...]:
+    """Политики RLS, заводимые этим текстом.
+
+    Ищутся в очищенном тексте (иначе `create policy` из комментария сошёл бы за
+    настоящую), а тело берётся из ИСХОДНОГО по тем же смещениям: очистка
+    посимвольная и длину не меняет. Тело нужно целиком, вместе со строковым
+    литералом: имя параметра сессии — это и есть то, что проверяет
+    scripts/check_rls.py.
+    """
+    text = strip_comments(sql)
+    return tuple(
+        Policy(
+            name=match.group(1),
+            table=match.group(2),
+            body=" ".join(_statement_tail(sql, match.end()).split()),
+            line=text[: match.start()].count("\n") + 1,
+        )
+        for match in CREATE_POLICY.finditer(text)
+    )
+
+
+def parse_row_security(sql: str) -> tuple[RowSecurity, ...]:
+    """Включения и выключения построчной защиты."""
+    text = strip_comments(sql)
+    return tuple(
+        RowSecurity(
+            table=match.group(1),
+            action=" ".join(match.group(2).split()).lower(),
+            line=text[: match.start()].count("\n") + 1,
+        )
+        for match in ALTER_ROW_SECURITY.finditer(text)
+    )
+
+
+def parse_indexes(sql: str) -> tuple[Index, ...]:
+    """Индексы, заводимые этим текстом."""
+    text = strip_comments(sql)
+    return tuple(
+        Index(
+            name=match.group(2),
+            table=match.group(3),
+            unique=bool(match.group(1)),
+            body=" ".join(_statement_tail(sql, match.end()).split()),
+            line=text[: match.start()].count("\n") + 1,
+        )
+        for match in CREATE_INDEX.finditer(text)
+    )
+
+
+# Чего разбор не понимает. Конструкцию, меняющую уже заведённую таблицу, он
+# обязан понимать ДО того, как такая миграция появится: иначе и линтер, и
+# документ схемы начнут тихо врать. `alter table` разобран только в форме
+# row level security — всякая другая форма ловится отдельно, ниже.
 UNSUPPORTED = (
-    (re.compile(r"\balter\s+table\b", re.I), "alter table"),
     (re.compile(r"\bdrop\s+table\b", re.I), "drop table"),
     (re.compile(r"\bcreate\s+table\s+[^\s(]+\s+as\b", re.I), "create table as"),
+    (re.compile(r"\b(?:drop|alter)\s+policy\b", re.I), "drop/alter policy"),
+    (re.compile(r"\bdrop\s+index\b", re.I), "drop index"),
+    # Не «пока не умеет», а «не бывает»: миграция применяется одной транзакцией,
+    # а concurrently вне транзакции. Отдельный механизм — отдельное решение.
+    (re.compile(r"\bcreate\s+(?:unique\s+)?index\s+concurrently\b", re.I),
+     "create index concurrently"),
 )
+
+
+def _teach_me(source: str, line: int, name: str) -> str:
+    return (
+        f"{source}:{line}: «{name}» разбор миграций пока не умеет. Допишите "
+        f"scripts/migration_model.py вместе с первой такой миграцией — "
+        f"иначе линтер и docs/architecture/schema.md начнут врать"
+    )
 
 
 def unsupported(sql: str, source: str) -> list[str]:
@@ -253,15 +396,22 @@ def unsupported(sql: str, source: str) -> list[str]:
     text = strip_comments(sql)
     found = []
     for pattern, name in UNSUPPORTED:
-        match = pattern.search(text)
-        if match:
-            line = text[: match.start()].count("\n") + 1
-            found.append(
-                f"{source}:{line}: «{name}» разбор миграций пока не умеет. Допишите "
-                f"scripts/migration_model.py вместе с первой такой миграцией — "
-                f"иначе линтер и docs/architecture/schema.md начнут врать"
+        for match in pattern.finditer(text):
+            found.append(_teach_me(source, text[: match.start()].count("\n") + 1, name))
+
+    understood = {match.start() for match in ALTER_ROW_SECURITY.finditer(text)}
+    for match in ALTER_TABLE_ANY.finditer(text):
+        if match.start() in understood:
+            continue
+        found.append(
+            _teach_me(
+                source,
+                text[: match.start()].count("\n") + 1,
+                "alter table в любой форме, кроме row level security",
             )
-    return found
+        )
+
+    return sorted(found, key=lambda line: int(line.split(":")[1]))
 
 
 def load(directory: Path) -> list[Migration]:
@@ -297,6 +447,9 @@ def load(directory: Path) -> list[Migration]:
                 sql=sql,
                 checksum=checksum_of(path),
                 tables=parse_tables(sql, path.name),
+                policies=parse_policies(sql),
+                row_security=parse_row_security(sql),
+                indexes=parse_indexes(sql),
             )
         )
 

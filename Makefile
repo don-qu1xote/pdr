@@ -20,13 +20,15 @@ PG_ENV = set -a; . ./$(ENV_FILE); set +a; \
 	       PGPASSWORD=$$POSTGRES_PASSWORD PGDATABASE=$$POSTGRES_DB;
 
 .DEFAULT_GOAL := help
-.PHONY: help up down test fmt logs migrate migrate-verify migrate-status schema-doc ps check-env
+.PHONY: help up down test test-isolation fmt logs migrate migrate-verify migrate-status \
+        schema-doc ps check-env
 
 help:
 	@echo "Цели:"
 	@echo "  make up          поднять всё с нуля: база, заглушка ml, миграции"
 	@echo "  make down        погасить (make down VOLUMES=1 — вместе с томами)"
 	@echo "  make test        собрать, прогнать тесты и все проверки границ"
+	@echo "  make test-isolation   проверить изоляцию арендаторов на живой базе"
 	@echo "  make fmt         привести C++ к .clang-format"
 	@echo "  make logs        смотреть логи (make logs SERVICE=postgres)"
 	@echo "  make migrate     применить миграции из $(MIGRATIONS)"
@@ -77,6 +79,12 @@ migrate-verify: check-env
 migrate-status: check-env
 	@$(PG_ENV) python3 scripts/migrate.py status --dir $(MIGRATIONS)
 
+# Изоляция арендаторов на живой базе: главная проверка всей схемы. Требует
+# поднятой установки (make up) — в отличие от make test, которому база не нужна.
+# Тест пишет в базу профиля и убирает за собой.
+test-isolation: check-env
+	@$(PG_ENV) python3 scripts/check_isolation.py
+
 # Документ схемы не пишется руками — он собирается из миграций.
 schema-doc:
 	python3 scripts/gen_schema_doc.py
@@ -98,6 +106,8 @@ test:
 	python3 scripts/check_table_owners.py
 	python3 scripts/check_migrations.py --selftest
 	python3 scripts/check_migrations.py
+	python3 scripts/check_rls.py --selftest
+	python3 scripts/check_rls.py
 	python3 scripts/gen_schema_doc.py --check
 	python3 scripts/verify_env_parity.py --selftest
 	python3 scripts/verify_env_parity.py

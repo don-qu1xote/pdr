@@ -30,9 +30,38 @@ HEADER = """# Схема базы
 Собрано из миграций: {count}. Таблиц: {tables}.
 
 Правила, которым подчиняется каждая колонка, — в
-[migrations.md](migrations.md). Первой схемы предметной области здесь пока нет:
-её заводит `PDR-DB-02`.
+[migrations.md](migrations.md). Как устроена изоляция арендаторов и почему у
+каждой доменной таблицы обязана быть политика — в [tenancy.md](tenancy.md);
+отсутствие политики роняет сборку (`scripts/check_rls.py`).
 """
+
+
+def _isolation(table: str, migrations: Sequence[model.Migration]) -> list[str]:
+    """Строки про изоляцию: что включено и какие политики лежат на таблице."""
+    if table in model.META_TABLES:
+        return [f"\nНе доменная таблица: {model.META_TABLES[table]}. Арендатора и политики "
+                f"у неё нет.\n"]
+
+    actions = [
+        change.action
+        for migration in migrations
+        for change in migration.row_security
+        if change.table == table
+    ]
+    policies = [
+        policy for migration in migrations for policy in migration.policies if policy.table == table
+    ]
+
+    state = "включена" if "enable" in actions else "НЕ ВКЛЮЧЕНА"
+    if "force" in actions:
+        state += " и форсирована"
+    lines = [f"\nПострочная защита {state}.\n"]
+
+    if policies:
+        lines.append("\nПолитики:\n\n")
+        for policy in policies:
+            lines.append(f"* `{policy.name}` — `{policy.body}`\n")
+    return lines
 
 
 def render(migrations: Sequence[model.Migration]) -> str:
@@ -58,6 +87,17 @@ def render(migrations: Sequence[model.Migration]) -> str:
             lines.append("\nОграничения:\n\n")
             for constraint in table.constraints:
                 lines.append(f"* `{constraint}`\n")
+
+        indexes = [
+            index for source in migrations for index in source.indexes if index.table == table.name
+        ]
+        if indexes:
+            lines.append("\nИндексы:\n\n")
+            for index in indexes:
+                kind = "уникальный" if index.unique else "обычный"
+                lines.append(f"* `{index.name}` — {kind}, `{index.body}`\n")
+
+        lines.extend(_isolation(table.name, migrations))
 
     lines.append("\n## Порядок применения\n\n")
     for migration in migrations:
