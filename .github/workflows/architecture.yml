@@ -17,6 +17,16 @@ jobs:
       - name: Слои и контексты
         run: python3 scripts/check_layers.py
 
+      # Штатное вместо самодельного (ADR-0013): свой LRU, свой ограничитель
+      # скорости, свой размыкатель цепи и периодика на detached-потоках роняют
+      # сборку. Сначала — проверка самой проверки: она обязана падать на нарочно
+      # добавленном классе MyCache.
+      - name: Проверка самой проверки самоделок (отрицательный случай)
+        run: python3 scripts/check_handmade.py --selftest
+
+      - name: Штатное вместо самодельного
+        run: python3 scripts/check_handmade.py
+
       - name: Проверка самой сверки владения (отрицательный случай)
         run: python3 scripts/check_table_owners.py --selftest
 
