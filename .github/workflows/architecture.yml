@@ -46,6 +46,15 @@ jobs:
       - name: Долги первого сервиса собраны в одном списке
         run: python3 scripts/check_debts.py
 
+      # Секреты живут в файле secdist с правами 0600, а окружение несёт только
+      # путь (PDR-SEC-06). Секрет из окружения в коде, environment-secrets-key в
+      # конфиге, приватный ключ или настоящий пароль в истории роняют сборку.
+      - name: Проверка самой проверки секретов (отрицательный случай)
+        run: python3 scripts/check_secrets.py --selftest
+
+      - name: Секреты не в окружении и не в истории
+        run: python3 scripts/check_secrets.py
+
       - name: Проверка самой сверки владения (отрицательный случай)
         run: python3 scripts/check_table_owners.py --selftest
 
