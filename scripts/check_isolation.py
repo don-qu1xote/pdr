@@ -97,6 +97,14 @@ class Database:
             raise DatabaseError(result.stderr.strip())
         return [line.split("|") for line in result.stdout.splitlines() if line.strip()]
 
+    def app_text(self, sql: str, tenant: str | None = None) -> str:
+        """Ответ как есть, без разбора на колонки: план в JSON — одно значение
+        в несколько строк, и разбирать его по разделителю нечем."""
+        result = self._run(self._as_app(sql, tenant))
+        if result.returncode != 0:
+            raise DatabaseError(result.stderr.strip())
+        return result.stdout
+
     def app_refusal(self, sql: str, tenant: str | None = None) -> str:
         """Код отказа SQLSTATE. Успешный запрос здесь — сам по себе провал."""
         result = self._run(self._as_app(sql, tenant))

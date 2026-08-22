@@ -20,8 +20,8 @@ PG_ENV = set -a; . ./$(ENV_FILE); set +a; \
 	       PGPASSWORD=$$POSTGRES_PASSWORD PGDATABASE=$$POSTGRES_DB;
 
 .DEFAULT_GOAL := help
-.PHONY: help up down test test-unit test-isolation test-jobs fmt fmt-check logs migrate migrate-verify \
-        migrate-status schema-doc ps check-env
+.PHONY: help up down test test-unit test-isolation test-jobs test-plans fmt fmt-check hooks \
+        logs migrate migrate-verify migrate-status schema-doc ps check-env
 
 help:
 	@echo "Цели:"
@@ -31,8 +31,10 @@ help:
 	@echo "  make test-unit   только unit-прогон: без базы, без докера, за миллисекунды"
 	@echo "  make test-isolation   проверить изоляцию арендаторов на живой базе"
 	@echo "  make test-jobs   проверить одиночные задания на живой базе"
+	@echo "  make test-plans  снять планы горячих запросов на живой базе"
 	@echo "  make fmt         привести C++ к .clang-format"
-	@echo "  make fmt-check   проверить формат, ничего не меняя (та же цель в CI)"
+	@echo "  make fmt-check   проверить формат, ничего не меняя (та же цель в CI и в хуке)"
+	@echo "  make hooks       включить githooks/ (pre-commit проверяет формат)"
 	@echo "  make logs        смотреть логи (make logs SERVICE=postgres)"
 	@echo "  make migrate     применить миграции из $(MIGRATIONS)"
 	@echo "  make migrate-verify   сверить суммы, ничего не применяя"
@@ -95,6 +97,13 @@ test-isolation: check-env
 test-jobs: check-env
 	@$(PG_ENV) python3 scripts/check_jobs.py
 
+# Планы горячих запросов на живой базе. Два шага, и первый обязателен: на
+# пустой базе любой план — перебор, и он правильный. Засев повторяем, поэтому
+# цель можно звать сколько угодно раз подряд.
+test-plans: check-env
+	@$(PG_ENV) psql --no-psqlrc -v ON_ERROR_STOP=1 -qtA -f db/explain/seed.sql >/dev/null
+	@$(PG_ENV) python3 scripts/check_plans.py
+
 # Документ схемы не пишется руками — он собирается из миграций.
 schema-doc:
 	python3 scripts/gen_schema_doc.py
@@ -130,6 +139,8 @@ test:
 	python3 scripts/check_secrets.py --selftest
 	python3 scripts/check_secrets.py
 	python3 scripts/detect_changes.py --selftest
+	python3 scripts/check_format.py --selftest
+	python3 scripts/check_plans.py --selftest
 	python3 scripts/gen_schema_doc.py --check
 	python3 scripts/verify_env_parity.py --selftest
 	python3 scripts/verify_env_parity.py
@@ -143,13 +154,17 @@ test-unit:
 	ctest --test-dir $(BUILD_DIR) --output-on-failure -R '^unit$$'
 
 fmt:
-	@command -v clang-format >/dev/null || { echo "нет clang-format"; exit 1; }
-	clang-format -i $$(find libs services -name '*.hpp' -o -name '*.cpp' 2>/dev/null)
-	@echo "формат приведён к .clang-format"
+	@python3 scripts/check_format.py --fix
 
-# Ту же цель зовёт CI — не две похожие команды, а буквально одна. Иначе «у меня
-# чисто» и «в CI красно» расходятся, и виноват оказывается CI.
+# Ту же цель зовут и CI (джоба lint), и хук githooks/pre-commit — не три похожие
+# команды, а буквально одна. Проверяется ВЕРСИЯ форматтера, а не его наличие:
+# clang-format не байт-стабилен между версиями, и чужая версия отформатирует
+# «чисто», а CI покраснеет. Версия закреплена в .clang-format-version.
 fmt-check:
-	@command -v clang-format >/dev/null || { echo "нет clang-format"; exit 1; }
-	clang-format --dry-run --Werror $$(find libs services -name '*.hpp' -o -name '*.cpp' 2>/dev/null)
-	@echo "формат совпадает с .clang-format"
+	@python3 scripts/check_format.py
+
+# Хуки лежат в githooks/ и включаются одной командой: копировать их в .git/hooks
+# нельзя — копия перестаёт обновляться вместе с репозиторием в тот же день.
+hooks:
+	git config core.hooksPath githooks
+	@echo "хуки включены: githooks/. Обойти в исключительном случае — git commit --no-verify"

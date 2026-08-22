@@ -6,7 +6,7 @@
 #
 #   ярус 0  что затронуто и сверка профилей — без зависимостей, стартуют сразу
 #   ярус 1  ВСЕ проверки, unit-прогон и сборка домена — не ждут ничего
-#   ярус 2  contract и интеграционные — им нужна база или собранные цели
+#   ярус 2  contract, интеграционные и планы — им нужна база или собранные цели
 #   ярус 3  тяжёлое и редкое: сборка адаптеров в контейнере с userver. Только на
 #           push, не на каждый пуш ветки
 #
@@ -174,8 +174,19 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      # Та же цель Makefile, что зовёт человек у себя: не две похожие команды, а
-      # буквально одна. Иначе «у меня чисто» и «в CI красно» расходятся.
+      # Версия форматтера берётся из .clang-format-version — из того же файла, по
+      # которому её проверит make fmt-check. Ставить «какой есть в образе»
+      # нельзя: раннер обновится, версия уедет, и красным станет чужой код.
+      - name: Форматтер закреплённой версии
+        run: |
+          set -eu
+          version="$(cat .clang-format-version)"
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq "clang-format-$version"
+
+      # Та же цель Makefile, что зовёт человек у себя и хук githooks/pre-commit:
+      # не три похожие команды, а буквально одна. Иначе «у меня чисто» и «в CI
+      # красно» расходятся, и виноватым выглядит CI.
       - name: clang-format
         run: make fmt-check
 
@@ -305,6 +316,31 @@ jobs:
       # тот же след, — это утверждение, а не проверка.
       - name: Одиночные задания на живой базе
         run: make test-jobs ENV_PROFILE=ci
+
+      - name: Погасить вместе с томами
+        if: always()
+        run: make down ENV_PROFILE=ci VOLUMES=1
+
+  plans:
+    name: "Живая база: планы горячих запросов"
+    runs-on: ubuntu-latest
+    needs: [changes, parity]
+    if: needs.changes.outputs.db == 'true'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Профиль ci
+        run: cp deploy/env/ci.env.example deploy/env/ci.env
+
+      - name: Поднять и применить миграции
+        run: make up ENV_PROFILE=ci
+
+      # Потерянный индекс не даёт ни ошибки, ни красного теста — только время
+      # ответа, и только там, где данных много, то есть не у разработчика.
+      # Цель сама засевает объём: на пустой базе перебор — правильный план, и
+      # проверять было бы нечего (docs/architecture/plans.md).
+      - name: Планы горячих запросов
+        run: make test-plans ENV_PROFILE=ci
 
       - name: Погасить вместе с томами
         if: always()

@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path, PurePosixPath
@@ -39,9 +40,10 @@ from typing import Iterable, Sequence
 
 # Область → по каким путям она затронута. Порядок важен только для чтения.
 AREAS: dict[str, tuple[str, ...]] = {
-    "cpp": ("libs/", "services/", "CMakeLists.txt", ".clang-format", ".clang-tidy"),
+    "cpp": ("libs/", "services/", "CMakeLists.txt", ".clang-format", ".clang-tidy",
+            ".clang-format-version"),
     "python": ("scripts/",),
-    "db": ("db/migrations/", "scripts/migrate.py", "scripts/migration_model.py"),
+    "db": ("db/", "scripts/migrate.py", "scripts/migration_model.py", "scripts/check_plans.py"),
     "deploy": ("deploy/", "Makefile"),
     "configs": ("configs/",),
     "docs": ("docs/", "README.md", "CONTRIBUTING.md"),
@@ -49,6 +51,9 @@ AREAS: dict[str, tuple[str, ...]] = {
 
 # Правка самого CI гоняется целиком: иначе выборочность проверяет сама себя.
 CI_PATHS = (".github/", "scripts/detect_changes.py")
+
+# Флаг, на который смотрит условие джобы.
+FLAG = re.compile(r"needs\.changes\.outputs\.([a-z_]+)")
 
 
 def changed_files(base: str | None) -> tuple[list[str], bool]:
@@ -115,6 +120,12 @@ SELFTEST_CASES = (
     (["docs/testing.md", "CONTRIBUTING.md"], False, {"cpp": False, "docs_only": True}),
     (["libs/pdr-core/src/core/money.cpp"], False, {"cpp": True, "docs_only": False}),
     (["db/migrations/V004__x.sql"], False, {"db": True, "cpp": False, "docs_only": False}),
+    # Горячие запросы и засев к ним — тоже схема: их правка обязана снять планы
+    # заново, иначе список расходится с индексами молча.
+    (["db/explain/hot_queries.sql"], False, {"db": True, "cpp": False, "docs_only": False}),
+    # Смена закреплённой версии форматтера — это про C++: цель fmt-check обязана
+    # прогнаться на новой версии до того, как ею отформатируют дерево.
+    ([".clang-format-version"], False, {"cpp": True, "docs_only": False}),
     (["deploy/docker-compose.yml"], False, {"deploy": True, "cpp": False}),
     (["configs/dynamic/registry.yaml"], False, {"configs": True, "cpp": False}),
     # Кнопка «прогнать всё»: один флаг включает все области.
@@ -148,6 +159,8 @@ def selftest() -> int:
     # ради которой форсирование живёт на выходе скрипта.
     root = Path(__file__).resolve().parent.parent
     workflows = list((root / ".github" / "workflows").glob("*.yml"))
+    known = set(AREAS) | {"docs_only", "forced"}
+
     for path in workflows:
         text = path.read_text(encoding="utf-8")
         for number, line in enumerate(text.splitlines(), start=1):
@@ -157,8 +170,28 @@ def selftest() -> int:
                       f"в detect_changes.py, а не в условие джобы", file=sys.stderr)
                 return 1
 
+            # Опечатка во флаге — это не ошибка, а вечно ложное условие: джоба
+            # молча не запускается ни разу, и заметить это нечем.
+            for name in FLAG.findall(line):
+                if name not in known:
+                    print(f"самопроверка: {path.name}:{number}: джоба смотрит на флаг "
+                          f"«{name}», которого скрипт не выдаёт. Условие всегда ложно, "
+                          f"и джоба не запустится ни разу", file=sys.stderr)
+                    return 1
+
+        # Флаг, посчитанный скриптом и не проброшенный в outputs, ведёт себя так
+        # же: джоба, которая на него посмотрит, не запустится никогда.
+        if "detect" in text:
+            for area in known:
+                if f"{area}: ${{{{ steps.detect.outputs.{area} }}}}" not in text:
+                    print(f"самопроверка: {path.name}: флаг «{area}» не проброшен в "
+                          f"outputs джобы changes — джоба, посмотревшая на него, "
+                          f"не запустится никогда", file=sys.stderr)
+                    return 1
+
     print(f"Самопроверка пройдена: {len(SELFTEST_CASES)} случаев выборочности, неизвестность "
-          f"трактуется как «всё», условий «или форсировано» в джобах нет.")
+          f"трактуется как «всё», условий «или форсировано» в джобах нет, все флаги джоб "
+          f"скрипт выдаёт и workflow пробрасывает.")
     return 0
 
 
