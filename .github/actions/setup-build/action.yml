@@ -1,0 +1,52 @@
+# Общая подготовка окружения сборки.
+#
+# Составное действие, а не копипаста в каждой джобе: следующий workflow (ночной
+# прогон, EXPLAIN из PDR-CI-03, сканирование образа) подключит эту же строку и
+# получит то же окружение. Скопированная подготовка расходится молча — сначала
+# версией компилятора, потом ключом кэша.
+#
+# Здесь НЕТ ни сборки, ни тестов: действие только готовит окружение. Что именно
+# собирать, решает джоба.
+
+name: Подготовка сборки
+description: Python, инструменты сборки и кэш ccache — одинаково во всех джобах
+
+inputs:
+  cache-key:
+    description: Приставка ключа кэша ccache; у разных джоб она разная
+    required: false
+    default: default
+
+runs:
+  using: composite
+  steps:
+    # Версия компилятора и cmake — та, что в образе раннера. Прибивать её здесь
+    # нельзя: сборку в контейнере с userver готовит другой шаг, у него свой
+    # компилятор, и два источника правды разъехались бы.
+    - name: Инструменты сборки
+      shell: bash
+      run: |
+        set -eu
+        sudo apt-get update -qq
+        sudo apt-get install -y -qq ccache cmake ninja-build
+        ccache --max-size=500M
+        ccache --zero-stats
+
+    # Кэш ccache отдельным ключом на джобу: сборка домена и сборка адаптеров
+    # компилируют разное, и общий кэш вытеснял бы сам себя.
+    - name: Кэш ccache
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+      with:
+        path: ~/.cache/ccache
+        key: ccache-${{ inputs.cache-key }}-${{ github.sha }}
+        restore-keys: |
+          ccache-${{ inputs.cache-key }}-
+
+    - name: Конфигурация CMake
+      shell: bash
+      run: |
+        set -eu
+        cmake -S . -B build -G Ninja \
+          -DCMAKE_BUILD_TYPE=Debug \
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache \
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache

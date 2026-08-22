@@ -1,0 +1,331 @@
+# CI ПДР: ярусами, дешёвое раньше дорогого.
+#
+# Порядок ярусов — не украшение, а главное решение этого файла. Линтер, который
+# ждёт компиляции, — самая частая и самая дорогая ошибка в устройстве CI: обратная
+# связь по опечатке приезжает через десять минут вместо тридцати секунд.
+#
+#   ярус 0  что затронуто и сверка профилей — без зависимостей, стартуют сразу
+#   ярус 1  ВСЕ проверки, unit-прогон и сборка домена — не ждут ничего
+#   ярус 2  contract и интеграционные — им нужна база или собранные цели
+#   ярус 3  тяжёлое и редкое: сборка адаптеров в контейнере с userver. Только на
+#           push, не на каждый пуш ветки
+#
+# Правило зависимостей: джоба зависит РОВНО от того, что ей нужно, а не от «всей
+# сборки». Тест биллинга не ждёт сборку видеосервиса.
+#
+# ОДНА ТОЧКА ФОРСИРОВАНИЯ. Условия «или force_all» в джобах нет и не будет:
+# scripts/detect_changes.py подмешивает форсирование в флаг области, поэтому
+# джоба смотрит только на свой флаг. Следующая новая джоба не может «забыть про
+# флаг» — забывать нечего. Это проверяется самопроверкой скрипта.
+#
+# Действия запинены по коммит-SHA: плавающий тег — это чужой код, который
+# меняется без нашего ведома.
+
+name: ci
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      full:
+        description: Прогнать весь CI, игнорируя выборочность по путям
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  # ЯРУС 0 ------------------------------------------------------------------
+  changes:
+    name: Что затронуто
+    runs-on: ubuntu-latest
+    outputs:
+      cpp: ${{ steps.detect.outputs.cpp }}
+      python: ${{ steps.detect.outputs.python }}
+      db: ${{ steps.detect.outputs.db }}
+      deploy: ${{ steps.detect.outputs.deploy }}
+      configs: ${{ steps.detect.outputs.configs }}
+      docs: ${{ steps.detect.outputs.docs }}
+      docs_only: ${{ steps.detect.outputs.docs_only }}
+      forced: ${{ steps.detect.outputs.forced }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Проверка самого скрипта выборочности (отрицательный случай)
+        run: python3 scripts/detect_changes.py --selftest
+
+      - name: Что затронуто изменениями
+        id: detect
+        run: |
+          set -eu
+          base='${{ github.event.pull_request.base.sha || github.event.before }}'
+          if [ -z "$base" ] || [ "$base" = '0000000000000000000000000000000000000000' ]; then
+            base=''
+          fi
+          python3 scripts/detect_changes.py \
+            ${base:+--base "$base"} \
+            ${{ github.event.inputs.full == 'true' && '--force' || '' }}
+
+  parity:
+    name: Профили окружения не разъехались
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Проверка самой сверки (отрицательный случай)
+        run: python3 scripts/verify_env_parity.py --selftest
+
+      - name: Сверка профилей
+        run: python3 scripts/verify_env_parity.py
+
+  # ЯРУС 1 ------------------------------------------------------------------
+  guards:
+    name: Правила, проверяемые машиной
+    runs-on: ubuntu-latest
+    needs: changes
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      # Каждая проверка сначала проверяет себя на нарочно испорченном случае:
+      # проверка, которая ничего не ловит, зелёная так же, как исправный код.
+      - name: Слои и контексты
+        run: |
+          set -eu
+          python3 scripts/check_layers.py --selftest
+          python3 scripts/check_layers.py
+
+      - name: Владение таблицами
+        run: |
+          set -eu
+          python3 scripts/check_table_owners.py --selftest
+          python3 scripts/check_table_owners.py
+
+      - name: Штатное вместо самодельного
+        run: |
+          set -eu
+          python3 scripts/check_handmade.py --selftest
+          python3 scripts/check_handmade.py
+
+      - name: Реестр динамических значений
+        run: |
+          set -eu
+          python3 scripts/check_dynamic_configs.py --selftest
+          python3 scripts/check_dynamic_configs.py
+
+      - name: Секреты не в окружении и не в истории
+        run: |
+          set -eu
+          python3 scripts/check_secrets.py --selftest
+          python3 scripts/check_secrets.py
+
+      - name: Долги первого сервиса собраны в одном списке
+        run: |
+          set -eu
+          python3 scripts/check_debts.py --selftest
+          python3 scripts/check_debts.py
+
+      - name: Правила тестового контура
+        run: |
+          set -eu
+          python3 scripts/check_testsuite.py --selftest
+          python3 scripts/check_testsuite.py
+
+  migrations:
+    name: Миграции, изоляция и документ схемы
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.db == 'true'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Правила колонок
+        run: |
+          set -eu
+          python3 scripts/check_migrations.py --selftest
+          python3 scripts/check_migrations.py
+
+      # Доменная таблица без RLS роняет сборку здесь и нигде больше.
+      - name: Изоляция арендаторов описана в схеме
+        run: |
+          set -eu
+          python3 scripts/check_rls.py --selftest
+          python3 scripts/check_rls.py
+
+      # Документ схемы собирается из миграций; расхождение означает, что его
+      # правили руками или забыли пересобрать.
+      - name: Документ схемы свежий
+        run: python3 scripts/gen_schema_doc.py --check
+
+  lint:
+    name: Формат кода
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.cpp == 'true'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      # Та же цель Makefile, что зовёт человек у себя: не две похожие команды, а
+      # буквально одна. Иначе «у меня чисто» и «в CI красно» расходятся.
+      - name: clang-format
+        run: make fmt-check
+
+      # clang-tidy сюда придёт вместе со своим .clang-tidy: без файла настроек он
+      # либо молчит, либо заваливает шумом из чужих заголовков, и первое хуже
+      # второго — проверка, которая ничего не проверяет, выглядит как проверка.
+
+  unit:
+    name: Unit — домен и сценарии на фейках
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.cpp == 'true'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: ./.github/actions/setup-build
+        with:
+          cache-key: unit
+
+      # Ни Postgres, ни докера: если unit-прогону понадобилась база, протекли
+      # слои. Конфигурация CMake это и проверяет — цель pdr_unit_tests не
+      # линкуется с адаптерами.
+      - name: Сборка и прогон
+        run: |
+          set -eu
+          cmake --build build --target pdr_unit_tests --parallel
+          ctest --test-dir build --output-on-failure -R '^unit$'
+
+      - name: Цели, которые ОБЯЗАНЫ не собираться
+        run: ctest --test-dir build --output-on-failure -R compile_fail
+
+  contract:
+    name: Contract — фейк и настоящий адаптер
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.cpp == 'true'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: ./.github/actions/setup-build
+        with:
+          cache-key: contract
+
+      - name: Один набор на обеих реализациях
+        run: |
+          set -eu
+          cmake --build build --target pdr_contract_tests pdr_broken_fake_contract_test --parallel
+          ctest --test-dir build --output-on-failure -R '^contract'
+
+  domain-without-userver:
+    name: Домен собирается без userver
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.cpp == 'true'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      # userver в этом окружении не установлен намеренно: если pdr_core или
+      # pdr_application от него зависят, шаг не соберётся. Тесты выключены —
+      # шаг про домен, а не про оснастку.
+      - name: Конфигурация без тестов
+        run: cmake -S . -B build-domain -DCMAKE_BUILD_TYPE=Debug -DPDR_BUILD_TESTS=OFF
+
+      - name: Сборка pdr_core и pdr_infrastructure
+        run: cmake --build build-domain --target pdr_core pdr_infrastructure --parallel
+
+  coverage:
+    name: Покрытие unit-прогона
+    runs-on: ubuntu-latest
+    needs: changes
+    if: needs.changes.outputs.cpp == 'true'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Инструменты
+        run: |
+          set -eu
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq cmake ninja-build gcovr
+
+      # Порог НЕ жёсткий и джобу не роняет: 70% — это право резать код, а не
+      # самоцель (README). Число печатается в лог, включение порога — отдельной
+      # задачей, когда появится, чем его закрывать.
+      - name: Собрать с покрытием и посчитать
+        run: |
+          set -eu
+          cmake -S . -B build-coverage -G Ninja -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_FLAGS='--coverage -O0' -DCMAKE_EXE_LINKER_FLAGS='--coverage'
+          cmake --build build-coverage --target pdr_unit_tests --parallel
+          ctest --test-dir build-coverage --output-on-failure -R '^unit$'
+          gcovr --root . --filter 'libs/.*/src/' --exclude '.*/tests/.*' \
+            --print-summary --txt-metric line || true
+
+  # ЯРУС 2 ------------------------------------------------------------------
+  integration:
+    name: "Живая база: изоляция и одиночные задания"
+    runs-on: ubuntu-latest
+    needs: [changes, parity]
+    if: needs.changes.outputs.db == 'true' || needs.changes.outputs.deploy == 'true'
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      # Тем же единственным compose, что и на машине разработчика, — профилем ci.
+      - name: Профиль ci
+        run: cp deploy/env/ci.env.example deploy/env/ci.env
+
+      - name: Поднять и применить миграции
+        run: make up ENV_PROFILE=ci
+
+      # Второй прогон обязан ничего не применять: повтор идемпотентен.
+      - name: Повтор ничего не меняет
+        run: |
+          set -eu
+          make migrate ENV_PROFILE=ci | tee /tmp/second-run.log
+          grep -q "Применять нечего" /tmp/second-run.log
+
+      - name: Сверка сумм
+        run: make migrate-verify ENV_PROFILE=ci
+
+      # Политика, написанная правильно, и политика, работающая правильно, —
+      # разные утверждения. Между ними помещается роль-суперпользователь,
+      # снятая руками защита и опечатка в имени параметра сессии.
+      - name: Изоляция арендаторов на живой базе
+        run: make test-isolation ENV_PROFILE=ci
+
+      # «Одновременно» бывает только в базе: на фейках второй воркер, ставящий
+      # тот же след, — это утверждение, а не проверка.
+      - name: Одиночные задания на живой базе
+        run: make test-jobs ENV_PROFILE=ci
+
+      - name: Погасить вместе с томами
+        if: always()
+        run: make down ENV_PROFILE=ci VOLUMES=1
+
+  # ЯРУС 3 ------------------------------------------------------------------
+  adapters-with-userver:
+    name: Адаптеры собираются с настоящим userver
+    runs-on: ubuntu-latest
+    needs: [changes, unit]
+    # Только на push и только когда менялся C++: образ с userver весит гигабайты,
+    # и на каждый пуш ветки его тянуть незачем.
+    if: github.event_name == 'push' && needs.changes.outputs.cpp == 'true'
+    container:
+      image: ghcr.io/userver-framework/ubuntu-22.04-userver:latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      # ПЕРВАЯ настоящая проверка слоя адаптеров: без userver цели
+      # pdr_postgres, pdr_jobs_infrastructure и pdr_billing_infrastructure
+      # пропускаются конфигурацией, то есть не компилируются вовсе
+      # (docs/architecture/first-service.md).
+      - name: Конфигурация с userver
+        run: cmake -S . -B build-userver -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Сборка адаптеров
+        run: |
+          set -eu
+          cmake --build build-userver --target pdr_postgres pdr_jobs_infrastructure \
+            pdr_billing_infrastructure --parallel

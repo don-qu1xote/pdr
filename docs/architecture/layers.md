@@ -74,8 +74,9 @@ flowchart RL
   `PostgreSQL`. Прилинковать userver к домену не «не принято» — это не
   собирается.
 
-Оба шага гоняются в `.github/workflows/architecture.yml`, там же `pdr_core` и
-`pdr_application` собираются в окружении, где userver вообще нет.
+Оба шага гоняются в `.github/workflows/ci.yml` (ярус 1, джобы `guards` и
+`domain-without-userver`): там `pdr_core` и `pdr_application` собираются в
+окружении, где userver вообще нет.
 
 ## Почему так строго
 

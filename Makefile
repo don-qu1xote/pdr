@@ -20,7 +20,7 @@ PG_ENV = set -a; . ./$(ENV_FILE); set +a; \
 	       PGPASSWORD=$$POSTGRES_PASSWORD PGDATABASE=$$POSTGRES_DB;
 
 .DEFAULT_GOAL := help
-.PHONY: help up down test test-unit test-isolation test-jobs fmt logs migrate migrate-verify \
+.PHONY: help up down test test-unit test-isolation test-jobs fmt fmt-check logs migrate migrate-verify \
         migrate-status schema-doc ps check-env
 
 help:
@@ -32,6 +32,7 @@ help:
 	@echo "  make test-isolation   проверить изоляцию арендаторов на живой базе"
 	@echo "  make test-jobs   проверить одиночные задания на живой базе"
 	@echo "  make fmt         привести C++ к .clang-format"
+	@echo "  make fmt-check   проверить формат, ничего не меняя (та же цель в CI)"
 	@echo "  make logs        смотреть логи (make logs SERVICE=postgres)"
 	@echo "  make migrate     применить миграции из $(MIGRATIONS)"
 	@echo "  make migrate-verify   сверить суммы, ничего не применяя"
@@ -128,6 +129,7 @@ test:
 	python3 scripts/check_debts.py
 	python3 scripts/check_secrets.py --selftest
 	python3 scripts/check_secrets.py
+	python3 scripts/detect_changes.py --selftest
 	python3 scripts/gen_schema_doc.py --check
 	python3 scripts/verify_env_parity.py --selftest
 	python3 scripts/verify_env_parity.py
@@ -142,5 +144,12 @@ test-unit:
 
 fmt:
 	@command -v clang-format >/dev/null || { echo "нет clang-format"; exit 1; }
-	clang-format -i $$(find libs -name '*.hpp' -o -name '*.cpp')
+	clang-format -i $$(find libs services -name '*.hpp' -o -name '*.cpp' 2>/dev/null)
 	@echo "формат приведён к .clang-format"
+
+# Ту же цель зовёт CI — не две похожие команды, а буквально одна. Иначе «у меня
+# чисто» и «в CI красно» расходятся, и виноват оказывается CI.
+fmt-check:
+	@command -v clang-format >/dev/null || { echo "нет clang-format"; exit 1; }
+	clang-format --dry-run --Werror $$(find libs services -name '*.hpp' -o -name '*.cpp' 2>/dev/null)
+	@echo "формат совпадает с .clang-format"
