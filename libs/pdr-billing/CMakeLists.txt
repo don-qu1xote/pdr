@@ -19,7 +19,6 @@ target_link_libraries(pdr_billing PUBLIC pdr_core PRIVATE pdr_application)
 
 # Адаптеры к Postgres собираются только там, где есть userver. Без него
 # контекст остаётся собираемым и проверяемым целиком, кроме этого слоя.
-find_package(userver QUIET COMPONENTS core postgresql)
 if(userver_FOUND)
     add_library(pdr_billing_infrastructure STATIC
         src/billing/infrastructure/postgres_tariff_repository.cpp
@@ -28,8 +27,6 @@ if(userver_FOUND)
     target_include_directories(pdr_billing_infrastructure
                                PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_link_libraries(pdr_billing_infrastructure PUBLIC pdr_billing userver::postgresql)
-else()
-    message(STATUS "pdr: userver не найден, цель pdr_billing_infrastructure пропущена")
 endif()
 
 if(PDR_BUILD_TESTS)

@@ -105,6 +105,24 @@ function(pdr_unit_test_libraries)
     set_property(GLOBAL APPEND PROPERTY PDR_UNIT_TEST_LIBRARIES ${ARGN})
 endfunction()
 
+# userver ищется РОВНО ОДИН РАЗ и здесь.
+#
+# Это не стиль, а требование: импортированные цели, которые создаёт
+# find_package, видны только в своём каталоге и ниже, а признаки найденности
+# зависимостей (Boost_FOUND, Threads_FOUND) кэшируются глобально. Второй вызов в
+# другом каталоге пропускает find_dependency как «уже найдено», и ссылки вида
+# Boost::stacktrace_backtrace в интерфейсе userver::core оказываются битыми —
+# сборка падает на этапе генерации, а не конфигурации, и сообщение указывает на
+# чужой файл. Проверено в контейнере с настоящим userver.
+#
+# Модули не ищут userver сами: они смотрят на userver_FOUND.
+find_package(userver QUIET COMPONENTS core postgresql)
+if(userver_FOUND)
+    message(STATUS "pdr: userver найден, слой адаптеров собирается")
+else()
+    message(STATUS "pdr: userver не найден, цели адаптеров пропущены")
+endif()
+
 # Подкаталог участвует в сборке, как только в нём появляется свой CMakeLists.txt.
 # Пока их нет, конфигурация проходит и не собирает ничего.
 function(pdr_add_subprojects root)

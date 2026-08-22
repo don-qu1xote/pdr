@@ -22,7 +22,6 @@ target_link_libraries(pdr_jobs PUBLIC pdr_core PRIVATE pdr_application)
 # сервиса требуют userver — как и остальные адаптеры в дереве. Без него контекст
 # остаётся собираемым и проверяемым целиком, кроме этого слоя, а живую часть
 # механизма проверяет scripts/check_jobs.py на настоящей базе.
-find_package(userver QUIET COMPONENTS core postgresql)
 if(userver_FOUND)
     add_library(pdr_jobs_infrastructure STATIC
         src/jobs/infrastructure/dynamic_config_job_settings.cpp
@@ -34,8 +33,6 @@ if(userver_FOUND)
                                PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_link_libraries(pdr_jobs_infrastructure
                           PUBLIC pdr_jobs pdr_postgres userver::postgresql)
-else()
-    message(STATUS "pdr: userver не найден, цель pdr_jobs_infrastructure пропущена")
 endif()
 
 if(PDR_BUILD_TESTS)

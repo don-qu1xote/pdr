@@ -38,13 +38,11 @@ target_link_libraries(pdr_infrastructure PUBLIC pdr_core pdr_application)
 # собираемым и проверяемым целиком, кроме этого слоя; сам адаптер при этом не
 # остаётся без присмотра — scripts/check_rls.py сверяет имя параметра сессии в нём
 # с именем в политиках миграции.
-find_package(userver QUIET COMPONENTS core postgresql)
+# userver ищет корневой CMakeLists — один раз на весь проект.
 if(userver_FOUND)
     add_library(pdr_postgres STATIC src/infrastructure/postgres_tenant_aware_repository.cpp)
     target_include_directories(pdr_postgres PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_link_libraries(pdr_postgres PUBLIC pdr_core pdr_application userver::postgresql)
-else()
-    message(STATUS "pdr: userver не найден, цель pdr_postgres пропущена")
 endif()
 
 if(PDR_BUILD_TESTS)
