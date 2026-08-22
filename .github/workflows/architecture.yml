@@ -36,6 +36,16 @@ jobs:
       - name: Реестр динамических значений совпадает с кодом
         run: python3 scripts/check_dynamic_configs.py
 
+      # Фундамент строится без сервиса, и часть механизмов дописана до половины.
+      # Долги собраны в docs/architecture/first-service.md: страница, которая
+      # говорит про первый сервис мимо списка, роняет сборку — иначе к началу
+      # PDR-SCHED-04 о долге не вспомнят.
+      - name: Проверка самой сверки долгов (отрицательный случай)
+        run: python3 scripts/check_debts.py --selftest
+
+      - name: Долги первого сервиса собраны в одном списке
+        run: python3 scripts/check_debts.py
+
       - name: Проверка самой сверки владения (отрицательный случай)
         run: python3 scripts/check_table_owners.py --selftest
 
