@@ -27,6 +27,15 @@ jobs:
       - name: Штатное вместо самодельного
         run: python3 scripts/check_handmade.py
 
+      # Число, влияющее на людей, живёт в динамическом конфиге и имеет запись в
+      # реестре с пределами (PDR-CFG-01). Ключ без записи, запись без ключа,
+      # число без пределов и умолчание, разошедшееся с кодом, роняют сборку.
+      - name: Проверка самой сверки реестра (отрицательный случай)
+        run: python3 scripts/check_dynamic_configs.py --selftest
+
+      - name: Реестр динамических значений совпадает с кодом
+        run: python3 scripts/check_dynamic_configs.py
+
       - name: Проверка самой сверки владения (отрицательный случай)
         run: python3 scripts/check_table_owners.py --selftest
 

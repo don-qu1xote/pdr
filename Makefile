@@ -122,6 +122,8 @@ test:
 	python3 scripts/check_testsuite.py
 	python3 scripts/check_handmade.py --selftest
 	python3 scripts/check_handmade.py
+	python3 scripts/check_dynamic_configs.py --selftest
+	python3 scripts/check_dynamic_configs.py
 	python3 scripts/gen_schema_doc.py --check
 	python3 scripts/verify_env_parity.py --selftest
 	python3 scripts/verify_env_parity.py
