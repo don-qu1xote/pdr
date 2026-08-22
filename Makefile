@@ -39,7 +39,7 @@ help:
 	@echo "  make schema-doc  пересобрать docs/architecture/schema.md"
 	@echo "  make ps          что сейчас запущено"
 	@echo
-	@echo "Уровни тестов и куда писать новый — docs/architecture/testing.md"
+	@echo "Уровни тестов и куда писать новый — docs/testing.md"
 	@echo "Профиль: ENV_PROFILE=$(ENV_PROFILE) (файл $(ENV_FILE))"
 
 check-env:
@@ -105,7 +105,7 @@ logs: check-env
 	$(COMPOSE) logs --follow --tail=100 $(SERVICE)
 
 # Тесты не требуют ни базы, ни докера, ни сети — поэтому цель не зависит от up.
-# Уровни пирамиды и куда писать новый тест — docs/architecture/testing.md.
+# Уровни пирамиды и куда писать новый тест — docs/testing.md.
 test:
 	cmake -S . -B $(BUILD_DIR) -DCMAKE_BUILD_TYPE=Debug
 	cmake --build $(BUILD_DIR) --parallel
@@ -118,6 +118,8 @@ test:
 	python3 scripts/check_migrations.py
 	python3 scripts/check_rls.py --selftest
 	python3 scripts/check_rls.py
+	python3 scripts/check_testsuite.py --selftest
+	python3 scripts/check_testsuite.py
 	python3 scripts/gen_schema_doc.py --check
 	python3 scripts/verify_env_parity.py --selftest
 	python3 scripts/verify_env_parity.py

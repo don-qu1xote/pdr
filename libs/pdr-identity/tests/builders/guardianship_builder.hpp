@@ -16,7 +16,7 @@ namespace pdr::identity::testing {
 /// Лежит в модуле identity, а не в libs/pdr-testing: платформенная оснастка не
 /// имеет права зависеть от контекста (это проверяет scripts/check_layers.py), а
 /// опека — доменное значение этого контекста. Доменные билдеры живут рядом со
-/// своим доменом — docs/architecture/testing.md.
+/// своим доменом — docs/testing.md.
 class GuardianshipBuilder final {
 public:
     GuardianshipBuilder& InTenant(core::TenantId tenant) noexcept {

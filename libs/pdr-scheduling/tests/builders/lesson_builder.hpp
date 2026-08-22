@@ -15,7 +15,7 @@ namespace pdr::scheduling::testing {
 ///
 /// Лежит в модуле scheduling: доменный билдер живёт рядом со своим доменом,
 /// потому что платформенная оснастка не имеет права зависеть от контекста
-/// (docs/architecture/testing.md).
+/// (docs/testing.md).
 class LessonBuilder final {
 public:
     LessonBuilder& Id(core::LessonId id) noexcept {

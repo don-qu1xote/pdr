@@ -6,7 +6,7 @@ namespace pdr::testing {
 
 /// Первый прогон contract-набора: против фейка. Второй — против настоящего
 /// адаптера Postgres, он живёт в цели pdr_postgres_contract_tests и требует базы
-/// (docs/architecture/testing.md).
+/// (docs/testing.md).
 PDR_REPOSITORY_CONTRACT(Fake, FakeRepositoryWorld);
 
 }  // namespace pdr::testing

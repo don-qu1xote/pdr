@@ -79,7 +79,7 @@ if(PDR_BUILD_TESTS)
     endif()
 endif()
 
-# ТРИ УРОВНЯ ПИРАМИДЫ (docs/architecture/testing.md) — три набора целей:
+# ТРИ УРОВНЯ ПИРАМИДЫ (docs/testing.md) — три набора целей:
 #
 #   pdr_unit_tests      core и application на фейках. Ни базы, ни докера, ни сети.
 #   pdr_contract_tests  ОДИН набор проверок на фейке и на настоящем адаптере.
@@ -138,7 +138,7 @@ if(PDR_BUILD_TESTS)
         # чтобы медленно работать и падать в CI.
         cmake_language(DEFER DIRECTORY "${CMAKE_SOURCE_DIR}" CALL pdr_forbid_links
                        pdr_unit_tests
-                       "Unit-прогон идёт без базы и без докера: адаптеры проверяет contract-набор (docs/architecture/testing.md)."
+                       "Unit-прогон идёт без базы и без докера: адаптеры проверяет contract-набор (docs/testing.md)."
                        infrastructure postgres userver pqxx PostgreSQL libpq)
     endif()
 endif()

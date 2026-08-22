@@ -122,7 +122,7 @@ void Perform(const WorkItem& item);             // сделать одну ед�
 ## Что проверяется и чем
 
 Без базы, за миллисекунды (`make test-unit`, уровень UNIT из
-[testing.md](testing.md)):
+[testing.md](../testing.md)):
 
 * повтор прогона не производит ни одного действия второй раз, а `repeated`
   растёт;
