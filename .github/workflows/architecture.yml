@@ -30,9 +30,10 @@ jobs:
       - uses: actions/checkout@v4
 
       # userver в этом окружении не установлен намеренно: если pdr_core или
-      # pdr_application от него зависят, шаг не соберётся.
+      # pdr_application от него зависят, шаг не соберётся. Тесты здесь выключены
+      # совсем — этот шаг про домен, а не про оснастку.
       - name: Конфигурация
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DPDR_BUILD_TESTS=OFF
 
       # pdr_application — интерфейсная цель (только порты-заголовки), собирать
       # в ней нечего. pdr_infrastructure — настоящая цель, линкует pdr_application
@@ -119,7 +120,7 @@ jobs:
         run: make down ENV_PROFILE=ci VOLUMES=1
 
   tests:
-    name: Тесты ядра и сценариев
+    name: Пирамида тестов
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -130,7 +131,23 @@ jobs:
       - name: Сборка
         run: cmake --build build --parallel
 
+      # УРОВЕНЬ UNIT: одна цель, все домены и сценарии на фейках. Идёт за
+      # миллисекунды и не имеет доступа к базе — попытка её добавить роняет
+      # конфигурацию CMake, а не прогон.
+      - name: Unit — домен и сценарии на фейках
+        run: ctest --test-dir build --output-on-failure -R '^unit$'
+
+      # УРОВЕНЬ CONTRACT: один набор проверок на фейке и на настоящем адаптере.
+      - name: Contract — фейк и настоящий адаптер
+        run: ctest --test-dir build --output-on-failure -R '^contract$'
+
+      # ОТРИЦАТЕЛЬНЫЙ СЛУЧАЙ: намеренно сломанный фейк ОБЯЗАН уронить
+      # contract-прогон. Зелёный прогон здесь означал бы, что набор ничего не
+      # проверяет; ctest ждёт от этой цели провала.
+      - name: Сломанный фейк роняет contract-набор
+        run: ctest --test-dir build --output-on-failure -R broken_fake
+
       # Среди тестов есть такие, которые ОБЯЗАНЫ не собираться: они собирают
       # свою цель сами и ждут провала компилятора.
-      - name: ctest
+      - name: Всё остальное, включая цели, которые обязаны не собираться
         run: ctest --test-dir build --output-on-failure

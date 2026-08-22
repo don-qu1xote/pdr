@@ -12,9 +12,9 @@ target_include_directories(pdr_events PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/includ
 target_link_libraries(pdr_events PUBLIC pdr_core)
 
 if(PDR_BUILD_TESTS)
-    foreach(suite IN ITEMS bus registry)
-        add_executable(pdr_events_${suite}_test tests/${suite}_test.cpp)
-        target_link_libraries(pdr_events_${suite}_test PRIVATE pdr_events pdr_testing)
-        add_test(NAME events.${suite} COMMAND pdr_events_${suite}_test)
-    endforeach()
+    pdr_unit_test_sources(
+        tests/bus_test.cpp
+        tests/registry_test.cpp
+    )
+    pdr_unit_test_libraries(pdr_events)
 endif()

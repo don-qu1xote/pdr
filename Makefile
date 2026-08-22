@@ -20,14 +20,15 @@ PG_ENV = set -a; . ./$(ENV_FILE); set +a; \
 	       PGPASSWORD=$$POSTGRES_PASSWORD PGDATABASE=$$POSTGRES_DB;
 
 .DEFAULT_GOAL := help
-.PHONY: help up down test test-isolation test-jobs fmt logs migrate migrate-verify migrate-status \
-        schema-doc ps check-env
+.PHONY: help up down test test-unit test-isolation test-jobs fmt logs migrate migrate-verify \
+        migrate-status schema-doc ps check-env
 
 help:
 	@echo "Цели:"
 	@echo "  make up          поднять всё с нуля: база, заглушка ml, миграции"
 	@echo "  make down        погасить (make down VOLUMES=1 — вместе с томами)"
 	@echo "  make test        собрать, прогнать тесты и все проверки границ"
+	@echo "  make test-unit   только unit-прогон: без базы, без докера, за миллисекунды"
 	@echo "  make test-isolation   проверить изоляцию арендаторов на живой базе"
 	@echo "  make test-jobs   проверить одиночные задания на живой базе"
 	@echo "  make fmt         привести C++ к .clang-format"
@@ -38,6 +39,7 @@ help:
 	@echo "  make schema-doc  пересобрать docs/architecture/schema.md"
 	@echo "  make ps          что сейчас запущено"
 	@echo
+	@echo "Уровни тестов и куда писать новый — docs/architecture/testing.md"
 	@echo "Профиль: ENV_PROFILE=$(ENV_PROFILE) (файл $(ENV_FILE))"
 
 check-env:
@@ -103,6 +105,7 @@ logs: check-env
 	$(COMPOSE) logs --follow --tail=100 $(SERVICE)
 
 # Тесты не требуют ни базы, ни докера, ни сети — поэтому цель не зависит от up.
+# Уровни пирамиды и куда писать новый тест — docs/architecture/testing.md.
 test:
 	cmake -S . -B $(BUILD_DIR) -DCMAKE_BUILD_TYPE=Debug
 	cmake --build $(BUILD_DIR) --parallel
@@ -118,6 +121,14 @@ test:
 	python3 scripts/gen_schema_doc.py --check
 	python3 scripts/verify_env_parity.py --selftest
 	python3 scripts/verify_env_parity.py
+
+# Самый частый прогон рабочего дня: домен и сценарии на фейках. У этой цели нет
+# доступа к базе — не по договорённости, а потому, что она не линкуется ни с
+# адаптерами, ни с драйвером (проверяется конфигурацией CMake).
+test-unit:
+	cmake -S . -B $(BUILD_DIR) -DCMAKE_BUILD_TYPE=Debug
+	cmake --build $(BUILD_DIR) --target pdr_unit_tests --parallel
+	ctest --test-dir $(BUILD_DIR) --output-on-failure -R '^unit$$'
 
 fmt:
 	@command -v clang-format >/dev/null || { echo "нет clang-format"; exit 1; }

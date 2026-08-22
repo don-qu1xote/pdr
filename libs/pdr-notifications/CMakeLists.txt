@@ -13,9 +13,7 @@ target_include_directories(pdr_notifications PRIVATE "${CMAKE_CURRENT_SOURCE_DIR
 target_link_libraries(pdr_notifications PUBLIC pdr_core pdr_events PRIVATE pdr_application)
 
 if(PDR_BUILD_TESTS)
-    add_executable(pdr_notifications_deliver_test tests/deliver_domain_events_test.cpp)
-    target_include_directories(pdr_notifications_deliver_test
-                               PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-    target_link_libraries(pdr_notifications_deliver_test PRIVATE pdr_notifications pdr_testing)
-    add_test(NAME notifications.deliver COMMAND pdr_notifications_deliver_test)
+    pdr_unit_test_sources(tests/deliver_domain_events_test.cpp)
+    pdr_unit_test_includes(src)
+    pdr_unit_test_libraries(pdr_notifications)
 endif()

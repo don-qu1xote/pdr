@@ -20,11 +20,14 @@ target_link_libraries(pdr_identity PUBLIC pdr_core pdr_events PRIVATE pdr_applic
 # первой миграцией (область DB). Пустой каталог с .gitkeep этого не приблизит.
 
 if(PDR_BUILD_TESTS)
-    foreach(suite IN ITEMS guardianship revoke_guardianship)
-        add_executable(pdr_identity_${suite}_test tests/${suite}_test.cpp)
-        target_include_directories(pdr_identity_${suite}_test
-                                   PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-        target_link_libraries(pdr_identity_${suite}_test PRIVATE pdr_identity pdr_testing)
-        add_test(NAME identity.${suite} COMMAND pdr_identity_${suite}_test)
-    endforeach()
+    # УРОВЕНЬ UNIT: домен и сценарии на фейках, всё в общей цели pdr_unit_tests.
+    # Каталог tests тоже на путях включения: доменные билдеры (tests/builders/)
+    # живут рядом со своим контекстом — платформенная оснастка зависеть от него
+    # не имеет права.
+    pdr_unit_test_sources(
+        tests/guardianship_test.cpp
+        tests/revoke_guardianship_test.cpp
+    )
+    pdr_unit_test_includes(src tests)
+    pdr_unit_test_libraries(pdr_identity)
 endif()

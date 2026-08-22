@@ -2,29 +2,32 @@
 
 #include <chrono>
 #include <optional>
+#include <utility>
 #include <vector>
 
+#include <gtest/gtest.h>
+
+#include "builders/guardianship_builder.hpp"
 #include "events/identity/guardianship_revoked.hpp"
 #include "events/in_memory_bus.hpp"
+#include "fakes/fake_clock.hpp"
 #include "identity/application/contract_service.hpp"
-#include "testing/check.hpp"
-#include "testing/fake_clock.hpp"
-#include "testing/fake_id_generator.hpp"
 
+namespace pdr::identity {
 namespace {
 
 using namespace std::chrono_literals;
-using pdr::identity::Guardianship;
-using pdr::identity::RevokeGuardianship;
+using pdr::identity::testing::GuardianshipBuilder;
 
-/// Фейк узкого порта — на весь тест хватает нескольких строк.
-class FakeGuardianships final : public pdr::identity::ports::GuardianshipRepository {
+/// Фейк узкого порта — на весь тест хватает нескольких строк. Моков здесь нет
+/// намеренно: проверяется поведение сценария, а не порядок вызовов.
+class FakeGuardianships final : public ports::GuardianshipRepository {
 public:
     explicit FakeGuardianships(std::optional<Guardianship> active) : active_{std::move(active)} {}
 
-    std::optional<Guardianship> FindActive(const pdr::core::TenantId&,
-                                           const pdr::core::PersonId&,
-                                           const pdr::core::PersonId&) const override {
+    std::optional<Guardianship> FindActive(const core::TenantId&,
+                                           const core::PersonId&,
+                                           const core::PersonId&) const override {
         return active_;
     }
 
@@ -44,85 +47,79 @@ private:
     std::vector<Guardianship> saved_;
 };
 
-struct Fixture final {
-    pdr::testing::FakeIdGenerator ids;
-    pdr::testing::FakeClock clock;
-    pdr::core::TenantId tenant{ids.Next<pdr::core::TenantId>()};
-    pdr::core::PersonId guardian{ids.Next<pdr::core::PersonId>()};
-    pdr::core::PersonId student{ids.Next<pdr::core::PersonId>()};
+class RevokeGuardianshipTest : public ::testing::Test {
+protected:
+    Guardianship Granted() const {
+        return GuardianshipBuilder{}
+            .InTenant(tenant_)
+            .Guardian(guardian_)
+            .Student(student_)
+            .GrantedAt(clock_.Now())
+            .Build();
+    }
 
     RevokeGuardianship::Request Request() const {
-        return {tenant, guardian, student};
+        return {tenant_, guardian_, student_};
     }
 
-    Guardianship Granted() const {
-        return Guardianship::Grant(
-            tenant, guardian, student, pdr::testing::FakeClock::DefaultStart());
-    }
+    pdr::testing::FakeClock clock_;
+    pdr::events::InMemoryBus bus_;
+    core::TenantId tenant_{pdr::testing::Numbered<core::TenantId>(1)};
+    core::PersonId guardian_{pdr::testing::Numbered<core::PersonId>(10)};
+    core::PersonId student_{pdr::testing::Numbered<core::PersonId>(20)};
 };
 
-void RevokingPublishesTheEventAndSaves() {
-    Fixture fixture;
-    FakeGuardianships guardianships{fixture.Granted()};
-    pdr::events::InMemoryBus bus;
+TEST_F(RevokeGuardianshipTest, RevokingPublishesTheEventAndSaves) {
+    FakeGuardianships guardianships{Granted()};
 
     std::vector<pdr::events::identity::GuardianshipRevoked> heard;
-    bus.Subscribe<pdr::events::identity::GuardianshipRevoked>(
+    bus_.Subscribe<pdr::events::identity::GuardianshipRevoked>(
         [&heard](const pdr::events::identity::GuardianshipRevoked& event) {
             heard.push_back(event);
         });
 
-    fixture.clock.Advance(24h);
-    const RevokeGuardianship revoke{guardianships, fixture.clock, bus};
-    const auto done = revoke.Execute(fixture.Request());
+    clock_.Advance(24h);
+    const RevokeGuardianship revoke{guardianships, clock_, bus_};
+    const auto done = revoke.Execute(Request());
 
-    PDR_CHECK(done.HasValue());
-    PDR_CHECK(guardianships.Saved().size() == 1);
-    PDR_CHECK(!guardianships.Saved().front().IsActive());
+    ASSERT_TRUE(done.HasValue());
+    ASSERT_EQ(guardianships.Saved().size(), 1U);
+    EXPECT_FALSE(guardianships.Saved().front().IsActive());
 
-    PDR_CHECK(heard.size() == 1);
-    PDR_CHECK(heard.front().guardian == fixture.guardian);
-    PDR_CHECK(heard.front().student == fixture.student);
-    PDR_CHECK(heard.front().envelope.tenant == fixture.tenant);
-    PDR_CHECK(heard.front().envelope.occurred_at == fixture.clock.Now());
+    ASSERT_EQ(heard.size(), 1U);
+    EXPECT_TRUE(heard.front().guardian == guardian_);
+    EXPECT_TRUE(heard.front().student == student_);
+    EXPECT_TRUE(heard.front().envelope.tenant == tenant_);
+    EXPECT_TRUE(heard.front().envelope.occurred_at == clock_.Now());
 }
 
-void SecondRevokeReturnsRefusalAndPublishesNothing() {
-    Fixture fixture;
-    FakeGuardianships guardianships{fixture.Granted()};
-    pdr::events::InMemoryBus bus;
+TEST_F(RevokeGuardianshipTest, SecondRevokeReturnsRefusalAndPublishesNothing) {
+    FakeGuardianships guardianships{Granted()};
 
-    const RevokeGuardianship revoke{guardianships, fixture.clock, bus};
-    PDR_CHECK(revoke.Execute(fixture.Request()).HasValue());
+    const RevokeGuardianship revoke{guardianships, clock_, bus_};
+    ASSERT_TRUE(revoke.Execute(Request()).HasValue());
 
-    const auto again = revoke.Execute(fixture.Request());
+    const auto again = revoke.Execute(Request());
 
-    PDR_CHECK(!again.HasValue());
-    PDR_CHECK(again.Failure().Kind() == pdr::core::ErrorKind::kNotFound);
-    PDR_CHECK(again.Failure().Code() == "guardianship_not_found");
-    PDR_CHECK(bus.Published() == 1);
+    ASSERT_FALSE(again.HasValue());
+    EXPECT_EQ(again.Failure().Kind(), core::ErrorKind::kNotFound);
+    EXPECT_EQ(again.Failure().Code(), "guardianship_not_found");
+    EXPECT_EQ(bus_.Published(), 1U);
 }
 
-void ContractAnswersWhoMayActForWhom() {
-    Fixture fixture;
-    const FakeGuardianships guardianships{fixture.Granted()};
-    const pdr::identity::ContractService contract{guardianships};
+TEST_F(RevokeGuardianshipTest, ContractAnswersWhoMayActForWhom) {
+    const FakeGuardianships guardianships{Granted()};
+    const ContractService contract{guardianships};
 
-    PDR_CHECK(contract.MayActFor(fixture.tenant, fixture.guardian, fixture.student));
+    EXPECT_TRUE(contract.MayActFor(tenant_, guardian_, student_));
 
     // Самостоятельный взрослый ученик — сам себе представитель.
-    PDR_CHECK(contract.MayActFor(fixture.tenant, fixture.student, fixture.student));
+    EXPECT_TRUE(contract.MayActFor(tenant_, student_, student_));
 
     const FakeGuardianships without{std::nullopt};
-    const pdr::identity::ContractService strict{without};
-    PDR_CHECK(!strict.MayActFor(fixture.tenant, fixture.guardian, fixture.student));
+    const ContractService strict{without};
+    EXPECT_FALSE(strict.MayActFor(tenant_, guardian_, student_));
 }
 
 }  // namespace
-
-int main() {
-    RevokingPublishesTheEventAndSaves();
-    SecondRevokeReturnsRefusalAndPublishesNothing();
-    ContractAnswersWhoMayActForWhom();
-    return pdr::testing::Summary("identity.revoke_guardianship");
-}
+}  // namespace pdr::identity

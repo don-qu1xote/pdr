@@ -2,68 +2,63 @@
 
 #include <chrono>
 
-#include "testing/check.hpp"
-#include "testing/fake_clock.hpp"
+#include <gtest/gtest.h>
 
+#include "builders/moment_builder.hpp"
+#include "fakes/fake_clock.hpp"
+
+namespace pdr::core {
 namespace {
 
-using pdr::core::Instant;
-using pdr::core::TimeZone;
 using namespace std::chrono_literals;
 
-void InstantIsArithmeticInUtc() {
-    const auto start = Instant::FromUnixMicros(1704067200000000);
+TEST(Instant, IsArithmeticInUtc) {
+    const auto start = pdr::testing::MomentBuilder{}.Utc(2024, 1, 1).At(0, 0).Build();
 
-    PDR_CHECK((start + 1h) - start == 3600s);
-    PDR_CHECK((start + 90min) - 90min == start);
-    PDR_CHECK(start < start + 1us);
-    PDR_CHECK(start == Instant::FromUnixMicros(1704067200000000));
+    EXPECT_TRUE((start + 1h) - start == 3600s);
+    EXPECT_TRUE((start + 90min) - 90min == start);
+    EXPECT_TRUE(start < start + 1us);
+    EXPECT_TRUE(start == Instant::FromUnixMicros(1704067200000000));
 }
 
-void TimeZoneIsAName() {
-    PDR_CHECK(TimeZone::Parse("Europe/Moscow").has_value());
-    PDR_CHECK(TimeZone::Parse("UTC").has_value());
-    PDR_CHECK(TimeZone::Parse("America/Argentina/Buenos_Aires").has_value());
-    PDR_CHECK(TimeZone::Parse("Europe/Moscow")->Name() == "Europe/Moscow");
+TEST(TimeZone, IsAName) {
+    EXPECT_TRUE(TimeZone::Parse("Europe/Moscow").has_value());
+    EXPECT_TRUE(TimeZone::Parse("UTC").has_value());
+    EXPECT_TRUE(TimeZone::Parse("America/Argentina/Buenos_Aires").has_value());
+    EXPECT_EQ(TimeZone::Parse("Europe/Moscow")->Name(), "Europe/Moscow");
 
-    PDR_CHECK(!TimeZone::Parse("").has_value());
-    PDR_CHECK(!TimeZone::Parse("/Moscow").has_value());
-    PDR_CHECK(!TimeZone::Parse("Europe/").has_value());
-    PDR_CHECK(!TimeZone::Parse("Europe//Moscow").has_value());
-    PDR_CHECK(!TimeZone::Parse("Europe/Mos cow").has_value());
-    PDR_CHECK(!TimeZone::Parse("1/Moscow").has_value());
-    PDR_CHECK(!TimeZone::Parse("A/B/C/D").has_value());
+    EXPECT_FALSE(TimeZone::Parse("").has_value());
+    EXPECT_FALSE(TimeZone::Parse("/Moscow").has_value());
+    EXPECT_FALSE(TimeZone::Parse("Europe/").has_value());
+    EXPECT_FALSE(TimeZone::Parse("Europe//Moscow").has_value());
+    EXPECT_FALSE(TimeZone::Parse("Europe/Mos cow").has_value());
+    EXPECT_FALSE(TimeZone::Parse("1/Moscow").has_value());
+    EXPECT_FALSE(TimeZone::Parse("A/B/C/D").has_value());
 
     // Момент и зона — разные типы: «17:00» без зоны собрать не из чего.
-    PDR_CHECK(TimeZone::Parse("Europe/Moscow") != TimeZone::Parse("Asia/Novosibirsk"));
+    EXPECT_TRUE(TimeZone::Parse("Europe/Moscow") != TimeZone::Parse("Asia/Novosibirsk"));
 }
 
-void SubstitutedClockMovesTimeWithoutWaiting() {
+TEST(FakeClock, MovesTimeWithoutWaiting) {
     pdr::testing::FakeClock clock;
-    const pdr::application::ports::Clock& port = clock;
+    const application::ports::Clock& port = clock;
 
     const auto start = port.Now();
-    PDR_CHECK(start == pdr::testing::FakeClock::DefaultStart());
-    PDR_CHECK(port.Now() == start);  // «сейчас» не убегает между вызовами
+    EXPECT_TRUE(start == pdr::testing::FakeClock::DefaultStart());
+    EXPECT_TRUE(port.Now() == start) << "«сейчас» убежало между двумя вопросами";
 
     // Двое суток проходят мгновенно: тест на «отмену не позже чем за сутки»
     // не спит ни микросекунды.
     clock.Advance(48h);
-    PDR_CHECK(port.Now() - start == 48h);
+    EXPECT_TRUE(port.Now() - start == 48h);
 
     const auto cancel_deadline = start + 24h;
-    PDR_CHECK(port.Now() > cancel_deadline);
+    EXPECT_TRUE(port.Now() > cancel_deadline);
 
     clock.SetNow(start);
-    PDR_CHECK(port.Now() == start);
-    PDR_CHECK(port.Now() < cancel_deadline);
+    EXPECT_TRUE(port.Now() == start);
+    EXPECT_TRUE(port.Now() < cancel_deadline);
 }
 
 }  // namespace
-
-int main() {
-    InstantIsArithmeticInUtc();
-    TimeZoneIsAName();
-    SubstitutedClockMovesTimeWithoutWaiting();
-    return pdr::testing::Summary("core.time");
-}
+}  // namespace pdr::core

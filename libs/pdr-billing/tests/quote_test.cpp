@@ -1,23 +1,23 @@
 #include <optional>
 #include <utility>
 
+#include <gtest/gtest.h>
+
 #include "billing/application/contract_service.hpp"
 #include "billing/application/quote_lesson_package.hpp"
 #include "billing/contract.hpp"
 #include "billing/core/lesson_package.hpp"
+#include "builders/tariff_builder.hpp"
 #include "core/errors.hpp"
 #include "core/money.hpp"
-#include "testing/check.hpp"
 
+namespace pdr::billing {
 namespace {
 
-using pdr::billing::QuoteLessonPackage;
-using pdr::billing::Tariff;
-using pdr::billing::TariffCode;
+using pdr::billing::testing::TariffBuilder;
 using pdr::core::ErrorKind;
-using pdr::core::Money;
 
-class FakeTariffs final : public pdr::billing::ports::TariffRepository {
+class FakeTariffs final : public ports::TariffRepository {
 public:
     explicit FakeTariffs(std::optional<Tariff> tariff) : tariff_{std::move(tariff)} {}
 
@@ -29,72 +29,61 @@ private:
     std::optional<Tariff> tariff_;
 };
 
-Tariff MakeTariff() {
-    const auto currency = pdr::core::CurrencyCode::Parse("RUB");
-    const auto code = TariffCode::Parse("MATH-EGE-90");
-    return Tariff{*code, Money::FromMinorUnits(250000, *currency)};
+TEST(PackagePrice, DomainRefusalIsAValue) {
+    const auto tariff = TariffBuilder{}.PerLesson(2500).Build();
+
+    const auto refused = PackagePrice(tariff, 0);
+    ASSERT_FALSE(refused.HasValue());
+    EXPECT_EQ(refused.Failure().Kind(), ErrorKind::kValidation);
+    EXPECT_EQ(refused.Failure().Code(), "lessons_not_positive");
+
+    const auto priced = PackagePrice(tariff, 8);
+    ASSERT_TRUE(priced.HasValue());
+    EXPECT_EQ(priced.Value().MinorUnits(), 2000000);
 }
 
-void DomainRefusalIsAValue() {
-    const auto refused = pdr::billing::PackagePrice(MakeTariff(), 0);
-
-    PDR_CHECK(!refused.HasValue());
-    PDR_CHECK(refused.Failure().Kind() == ErrorKind::kValidation);
-    PDR_CHECK(refused.Failure().Code() == "lessons_not_positive");
-
-    const auto priced = pdr::billing::PackagePrice(MakeTariff(), 8);
-    PDR_CHECK(priced.HasValue());
-    PDR_CHECK(priced.Value().MinorUnits() == 2000000);
-}
-
-void RefusalSurvivesTheWayOut() {
-    const FakeTariffs tariffs{MakeTariff()};
+TEST(QuoteLessonPackage, RefusalSurvivesTheWayOut) {
+    const auto tariff = TariffBuilder{}.PerLesson(2500).Build();
+    const FakeTariffs tariffs{tariff};
     const QuoteLessonPackage quote{tariffs};
 
-    const auto from_domain = pdr::billing::PackagePrice(MakeTariff(), -1);
-    const auto from_scenario = quote.Execute({*TariffCode::Parse("MATH-EGE-90"), -1});
+    const auto from_domain = PackagePrice(tariff, -1);
+    const auto from_scenario = quote.Execute({tariff.Code(), -1});
 
-    PDR_CHECK(!from_scenario.HasValue());
-    PDR_CHECK(from_scenario.Failure() == from_domain.Failure());
+    ASSERT_FALSE(from_scenario.HasValue());
+    EXPECT_TRUE(from_scenario.Failure() == from_domain.Failure());
 
-    const auto priced = quote.Execute({*TariffCode::Parse("MATH-EGE-90"), 8});
-    PDR_CHECK(priced.HasValue());
-    PDR_CHECK(priced.Value().MinorUnits() == 2000000);
+    const auto priced = quote.Execute({tariff.Code(), 8});
+    ASSERT_TRUE(priced.HasValue());
+    EXPECT_EQ(priced.Value().MinorUnits(), 2000000);
 }
 
-void MissingTariffIsNotFound() {
+TEST(QuoteLessonPackage, MissingTariffIsNotFound) {
     const FakeTariffs empty{std::nullopt};
     const QuoteLessonPackage quote{empty};
 
     const auto answer = quote.Execute({*TariffCode::Parse("MATH-EGE-90"), 8});
 
-    PDR_CHECK(!answer.HasValue());
-    PDR_CHECK(answer.Failure().Kind() == ErrorKind::kNotFound);
-    PDR_CHECK(answer.Failure().Code() == "tariff_not_found");
+    ASSERT_FALSE(answer.HasValue());
+    EXPECT_EQ(answer.Failure().Kind(), ErrorKind::kNotFound);
+    EXPECT_EQ(answer.Failure().Code(), "tariff_not_found");
 }
 
-void ContractParsesRawValuesAtItsOwnBorder() {
-    const FakeTariffs tariffs{MakeTariff()};
-    const pdr::billing::ContractService service{tariffs};
-    const pdr::billing::Contract& contract = service;
+TEST(BillingContract, ParsesRawValuesAtItsOwnBorder) {
+    const FakeTariffs tariffs{TariffBuilder{}.PerLesson(2500).Build()};
+    const ContractService service{tariffs};
+    const Contract& contract = service;
 
     const auto priced = contract.QuotePackage("MATH-EGE-90", 4);
-    PDR_CHECK(priced.HasValue());
-    PDR_CHECK(priced.Value().MinorUnits() == 1000000);
+    ASSERT_TRUE(priced.HasValue());
+    EXPECT_EQ(priced.Value().MinorUnits(), 1000000);
 
     // Чужой контекст присылает строку — разбираем и отвергаем здесь, а не там.
     const auto refused = contract.QuotePackage("не код", 4);
-    PDR_CHECK(!refused.HasValue());
-    PDR_CHECK(refused.Failure().Kind() == ErrorKind::kValidation);
-    PDR_CHECK(refused.Failure().Code() == "tariff_code_invalid");
+    ASSERT_FALSE(refused.HasValue());
+    EXPECT_EQ(refused.Failure().Kind(), ErrorKind::kValidation);
+    EXPECT_EQ(refused.Failure().Code(), "tariff_code_invalid");
 }
 
 }  // namespace
-
-int main() {
-    DomainRefusalIsAValue();
-    RefusalSurvivesTheWayOut();
-    MissingTariffIsNotFound();
-    ContractParsesRawValuesAtItsOwnBorder();
-    return pdr::testing::Summary("billing.quote");
-}
+}  // namespace pdr::billing

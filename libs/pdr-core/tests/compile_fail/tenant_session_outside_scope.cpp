@@ -5,7 +5,7 @@
 #include <vector>
 
 #include "core/types/ids.hpp"
-#include "testing/fake_tenant_aware_repository.hpp"
+#include "fakes/fake_tenant_aware_repository.hpp"
 
 int main() {
     std::vector<pdr::testing::FakeRow> rows;

@@ -1,4 +1,4 @@
-#include "testing/fake_tenant_aware_repository.hpp"
+#include "fakes/fake_tenant_aware_repository.hpp"
 
 #include <algorithm>
 #include <utility>

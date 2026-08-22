@@ -39,11 +39,10 @@ else()
 endif()
 
 if(PDR_BUILD_TESTS)
-    foreach(suite IN ITEMS job_settings run_periodic_job)
-        add_executable(pdr_jobs_${suite}_test tests/${suite}_test.cpp)
-        target_include_directories(pdr_jobs_${suite}_test
-                                   PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-        target_link_libraries(pdr_jobs_${suite}_test PRIVATE pdr_jobs pdr_testing)
-        add_test(NAME jobs.${suite} COMMAND pdr_jobs_${suite}_test)
-    endforeach()
+    pdr_unit_test_sources(
+        tests/job_settings_test.cpp
+        tests/run_periodic_job_test.cpp
+    )
+    pdr_unit_test_includes(src)
+    pdr_unit_test_libraries(pdr_jobs)
 endif()
