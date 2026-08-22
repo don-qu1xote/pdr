@@ -19,7 +19,13 @@
 # флаг» — забывать нечего. Это проверяется самопроверкой скрипта.
 #
 # Действия запинены по коммит-SHA: плавающий тег — это чужой код, который
-# меняется без нашего ведома.
+# меняется без нашего ведома. Рядом с SHA стоит версия — она для человека, а
+# работает именно SHA.
+#
+# Версии обновляются не по номеру, а по рантайму: GitHub гасит Node 20 на своих
+# раннерах, и действие на нём даёт предупреждение в каждой джобе. Перед сменой
+# пина рантайм проверяется по факту — «using: node24» в action.yml НА ТОМ САМОМ
+# коммите, а не по обещанию релизных заметок.
 
 name: ci
 
@@ -51,7 +57,7 @@ jobs:
       docs_only: ${{ steps.detect.outputs.docs_only }}
       forced: ${{ steps.detect.outputs.forced }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
@@ -74,7 +80,7 @@ jobs:
     name: Профили окружения не разъехались
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Проверка самой сверки (отрицательный случай)
         run: python3 scripts/verify_env_parity.py --selftest
@@ -88,7 +94,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: changes
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # Каждая проверка сначала проверяет себя на нарочно испорченном случае:
       # проверка, которая ничего не ловит, зелёная так же, как исправный код.
@@ -140,7 +146,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.db == 'true'
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Правила колонок
         run: |
@@ -166,7 +172,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.cpp == 'true'
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # Та же цель Makefile, что зовёт человек у себя: не две похожие команды, а
       # буквально одна. Иначе «у меня чисто» и «в CI красно» расходятся.
@@ -183,7 +189,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.cpp == 'true'
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - uses: ./.github/actions/setup-build
         with:
@@ -207,7 +213,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.cpp == 'true'
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - uses: ./.github/actions/setup-build
         with:
@@ -225,7 +231,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.cpp == 'true'
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # userver в этом окружении не установлен намеренно: если pdr_core или
       # pdr_application от него зависят, шаг не соберётся. Тесты выключены —
@@ -242,7 +248,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.cpp == 'true'
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Инструменты
         run: |
@@ -270,7 +276,7 @@ jobs:
     needs: [changes, parity]
     if: needs.changes.outputs.db == 'true' || needs.changes.outputs.deploy == 'true'
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # Тем же единственным compose, что и на машине разработчика, — профилем ci.
       - name: Профиль ci
@@ -315,7 +321,7 @@ jobs:
     container:
       image: ghcr.io/userver-framework/ubuntu-22.04-userver:latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       # ПЕРВАЯ настоящая проверка слоя адаптеров: без userver цели
       # pdr_postgres, pdr_jobs_infrastructure и pdr_billing_infrastructure
