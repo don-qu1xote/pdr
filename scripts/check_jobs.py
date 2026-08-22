@@ -129,17 +129,19 @@ def psql_async(psql: str, sql: str) -> subprocess.Popen[str]:
 
     Обёртка над psql из check_isolation.py ждёт ответа, а здесь первая сессия
     должна держать незакрытую транзакцию, пока во вторую приходит соперник.
+
+    Скрипт уезжает одним `-c`, а не в stdin: psql выполняет такую строку в ОДНОЙ
+    транзакции, и вставка остаётся незакоммиченной до конца процесса — ровно то,
+    что нужно. Заодно у процесса нет открытого канала ввода, и его не приходится
+    закрывать раньше, чем понадобится дождаться ответа.
     """
-    session = subprocess.Popen(
-        [psql, "--no-psqlrc", "-v", "ON_ERROR_STOP=1", "-qtA", "-f", "-"],
-        stdin=subprocess.PIPE,
+    return subprocess.Popen(
+        [psql, "--no-psqlrc", "-v", "ON_ERROR_STOP=1", "-qtA", "-c", sql],
+        stdin=subprocess.DEVNULL,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         text=True,
     )
-    session.stdin.write(sql)
-    session.stdin.close()
-    return session
 
 
 def seed(database: live.Database) -> None:
@@ -152,12 +154,17 @@ insert into identity_tenant (tenant_id, name, tz) values
 
 
 def teardown(database: live.Database) -> None:
-    tenants = f"('{TENANT_A}', '{TENANT_B}')"
+    """Убрать за собой. Порядок важен: следы ссылаются на арендатора.
+
+    Следы удаляются ПО ЗАДАНИЮ и без условия по арендатору: строка могла
+    остаться от прогона, упавшего на середине, и тогда `delete from
+    identity_tenant` упёрся бы во внешний ключ.
+    """
     database.owner(f"""
-delete from jobs_effect where tenant_id in {tenants};
+delete from jobs_effect where job = '{JOB}';
 delete from jobs_lock where key = '{LOCK}';
 delete from jobs_run where job = '{JOB}';
-delete from identity_tenant where tenant_id in {tenants};
+delete from identity_tenant where tenant_id in ('{TENANT_A}', '{TENANT_B}');
 """)
 
 
@@ -277,28 +284,29 @@ def a_trace_cannot_be_set_twice_at_once(database: live.Database, psql: str) -> l
 
     holding = psql_async(psql, f"""
 set role {live.APP_ROLE};
-begin;
-do $$ begin perform set_config('{live.PARAMETER}', '{TENANT_A}', false); end $$;
+select set_config('{live.PARAMETER}', '{TENANT_A}', false);
 {CLAIM.format(job=JOB, key=key)}
 select pg_sleep(1.5);
-commit;
 """)
 
-    # Даём первой сессии дойти до вставки, но не до конца.
-    time.sleep(0.5)
+    try:
+        # Даём первой сессии дойти до вставки, но не до конца.
+        time.sleep(0.5)
 
-    waiting = database.app_refusal(
-        f"set lock_timeout = '300ms';\n{CLAIM.format(job=JOB, key=key)}", TENANT_A
-    )
-    if waiting != "55P03":
-        problems.append(
-            f"вторая вставка того же ключа дала «{waiting or 'успех'}» вместо ожидания 55P03: "
-            f"два воркера ставят один след одновременно"
+        waiting = database.app_refusal(
+            f"set lock_timeout = '300ms';\n{CLAIM.format(job=JOB, key=key)}", TENANT_A
         )
-
-    holding.communicate()
-    if holding.returncode != 0:
-        problems.append("сессия, державшая след, завершилась ошибкой")
+        if waiting != "55P03":
+            problems.append(
+                f"вторая вставка того же ключа дала «{waiting or 'успех'}» вместо ожидания "
+                f"55P03: два воркера ставят один след одновременно"
+            )
+    finally:
+        # Сессию дожидаемся всегда: брошенный процесс закоммитит вставку уже
+        # после уборки, и следующий прогон споткнётся на чужой строке.
+        _, complaint = holding.communicate()
+        if holding.returncode != 0:
+            problems.append(f"сессия, державшая след, завершилась ошибкой: {complaint.strip()}")
 
     if database.app(CLAIM.format(job=JOB, key=key), TENANT_A):
         problems.append("после коммита первого след удалось поставить второй раз")
