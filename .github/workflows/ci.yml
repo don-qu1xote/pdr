@@ -389,3 +389,13 @@ jobs:
           set -eu
           cmake --build build-userver --target pdr_postgres pdr_jobs_infrastructure \
             pdr_billing_infrastructure --parallel
+
+      # Проверки адаптеров против ШТАТНЫХ заглушек userver: умолчание из кода без
+      # источника, применение без пересоздания адаптера, отказ значению вне
+      # диапазона со старым значением на месте и журнал «было → стало». Ни
+      # сервиса, ни базы им не нужно — нужен только userver, а он есть здесь.
+      - name: Адаптеры против заглушек userver
+        run: |
+          set -eu
+          cmake --build build-userver --target pdr_adapter_tests --parallel
+          ctest --test-dir build-userver --output-on-failure -R '^adapter$'

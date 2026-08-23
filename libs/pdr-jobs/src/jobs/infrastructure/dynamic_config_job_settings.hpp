@@ -3,6 +3,7 @@
 #include <string>
 #include <unordered_map>
 
+#include <userver/concurrent/async_event_source.hpp>
 #include <userver/dynamic_config/fwd.hpp>
 #include <userver/dynamic_config/snapshot.hpp>
 #include <userver/dynamic_config/source.hpp>
@@ -15,6 +16,14 @@
 #include "jobs/core/job_settings.hpp"
 
 namespace pdr::jobs {
+
+/// Словарь заданий: ключ — имя компонента задания.
+using PeriodicJobs = std::unordered_map<std::string, JobSettings>;
+
+/// Ключ переменной — ОДИН объект на всё дерево. Второй `dynamic_config::Key` с
+/// тем же именем даёт вторую ячейку хранилища: подмена значения в тесте тогда
+/// не доходит до адаптера, а выглядит это как «конфиг не применился».
+extern const userver::dynamic_config::Key<PeriodicJobs> kPeriodicJobs;
 
 /// Разбор одной записи `PDR_PERIODIC_JOBS`. Значения — целые миллисекунды:
 /// «1h» строкой в динамическом конфиге читается по-разному в разных местах, а
@@ -37,12 +46,24 @@ public:
     /// обновлятор конфигов, и второй строки с этим именем в дереве быть не должно.
     static constexpr std::string_view kVariable = "PDR_PERIODIC_JOBS";
 
-    explicit DynamicConfigJobSettings(userver::dynamic_config::Source source) noexcept;
+    explicit DynamicConfigJobSettings(userver::dynamic_config::Source source);
+
+    ~DynamicConfigJobSettings() override;
 
     core::Result<JobSettings> For(const JobName& job) const override;
 
 private:
+    /// Журнал изменений: что стало с каждым заданием при очередном применении
+    /// конфига. Подписка штатная — `dynamic_config::Diff` приносит предыдущий
+    /// снимок вместе с текущим.
+    ///
+    /// «Кто изменил» здесь взять негде: подписка знает «когда» и «с какого на
+    /// какое», а авторство приносит источник конфигов, которого в дереве пока
+    /// нет (docs/architecture/first-service.md).
+    void OnConfigUpdate(const userver::dynamic_config::Diff& diff);
+
     userver::dynamic_config::Source source_;
+    userver::concurrent::AsyncEventSubscriberScope journal_;
 };
 
 }  // namespace pdr::jobs

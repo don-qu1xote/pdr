@@ -21,7 +21,16 @@
   в коде — на нём сервис поднимается, когда источник конфигов недоступен, — а
   реестр обязан говорить о нём правду;
 * ключ объявляется только в infrastructure: в домен значение приходит параметром,
-  а не читается им самим.
+  а не читается им самим;
+* у ключа есть умолчание прямо в объявлении: на нём сервис поднимается, когда
+  источник конфигов недоступен;
+* рядом с ключом стоит подписка `UpdateAndListen` — журнал «было → стало». Ключ
+  без журнала означает, что «оно само сломалось» будет разбираться по памяти;
+* умолчание не выходит за собственные пределы: значение, которое схема тут же
+  объявляет негодным, — ловушка, не видная ни в одном тесте;
+* запись без ключа в коде разрешена ровно с полем `awaits` — областью задачи,
+  которая ключ заведёт. Так число попадает в реестр раньше, чем в константу, и
+  не остаётся там навсегда: как только ключ объявлен, поле обязано исчезнуть.
 
 YAML разбирается СТРОГИМ ПОДМНОЖЕСТВОМ, как разбор миграций разбирает подмножество
 DDL: чего разбор не понял, он называет вслух и роняет проверку. Молча пропущенная
@@ -50,6 +59,9 @@ SKIPPED_DIRS = frozenset({".git", "build", "out", "_deps", "__pycache__", "compi
 REQUIRED_FIELDS = ("description", "kind", "owner", "jurisdiction", "breaks", "default", "schema")
 KINDS = ("техническая", "продуктовая")
 JURISDICTIONS = ("да", "нет")
+
+CONTRIBUTING = Path("CONTRIBUTING.md")
+AREA_ROW = re.compile(r"^\|\s*`([A-Z]+)`\s*\|")
 
 KEY_DECLARATION = re.compile(
     r"dynamic_config::Key<[^>]*>\s+(\w+)\s*\{\s*(?:(?P<name>\"[A-Z0-9_]+\")|(?P<alias>[\w:]+))"
@@ -150,40 +162,115 @@ def registry_default(entry: dict[str, object]) -> str:
     return str(value).strip()
 
 
+def parse_schema(lines: Sequence[str]) -> dict[str, object]:
+    """JSON-схема из строк реестра: вложенные отображения, скаляры и списки.
+
+    Разбирается то же строгое подмножество, что и остальной реестр. Непонятая
+    строка — отказ: схема, разобранная наполовину, проверяет пределы наполовину.
+    """
+    schema: dict[str, object] = {}
+    stack: list[tuple[int, dict[str, object]]] = [(-1, schema)]
+
+    for line in lines:
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        indent = len(line) - len(line.lstrip())
+        field, _, rest = line.strip().partition(":")
+        if not field:
+            raise RegistryError(f"{REGISTRY}: разбор схемы не понял строку «{line.strip()[:40]}»")
+
+        while stack and stack[-1][0] >= indent:
+            stack.pop()
+        if not stack:
+            raise RegistryError(f"{REGISTRY}: отступ схемы съехал на «{line.strip()[:40]}»")
+
+        rest = rest.strip()
+        if rest:
+            stack[-1][1][field] = _scalar(rest)
+            continue
+
+        nested: dict[str, object] = {}
+        stack[-1][1][field] = nested
+        stack.append((indent, nested))
+
+    return schema
+
+
+def _scalar(text: str) -> object:
+    if text.startswith("[") and text.endswith("]"):
+        return [part.strip() for part in text[1:-1].split(",") if part.strip()]
+    if text in ("true", "false"):
+        return text == "true"
+    try:
+        return int(text)
+    except ValueError:
+        return text.strip("'\"")
+
+
 def numeric_ranges(entry: dict[str, object], name: str) -> list[str]:
     """Числа без пределов. Диапазон живёт в JSON-схеме, а не отдельным полем."""
     schema = entry.get("schema")
     if not isinstance(schema, list):
         return [f"{REGISTRY}: у величины {name} нет схемы: пределы задаются ею"]
 
-    problems: list[str] = []
-    current: list[str] = []
-    for line in [*schema, "type: sentinel"]:
-        stripped = line.strip()
-        if stripped.startswith("type:") and stripped != "type: sentinel":
-            if current:
-                problems.extend(_check_numeric(current, name))
-            current = [stripped]
-        elif current:
-            current.append(stripped)
-        if stripped == "type: sentinel" and current:
-            problems.extend(_check_numeric(current, name))
+    try:
+        parsed = parse_schema(schema)
+    except RegistryError as error:
+        return [str(error)]
+
+    problems = _walk_schema(parsed, name)
+    problems.extend(_default_fits(entry, parsed, name))
     return problems
 
 
-def _check_numeric(chunk: Sequence[str], name: str) -> list[str]:
-    kind = chunk[0].split(":", 1)[1].strip()
-    if kind not in ("integer", "number"):
+def _walk_schema(node: object, name: str) -> list[str]:
+    if not isinstance(node, dict):
         return []
-    body = " ".join(chunk)
-    missing = [limit for limit in ("minimum", "maximum") if f"{limit}:" not in body]
-    if not missing:
+
+    problems: list[str] = []
+    if node.get("type") in ("integer", "number"):
+        missing = [limit for limit in ("minimum", "maximum") if limit not in node]
+        if missing:
+            problems.append(
+                f"{REGISTRY}: у величины {name} число без пределов ({', '.join(missing)}). "
+                f"Конфиг без диапазона — та же константа, только сломать её теперь можно "
+                f"опечаткой из чужих рук"
+            )
+
+    for value in node.values():
+        problems.extend(_walk_schema(value, name))
+    return problems
+
+
+def _default_fits(entry: dict[str, object], schema: dict[str, object], name: str) -> list[str]:
+    """Умолчание внутри собственных пределов.
+
+    Умолчание вне диапазона — ловушка, которую не видно ни в одном тесте: сервис
+    поднимается на нём, когда источник недоступен, и поднимается со значением,
+    которое сам же считает негодным.
+    """
+    text = registry_default(entry)
+    try:
+        value = json.loads(text)
+    except (json.JSONDecodeError, TypeError):
         return []
-    return [
-        f"{REGISTRY}: у величины {name} число без пределов ({', '.join(missing)}). "
-        f"Конфиг без диапазона — та же константа, только сломать её теперь можно "
-        f"опечаткой из чужих рук"
-    ]
+
+    kind = schema.get("type")
+    if kind in ("integer", "number") and isinstance(value, (int, float)):
+        low, high = schema.get("minimum"), schema.get("maximum")
+        if isinstance(low, (int, float)) and value < low:
+            return [f"{REGISTRY}: у величины {name} умолчание {text} меньше её же minimum {low}"]
+        if isinstance(high, (int, float)) and value > high:
+            return [f"{REGISTRY}: у величины {name} умолчание {text} больше её же maximum {high}"]
+        return []
+
+    expected = {"object": dict, "array": list, "string": str, "boolean": bool}.get(str(kind))
+    if expected and not isinstance(value, expected):
+        return [
+            f"{REGISTRY}: у величины {name} умолчание {text} не того вида, что объявлено "
+            f"схемой ({kind})"
+        ]
+    return []
 
 
 def source_files(root: Path):
@@ -245,6 +332,20 @@ def keys_in_code(root: Path) -> tuple[dict[str, tuple[Path, str]], list[str]]:
 
             found[name] = (display, default)
 
+            if "UpdateAndListen" not in text:
+                violations.append(
+                    f"{display}: величина {name} объявлена без журнала изменений. Рядом с "
+                    f"ключом стоит подписка dynamic_config::Source::UpdateAndListen: без неё "
+                    f"«оно само сломалось» разбирается не за минуту, а по памяти"
+                )
+
+            if not default:
+                violations.append(
+                    f"{display}: у величины {name} нет умолчания в объявлении ключа. "
+                    f"Умолчание — это то, на чём сервис поднимается, когда источник "
+                    f"конфигов недоступен; без него недоступный источник роняет старт"
+                )
+
             if "infrastructure" not in display.parts:
                 violations.append(
                     f"{display}: величина {name} объявлена вне infrastructure. Конфиг читает "
@@ -264,9 +365,22 @@ def same_default(registry: str, code: str) -> bool:
         return False
 
 
+def known_areas(root: Path) -> set[str]:
+    """Области задач из CONTRIBUTING.md. Список закрытый, и «awaits» ссылается в него."""
+    path = root / CONTRIBUTING
+    if not path.is_file():
+        return set()
+    return {
+        found.group(1)
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if (found := AREA_ROW.match(line))
+    }
+
+
 def check(root: Path) -> tuple[list[str], int]:
     registry_path = root / REGISTRY
     declared, violations = keys_in_code(root)
+    areas = known_areas(root)
 
     if not registry_path.is_file():
         if declared:
@@ -293,10 +407,28 @@ def check(root: Path) -> tuple[list[str], int]:
     for name in sorted(entries):
         entry = entries[name]
 
-        if name not in declared:
+        awaited = str(entry.get("awaits", "")).strip()
+
+        if name not in declared and not awaited:
             violations.append(
                 f"{REGISTRY}: величина {name} записана, а ключа в коде нет. Реестр не "
-                f"зарастает мёртвыми строками: уберите запись или объявите ключ"
+                f"зарастает мёртвыми строками: уберите запись, объявите ключ или назовите "
+                f"полем «awaits» область, которая его заведёт"
+            )
+
+        if awaited and awaited not in areas:
+            violations.append(
+                f"{REGISTRY}: у величины {name} «awaits: {awaited}» — такой области нет в "
+                f"{CONTRIBUTING}. Список областей закрыт: запись, ждущая несуществующую "
+                f"область, не дождётся никогда"
+            )
+
+        if awaited and name in declared:
+            where, _ = declared[name]
+            violations.append(
+                f"{REGISTRY}: у величины {name} стоит «awaits: {awaited}», а ключ уже "
+                f"объявлен ({where}). Поле снимается тем же изменением, что заводит ключ, — "
+                f"иначе реестр продолжает обещать сделанное"
             )
 
         for field in REQUIRED_FIELDS:
@@ -347,6 +479,69 @@ SELFTEST_REGISTRY = """PDR_GOOD:
     type: integer
     minimum: 1000
     maximum: 86400000
+
+PDR_TOO_SMALL:
+  description: Умолчание вне собственных пределов.
+  kind: продуктовая
+  owner: владелец продукта
+  jurisdiction: нет
+  awaits: SCHED
+  breaks: Ничего — и это худший исход.
+  default: 500
+  schema:
+    type: integer
+    minimum: 1000
+    maximum: 5000
+
+PDR_WAITS_FOREVER:
+  description: Ждёт область, которой нет в списке.
+  kind: продуктовая
+  owner: владелец продукта
+  jurisdiction: нет
+  awaits: ЗАВТРА
+  breaks: Ничего.
+  default: 1
+  schema:
+    type: integer
+    minimum: 1
+    maximum: 2
+
+PDR_ALREADY_THERE:
+  description: Ключ уже объявлен, а поле «awaits» осталось.
+  kind: техническая
+  owner: тот, кто держит сервис
+  jurisdiction: нет
+  awaits: CFG
+  breaks: Ничего.
+  default: 5
+  schema:
+    type: integer
+    minimum: 1
+    maximum: 10
+
+PDR_SILENT:
+  description: Ключ без журнала изменений.
+  kind: техническая
+  owner: тот, кто держит сервис
+  jurisdiction: нет
+  breaks: Ничего.
+  default: 5
+  schema:
+    type: integer
+    minimum: 1
+    maximum: 10
+
+PDR_NO_DEFAULT:
+  description: Ключ без умолчания в объявлении.
+  kind: техническая
+  owner: тот, кто держит сервис
+  jurisdiction: нет
+  breaks: Недоступный источник роняет старт.
+  default: 5
+  schema:
+    type: integer
+    minimum: 1
+    maximum: 10
 
 PDR_NO_LIMITS:
   description: Число без пределов.
@@ -404,9 +599,19 @@ SELFTEST_FILES = {
         '    "PDR_WRONG_DEFAULT",\n'
         '    userver::dynamic_config::DefaultAsJsonString{R"({"lock": "x"})"},\n'
         '};\n'
+        'const userver::dynamic_config::Key<int> kAlready{"PDR_ALREADY_THERE", 5};\n'
+        'auto scope = source.UpdateAndListen(this, "good", &Good::OnConfigUpdate);\n'
+    ),
+    "libs/pdr-jobs/src/jobs/infrastructure/silent.cpp": (
+        'const userver::dynamic_config::Key<int> kSilent{"PDR_SILENT", 5};\n'
     ),
     "libs/pdr-jobs/src/jobs/application/leaked.cpp": (
         'const userver::dynamic_config::Key<int> kLeaked{"PDR_UNREGISTERED", 1};\n'
+        'auto scope = source.UpdateAndListen(this, "leaked", &Leaked::OnConfigUpdate);\n'
+    ),
+    "libs/pdr-jobs/src/jobs/infrastructure/nodefault.cpp": (
+        'const userver::dynamic_config::Key<int> kNoDefault{"PDR_NO_DEFAULT"};\n'
+        'auto scope = source.UpdateAndListen(this, "nd", &Nd::OnConfigUpdate);\n'
     ),
 }
 
@@ -419,6 +624,11 @@ SELFTEST_EXPECTED = (
     ("PDR_FORGOTTEN", "записана, а ключа в коде нет"),
     ("PDR_UNREGISTERED", "нет в configs/dynamic/registry.yaml"),
     ("PDR_UNREGISTERED", "объявлена вне infrastructure"),
+    ("PDR_SILENT", "без журнала изменений"),
+    ("PDR_NO_DEFAULT", "нет умолчания в объявлении ключа"),
+    ("PDR_TOO_SMALL", "меньше её же minimum"),
+    ("PDR_WAITS_FOREVER", "такой области нет"),
+    ("PDR_ALREADY_THERE", "а ключ уже объявлен"),
 )
 
 SELFTEST_CLEAN = ("PDR_GOOD",)
@@ -450,8 +660,10 @@ def selftest() -> int:
                     print("    " + line, file=sys.stderr)
                 return 1
 
-        if entries != 5:
-            print(f"самопроверка: разобрано {entries} записей вместо пяти", file=sys.stderr)
+        expected_entries = SELFTEST_REGISTRY.count("\nPDR_") + SELFTEST_REGISTRY.startswith("PDR_")
+        if entries != expected_entries:
+            print(f"самопроверка: разобрано {entries} записей вместо {expected_entries}",
+                  file=sys.stderr)
             return 1
 
         (root / REGISTRY).write_text("это не реестр\n", encoding="utf-8")

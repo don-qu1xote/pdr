@@ -42,4 +42,13 @@ if(PDR_BUILD_TESTS)
     )
     pdr_unit_test_includes(src)
     pdr_unit_test_libraries(pdr_jobs)
+
+    # Адаптер конфига проверяется против штатных заглушек userver: умолчание из
+    # кода без источника, применение без пересоздания адаптера, отказ значению
+    # вне диапазона и журнал «было → стало». Цель собирается только там, где
+    # userver есть, — то есть в ярусе 3 CI.
+    if(userver_FOUND)
+        pdr_adapter_test_sources(tests/dynamic_config_job_settings_test.cpp)
+        pdr_adapter_test_libraries(pdr_jobs_infrastructure)
+    endif()
 endif()

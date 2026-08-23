@@ -105,6 +105,20 @@ function(pdr_unit_test_libraries)
     set_property(GLOBAL APPEND PROPERTY PDR_UNIT_TEST_LIBRARIES ${ARGN})
 endfunction()
 
+# Проверки адаптеров против ШТАТНЫХ заглушек userver: dynamic_config::StorageMock,
+# перехват журнала. Ни сервиса, ни базы, ни докера — но и без userver их не
+# собрать, поэтому цель заводится только там, где он найден.
+function(pdr_adapter_test_sources)
+    foreach(source IN LISTS ARGN)
+        set_property(GLOBAL APPEND PROPERTY PDR_ADAPTER_TEST_SOURCES
+                     "${CMAKE_CURRENT_SOURCE_DIR}/${source}")
+    endforeach()
+endfunction()
+
+function(pdr_adapter_test_libraries)
+    set_property(GLOBAL APPEND PROPERTY PDR_ADAPTER_TEST_LIBRARIES ${ARGN})
+endfunction()
+
 # userver ищется РОВНО ОДИН РАЗ и здесь.
 #
 # Это не стиль, а требование: импортированные цели, которые создаёт
@@ -158,5 +172,14 @@ if(PDR_BUILD_TESTS)
                        pdr_unit_tests
                        "Unit-прогон идёт без базы и без докера: адаптеры проверяет contract-набор (docs/testing.md)."
                        infrastructure postgres userver pqxx PostgreSQL libpq)
+    endif()
+
+    get_property(adapter_sources GLOBAL PROPERTY PDR_ADAPTER_TEST_SOURCES)
+    get_property(adapter_libraries GLOBAL PROPERTY PDR_ADAPTER_TEST_LIBRARIES)
+
+    if(adapter_sources AND userver_FOUND)
+        add_executable(pdr_adapter_tests ${adapter_sources})
+        target_link_libraries(pdr_adapter_tests PRIVATE ${adapter_libraries} userver::utest)
+        add_test(NAME adapter COMMAND pdr_adapter_tests)
     endif()
 endif()

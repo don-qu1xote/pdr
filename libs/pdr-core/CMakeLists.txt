@@ -64,6 +64,7 @@ if(PDR_BUILD_TESTS)
     foreach(case IN ITEMS ids_person_as_tenant:pdr_core
                           ids_implicit_to_string:pdr_core
                           ids_implicit_to_int:pdr_core
+                          config_in_core:pdr_core
                           tenant_session_outside_scope:pdr_testing)
         string(REPLACE ":" ";" parts "${case}")
         list(GET parts 0 name)
