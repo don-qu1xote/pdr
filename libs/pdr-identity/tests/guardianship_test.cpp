@@ -32,7 +32,6 @@ TEST(Guardianship, RevokeKeepsTheLinkAndItsDate) {
     EXPECT_TRUE(revoked.Value().Guardian() == granted.Guardian());
     EXPECT_TRUE(revoked.Value().Student() == granted.Student());
 
-    // Исходная связь не изменилась: отзыв вернул новое значение.
     EXPECT_TRUE(granted.IsActive());
 }
 

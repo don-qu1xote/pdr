@@ -45,7 +45,6 @@ TEST(Result, RefusalSurvivesTheWayOut) {
     const auto out = HalvedTwice(3);
 
     ASSERT_FALSE(out.HasValue());
-    // Тот же самый отказ, а не «что-то пошло не так» на два этажа выше.
     EXPECT_TRUE(out.Failure() == deep.Failure());
 
     const auto second_floor = HalvedTwice(6);

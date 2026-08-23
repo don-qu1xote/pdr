@@ -51,7 +51,6 @@ TEST_F(BusTest, SubscriberDoesNotGetSomebodyElsesEvent) {
 }
 
 TEST_F(BusTest, PublisherDoesNotKnowHowManyAreListening) {
-    // Событие без единого подписчика — не ошибка.
     bus_.Publish(Revoked(20));
     EXPECT_EQ(bus_.Published(), 1U);
 
@@ -62,8 +61,6 @@ TEST_F(BusTest, PublisherDoesNotKnowHowManyAreListening) {
 
     bus_.Publish(Revoked(21));
 
-    // Второй подписчик добавился, не тронув ни строчки у издателя и не заметив
-    // первого.
     EXPECT_EQ(first, 1);
     EXPECT_EQ(second, 1);
     EXPECT_EQ(bus_.Published(), 2U);

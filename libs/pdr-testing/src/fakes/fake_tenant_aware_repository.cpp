@@ -39,9 +39,6 @@ std::size_t FakeTenantSession::DeleteAll() {
 }
 
 void FakeTenantAwareRepository::Run(const core::TenantId& tenant, const Work& work) {
-    // Объявление арендатора — первое, что делает область, и до него работа не
-    // получает сессию вовсе. В адаптере Postgres на этом месте стоит
-    // set_config('pdr.tenant_id', ..., true).
     ++declarations_;
     FakeTenantSession session{rows_, tenant};
     work(session);

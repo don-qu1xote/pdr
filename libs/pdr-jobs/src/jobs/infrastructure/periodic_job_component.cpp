@@ -37,8 +37,6 @@ userver::dist_lock::DistLockSettings AsLockSettings(const JobSettings& settings)
     result.forced_stop_margin = tenth;
     result.worker_func_restart_delay =
         std::chrono::duration_cast<std::chrono::milliseconds>(settings.Period());
-    // Выключенное задание блокировку не берёт вовсе — это штатный способ
-    // остановить его без выкатки.
     result.is_enabled = settings.Enabled();
     return result;
 }
@@ -56,9 +54,6 @@ JobName NameOf(const userver::components::ComponentConfig& config) {
 JobSettings SettingsOf(const ports::JobSettingsSource& source, const JobName& job) {
     auto settings = source.For(job);
     if (!settings.HasValue()) {
-        // Fail-fast на старте: задание без настроек не поднимается. Умолчание
-        // здесь означало бы, что забытая настройка выглядит как работающее
-        // задание.
         throw std::runtime_error{"jobs: " + settings.Failure().Detail()};
     }
     return settings.Value();
@@ -118,10 +113,6 @@ PeriodicJobComponentBase::~PeriodicJobComponentBase() {
 }
 
 void PeriodicJobComponentBase::OnAllComponentsLoaded() {
-    // Наблюдающее занятие идёт на каждом процессе и не зависит от блокировки:
-    // возраст последнего прогона обязан быть виден и там, где работу делает не
-    // этот процесс. Первый раз — сразу, иначе после перезапуска метрика до конца
-    // периода показывала бы «не отрабатывало никогда».
     Watch();
     const auto settings = SettingsOf(settings_, job_);
     watch_.Start(job_.Value() + "-watch",
@@ -135,8 +126,6 @@ void PeriodicJobComponentBase::Work() {
     while (!worker_->IsCancelAdvised()) {
         const auto settings = settings_.For(job_);
         if (!settings.HasValue()) {
-            // Задание убрали из конфига на ходу. Молча спать нельзя: пропавшая
-            // рассылка напоминаний не отличима от работающей.
             throw std::runtime_error{"jobs: " + settings.Failure().Detail()};
         }
 
@@ -157,8 +146,6 @@ void PeriodicJobComponentBase::Watch() {
         return;
     }
 
-    // Настройки уезжают в штатный воркер: период и срок блокировки меняются без
-    // выкатки, выключение — тоже.
     worker_->UpdateSettings(AsLockSettings(settings.Value()));
     watch_.SetSettings(
         {std::chrono::duration_cast<std::chrono::milliseconds>(settings.Value().Period()),
@@ -168,7 +155,6 @@ void PeriodicJobComponentBase::Watch() {
 }
 
 void PeriodicJobComponentBase::DumpMetrics(userver::utils::statistics::Writer& writer) const {
-    // Штатная метрика распределённой блокировки — как есть, своей нет и не нужно.
     writer["lock"] = *worker_;
 
     const auto watched = watched_.ReadCopy();
@@ -176,8 +162,6 @@ void PeriodicJobComponentBase::DumpMetrics(userver::utils::statistics::Writer& w
     writer["enabled"] = watched.enabled ? 1 : 0;
 
     if (!watched.last.has_value()) {
-        // Задание не отрабатывало ни разу: это видно отдельным числом, а не
-        // отсутствием метрики. Отсутствующую метрику никто не замечает.
         writer["ran"] = 0;
         writer["silent"] = watched.enabled ? 1 : 0;
         return;

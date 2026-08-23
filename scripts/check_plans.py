@@ -41,8 +41,6 @@ import check_isolation as live  # noqa: E402  (после правки sys.path)
 HOT_QUERIES = Path("db/explain/hot_queries.sql")
 SEED = Path("db/explain/seed.sql")
 
-# Значения подстановок. Их же засевает db/explain/seed.sql: арендатор номер 7,
-# человек 42 у него и его сосед по номеру, который ему опекун.
 SUBSTITUTIONS = {
     "tenant": "0e0e0e0e-0000-4000-8000-000000000007",
     "person": "0e0e0e0e-0001-4000-8000-000000007042",
@@ -102,8 +100,6 @@ def parse(text: str, source: str) -> list[HotQuery]:
                         header_line = number
                     headers[found.group(1)] = found.group(2).strip()
                 elif headers:
-                    # Перенос значения на следующую строку читается как то же
-                    # значение, а не теряется.
                     headers[list(headers)[-1]] += " " + line.lstrip("- ").strip()
                 continue
 
@@ -269,13 +265,10 @@ def selftest() -> int:
         print("самопроверка: перебор таблицы не пойман", file=sys.stderr)
         return 1
 
-    # Индекс во вложенном узле засчитывается, а разрешённый перебор — не
-    # нарушение: план глубже одного уровня разбирается целиком.
     if inspect(cleanup, SELFTEST_NESTED_PLAN):
         print("самопроверка: вложенный план разобран неверно", file=sys.stderr)
         return 1
 
-    # Запрос без «откуда» — отказ разбора, а не запрос без пояснения.
     try:
         parse("-- запрос: x\n-- индекс: y\nselect 1;\n", "самопроверка")
     except PlanError as error:
@@ -286,8 +279,6 @@ def selftest() -> int:
         print("самопроверка: запрос без «откуда» прошёл разбор", file=sys.stderr)
         return 1
 
-    # SQL без заголовков не пропускается молча: иначе запрос лежит в списке и
-    # не проверяется, а список выглядит длиннее, чем он есть.
     try:
         parse("select 1;\n", "самопроверка")
     except PlanError as error:

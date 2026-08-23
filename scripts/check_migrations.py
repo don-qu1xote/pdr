@@ -33,11 +33,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import migration_model as model  # noqa: E402  (после правки sys.path)
 
-# Таблицы механизма перечислены в модели: тем же списком пользуется сверка
-# владения таблицами, и разъехаться им негде.
 META_TABLES = model.META_TABLES
 
-# Типы времени без зоны. timestamptz и date разрешены, остальное — нет.
 TIME_WITHOUT_ZONE = {
     "timestamp",
     "timestamp without time zone",
@@ -45,12 +42,9 @@ TIME_WITHOUT_ZONE = {
     "time without time zone",
 }
 
-# Дробные типы: рядом с деньгами их не бывает.
 FRACTIONAL = ("numeric", "decimal", "real", "double precision", "float", "money")
 
-# Слова, после которых колонка — точно деньги.
 STRICT_MONEY = ("amount", "price", "cost", "fee", "payout", "refund")
-# Слова, после которых колонка МОЖЕТ быть деньгами: «12 из 20» тоже total.
 SOFT_MONEY = STRICT_MONEY + ("sum", "total", "balance", "discount")
 
 
@@ -146,9 +140,6 @@ def check(directory: Path, root: Path) -> tuple[list[str], int]:
             source = str(migration.path.relative_to(root))
         except ValueError:
             source = migration.path.name
-        # Непонятый разбором DDL — отказ, а не «пропустим и посмотрим колонки».
-        # Линтер, разобравший половину файла, честно скажет «нарушений нет» и
-        # будет прав ровно про ту половину, которую понял.
         violations.extend(model.unsupported(migration.sql, source))
         for table in migration.tables:
             tables += 1
@@ -158,7 +149,6 @@ def check(directory: Path, root: Path) -> tuple[list[str], int]:
 
 
 SELFTEST_FILES = {
-    # Чистый случай: так выглядит правильная доменная таблица.
     "V001__good.sql": """
 create table billing_invoice (
     tenant_id    uuid        not null,
@@ -170,14 +160,12 @@ create table billing_invoice (
     constraint billing_invoice_amount_positive check (amount_minor > 0)
 );
 """,
-    # Таблица без арендатора.
     "V002__no_tenant.sql": """
 create table scheduling_slot (
     id        uuid        primary key,
     starts_at timestamptz not null
 );
 """,
-    # Время без зоны и зона не тем типом.
     "V003__naive_time.sql": """
 create table scheduling_lesson (
     tenant_id uuid      not null,
@@ -186,7 +174,6 @@ create table scheduling_lesson (
     tz        timestamptz not null
 );
 """,
-    # Дробные деньги и сумма, названная не по правилу.
     "V004__money.sql": """
 create table billing_payment (
     tenant_id uuid          not null,
@@ -195,7 +182,6 @@ create table billing_payment (
     total     double precision not null
 );
 """,
-    # Сумма есть, валюты нет.
     "V005__no_currency.sql": """
 create table billing_package (
     tenant_id   uuid   not null,
@@ -243,8 +229,6 @@ def selftest() -> int:
                 print("    " + line, file=sys.stderr)
             return 1
 
-        # DDL, которого разбор не понимает, роняет и этот линтер: иначе он
-        # проверит колонки того, что понял, и промолчит про остальное.
         (migrations / "V006__alters.sql").write_text(
             "alter table billing_invoice add column note text;\n", encoding="utf-8"
         )
@@ -254,7 +238,6 @@ def selftest() -> int:
             return 1
         (migrations / "V006__alters.sql").unlink()
 
-        # Имя файла не по правилу — тоже отказ.
         (migrations / "V006-wrong-name.sql").write_text("select 1;\n", encoding="utf-8")
         broken, _ = check(migrations, root)
         if not any("не по правилу" in line for line in broken):

@@ -42,7 +42,6 @@ TEST(MoneyBuilder, RefusesCurrencyThatIsNotACode) {
 }
 
 TEST(MomentBuilder, BuildsMomentInUtc) {
-    // 2024-01-01T00:00:00Z — та же точка отсчёта, что у фейковых часов.
     const auto beginning = MomentBuilder{}.Utc(2024, 1, 1).At(0, 0).Build();
     EXPECT_EQ(beginning.UnixMicros(), 1704067200000000);
 

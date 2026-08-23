@@ -76,7 +76,6 @@ TEST_F(DeliverDomainEventsTest, BookedLessonNotifiesBothSides) {
 }
 
 TEST_F(DeliverDomainEventsTest, NobodySubscribedIsNotAFailure) {
-    // Подписки нет — событие просто проходит мимо, издатель об этом не узнает.
     bus_.Publish(pdr::events::identity::GuardianshipRevoked{Envelope(), guardian_, student_});
 
     EXPECT_TRUE(outbox_.Queued().empty());

@@ -20,8 +20,9 @@ PG_ENV = set -a; . ./$(ENV_FILE); set +a; \
 	       PGPASSWORD=$$POSTGRES_PASSWORD PGDATABASE=$$POSTGRES_DB;
 
 .DEFAULT_GOAL := help
-.PHONY: help up down test test-unit test-isolation test-jobs test-plans fmt fmt-check hooks \
-        logs migrate migrate-verify migrate-status schema-doc ps check-env
+.PHONY: help up down test test-unit test-isolation test-jobs test-plans fmt fmt-check \
+        comments comments-fix hooks logs migrate migrate-verify migrate-status schema-doc \
+        ps check-env
 
 help:
 	@echo "Цели:"
@@ -34,7 +35,9 @@ help:
 	@echo "  make test-plans  снять планы горячих запросов на живой базе"
 	@echo "  make fmt         привести C++ к .clang-format"
 	@echo "  make fmt-check   проверить формат, ничего не меняя (та же цель в CI и в хуке)"
-	@echo "  make hooks       включить githooks/ (pre-commit проверяет формат)"
+	@echo "  make comments    проверить политику комментариев (та же цель в CI и в хуке)"
+	@echo "  make comments-fix   снять комментарии, нарушающие правило"
+	@echo "  make hooks       включить githooks/ (pre-commit проверяет формат и комментарии)"
 	@echo "  make logs        смотреть логи (make logs SERVICE=postgres)"
 	@echo "  make migrate     применить миграции из $(MIGRATIONS)"
 	@echo "  make migrate-verify   сверить суммы, ничего не применяя"
@@ -140,6 +143,8 @@ test:
 	python3 scripts/check_secrets.py
 	python3 scripts/detect_changes.py --selftest
 	python3 scripts/check_format.py --selftest
+	python3 scripts/check_comments.py --selftest
+	python3 scripts/check_comments.py
 	python3 scripts/check_plans.py --selftest
 	python3 scripts/gen_schema_doc.py --check
 	python3 scripts/verify_env_parity.py --selftest
@@ -162,6 +167,15 @@ fmt:
 # «чисто», а CI покраснеет. Версия закреплена в .clang-format-version.
 fmt-check:
 	@python3 scripts/check_format.py
+
+# Комментарии: в коде остаётся только то, без чего не соберётся или не проверится
+# сборка (docs/comments.md). Ту же цель зовут и CI (джоба comments), и хук
+# githooks/pre-commit — не три похожие команды, а буквально одна.
+comments:
+	@python3 scripts/check_comments.py
+
+comments-fix:
+	@python3 scripts/check_comments.py --fix
 
 # Хуки лежат в githooks/ и включаются одной командой: копировать их в .git/hooks
 # нельзя — копия перестаёт обновляться вместе с репозиторием в тот же день.

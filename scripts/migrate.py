@@ -140,8 +140,6 @@ def command_apply(migrations: Sequence[model.Migration], psql: str) -> int:
         applied = applied_versions(psql)
         problems = mismatches(migrations, applied)
         if problems:
-            # Сначала сверка, потом изменения: применять что-то поверх
-            # расхождения — верный способ его закрепить.
             for line in problems:
                 print(line, file=sys.stderr)
             return 1

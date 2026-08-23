@@ -20,7 +20,6 @@ TEST(StrongId, ParsesCanonicalText) {
     ASSERT_TRUE(person.has_value());
     EXPECT_EQ(person->ToString(), std::string{kText});
 
-    // Разбор не зависит от регистра, вывод всегда в нижнем.
     const auto upper = PersonId::Parse("3F2504E0-4F89-11D3-9A0C-0305E82C3301");
     ASSERT_TRUE(upper.has_value());
     EXPECT_TRUE(*upper == *person);
@@ -65,8 +64,6 @@ TEST(StrongId, GeneratorGivesTypedIdentifiers) {
     EXPECT_EQ(tenant.ToString(), "00000000-0000-0000-0000-000000000002");
     EXPECT_EQ(generator.Issued(), 2U);
 
-    // Разные типы: сравнить person и tenant нечем, и это проверяется отдельно —
-    // тестами compile_fail/, которые обязаны НЕ собираться.
     EXPECT_FALSE(person == generator.Next<PersonId>());
 }
 

@@ -18,8 +18,6 @@ DeliverDomainEvents::DeliverDomainEvents(ports::OutboxRepository& outbox) noexce
 
 void DeliverDomainEvents::SubscribeTo(events::Bus& bus) {
     bus.Subscribe<GuardianshipRevoked>([this](const GuardianshipRevoked& event) {
-        // Опекуну — почтой: отзыв опеки не то, о чём узнают из push-уведомления
-        // между делом.
         const auto delivery = Delivery::Compose(event.envelope.tenant,
                                                 event.guardian,
                                                 Channel::kEmail,

@@ -60,7 +60,6 @@ public:
         } else {
             std::optional<Result> result;
             Run(tenant, Work{[&job, &result](Session& session) { result.emplace(job(session)); }});
-            // Область закончилась без исключения — значит работа выполнена.
             return std::move(*result);
         }
     }

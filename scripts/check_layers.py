@@ -46,8 +46,6 @@ SOURCE_SUFFIXES = frozenset({".h", ".hh", ".hpp", ".hxx", ".ipp", ".c", ".cc", "
 SKIPPED_DIRS = frozenset({"build", "out", "node_modules", "_deps", "third_party", "compile_fail"})
 LAYERS = ("core", "application", "infrastructure")
 
-# Библиотеки платформы: ими пользуются все контексты, сами они не знают ни об
-# одном. Всё остальное в libs/ с префиксом pdr- — модуль контекста.
 LIBRARY_PREFIX = "pdr-"
 PLATFORM_LIBRARIES = frozenset({"pdr-core", "pdr-events", "pdr-testing"})
 CONTRACT_HEADER = "contract.hpp"
@@ -57,9 +55,6 @@ PQ_HEADERS = frozenset({"libpq-fe.h", "libpq-events.h", "postgres_fe.h"})
 
 TIME_HEADERS = frozenset({"ctime", "time.h", "sys/time.h", "sys/times.h"})
 
-# Прямое обращение к системному времени. Ищется по тексту без комментариев и
-# литералов: имя типа std::chrono::system_clock само по себе не запрещено,
-# запрещён вызов «который час».
 CLOCK_CALLS = (
     "system_clock::now",
     "steady_clock::now",
@@ -337,8 +332,6 @@ def check_contracts(root: Path, modules: dict[str, Path]) -> list[str]:
     for context, directory in sorted(modules.items()):
         contract_root = directory / "contract"
         if not contract_root.is_dir():
-            # Контракта нет вовсе — так и должно быть, пока никто не спрашивает
-            # этот контекст синхронно. Заводить пустой заранее незачем.
             continue
 
         expected = contract_root / context / CONTRACT_HEADER
@@ -404,7 +397,6 @@ SELFTEST_FILES = {
         '#include "application/ports/tariff_repository.hpp"\n'
         'auto Now() { return std::chrono::system_clock::now(); }\n'
     ),
-    # Границы между контекстами.
     "libs/pdr-alpha/contract/alpha/contract.hpp": "#pragma once\n",
     "libs/pdr-alpha/src/alpha/application/allowed.cpp": '#include "beta/contract.hpp"\n',
     "libs/pdr-alpha/src/alpha/application/forbidden.cpp": (
@@ -430,7 +422,6 @@ SELFTEST_EXPECTED = {
     ("libs/pdr-core/src/core/platform.cpp", 1),
 }
 
-# Нарушение без строки: лишний публичный заголовок у модуля.
 SELFTEST_EXPECTED_WITHOUT_LINE = {"libs/pdr-beta/contract/beta/extra.hpp"}
 
 
@@ -455,8 +446,6 @@ def selftest() -> int:
             else:
                 without_line.add(location.replace("\\", "/"))
 
-        # Каталог compile_fail пропускается, поэтому проверенных файлов на один
-        # меньше, чем заведено.
         expected_checked = sum(1 for name in SELFTEST_FILES if "compile_fail" not in name)
         if checked != expected_checked:
             print(f"самопроверка: проверено {checked} файлов из {expected_checked}",

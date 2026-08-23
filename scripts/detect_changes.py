@@ -38,7 +38,6 @@ import sys
 from pathlib import Path, PurePosixPath
 from typing import Iterable, Sequence
 
-# Область → по каким путям она затронута. Порядок важен только для чтения.
 AREAS: dict[str, tuple[str, ...]] = {
     "cpp": ("libs/", "services/", "CMakeLists.txt", ".clang-format", ".clang-tidy",
             ".clang-format-version"),
@@ -49,10 +48,8 @@ AREAS: dict[str, tuple[str, ...]] = {
     "docs": ("docs/", "README.md", "CONTRIBUTING.md"),
 }
 
-# Правка самого CI гоняется целиком: иначе выборочность проверяет сама себя.
 CI_PATHS = (".github/", "scripts/detect_changes.py")
 
-# Флаг, на который смотрит условие джобы.
 FLAG = re.compile(r"needs\.changes\.outputs\.([a-z_]+)")
 
 
@@ -94,8 +91,6 @@ def decide(files: Sequence[str], forced: bool, unknown: bool) -> dict[str, bool]
     for area, prefixes in AREAS.items():
         decision[area] = force or touches(files, prefixes)
 
-    # Особый случай, ради которого выборочность и заводят: правка только
-    # документов не запускает ни сборку, ни тесты.
     decision["docs_only"] = not force and bool(files) and all(
         touches([name], AREAS["docs"]) for name in files
     )
@@ -115,23 +110,16 @@ def report(decision: dict[str, bool]) -> None:
 
 
 SELFTEST_CASES = (
-    # (что изменилось, форсировано, ожидания)
     (["README.md"], False, {"cpp": False, "docs": True, "docs_only": True, "forced": False}),
     (["docs/testing.md", "CONTRIBUTING.md"], False, {"cpp": False, "docs_only": True}),
     (["libs/pdr-core/src/core/money.cpp"], False, {"cpp": True, "docs_only": False}),
     (["db/migrations/V004__x.sql"], False, {"db": True, "cpp": False, "docs_only": False}),
-    # Горячие запросы и засев к ним — тоже схема: их правка обязана снять планы
-    # заново, иначе список расходится с индексами молча.
     (["db/explain/hot_queries.sql"], False, {"db": True, "cpp": False, "docs_only": False}),
-    # Смена закреплённой версии форматтера — это про C++: цель fmt-check обязана
-    # прогнаться на новой версии до того, как ею отформатируют дерево.
     ([".clang-format-version"], False, {"cpp": True, "docs_only": False}),
     (["deploy/docker-compose.yml"], False, {"deploy": True, "cpp": False}),
     (["configs/dynamic/registry.yaml"], False, {"configs": True, "cpp": False}),
-    # Кнопка «прогнать всё»: один флаг включает все области.
     (["README.md"], True, {"cpp": True, "db": True, "deploy": True, "forced": True,
                            "docs_only": False}),
-    # Правка самого CI гоняется целиком, даже без кнопки.
     ([".github/workflows/ci.yml"], False, {"cpp": True, "forced": True, "docs_only": False}),
     (["scripts/detect_changes.py"], False, {"cpp": True, "forced": True}),
 )
@@ -148,15 +136,11 @@ def selftest() -> int:
                       f"{decision[name]}, ожидалось {want}", file=sys.stderr)
                 return 1
 
-    # Неизвестность — это «затронуто всё», а не «ничего».
     unknown = decide([], forced=False, unknown=True)
     if not all(unknown[area] for area in AREAS):
         print("самопроверка: при неизвестной базе сравнения не всё затронуто", file=sys.stderr)
         return 1
 
-    # Ни одна джоба не должна смотреть на «forced» — проверяем это здесь же, по
-    # тексту workflow: условие «или форсировано» в джобе и есть та ошибка,
-    # ради которой форсирование живёт на выходе скрипта.
     root = Path(__file__).resolve().parent.parent
     workflows = list((root / ".github" / "workflows").glob("*.yml"))
     known = set(AREAS) | {"docs_only", "forced"}
@@ -170,8 +154,6 @@ def selftest() -> int:
                       f"в detect_changes.py, а не в условие джобы", file=sys.stderr)
                 return 1
 
-            # Опечатка во флаге — это не ошибка, а вечно ложное условие: джоба
-            # молча не запускается ни разу, и заметить это нечем.
             for name in FLAG.findall(line):
                 if name not in known:
                     print(f"самопроверка: {path.name}:{number}: джоба смотрит на флаг "
@@ -179,8 +161,6 @@ def selftest() -> int:
                           f"и джоба не запустится ни разу", file=sys.stderr)
                     return 1
 
-        # Флаг, посчитанный скриптом и не проброшенный в outputs, ведёт себя так
-        # же: джоба, которая на него посмотрит, не запустится никогда.
         if "detect" in text:
             for area in known:
                 if f"{area}: ${{{{ steps.detect.outputs.{area} }}}}" not in text:

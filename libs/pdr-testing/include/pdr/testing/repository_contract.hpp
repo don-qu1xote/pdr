@@ -106,8 +106,6 @@ PDR_CONTRACT_TEST_P(RepositoryContract, NothingOfAnotherTenantIsVisible) {
 
     ASSERT_EQ(seen.size(), 1U) << "из области второго арендатора видно не только его строку";
     EXPECT_EQ(seen.front(), "занятие Б");
-    // Строка первого существует — просто из области второго её нет. Без этой
-    // проверки набор был бы одинаково зелёным на пустом хранилище.
     EXPECT_EQ(this->world_.RowsBypassingPolicy(), 2U);
 }
 

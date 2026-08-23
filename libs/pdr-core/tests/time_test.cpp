@@ -35,7 +35,6 @@ TEST(TimeZone, IsAName) {
     EXPECT_FALSE(TimeZone::Parse("1/Moscow").has_value());
     EXPECT_FALSE(TimeZone::Parse("A/B/C/D").has_value());
 
-    // Момент и зона — разные типы: «17:00» без зоны собрать не из чего.
     EXPECT_TRUE(TimeZone::Parse("Europe/Moscow") != TimeZone::Parse("Asia/Novosibirsk"));
 }
 
@@ -47,8 +46,6 @@ TEST(FakeClock, MovesTimeWithoutWaiting) {
     EXPECT_TRUE(start == pdr::testing::FakeClock::DefaultStart());
     EXPECT_TRUE(port.Now() == start) << "«сейчас» убежало между двумя вопросами";
 
-    // Двое суток проходят мгновенно: тест на «отмену не позже чем за сутки»
-    // не спит ни микросекунды.
     clock.Advance(48h);
     EXPECT_TRUE(port.Now() - start == 48h);
 

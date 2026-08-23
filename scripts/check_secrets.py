@@ -48,11 +48,8 @@ SKIPPED_DIRS = frozenset({".git", "build", "out", "_deps", "__pycache__", "node_
 CODE_SUFFIXES = frozenset({".hpp", ".cpp", ".cc", ".hxx"})
 CONFIG_SUFFIXES = frozenset({".yaml", ".yml"})
 
-# Значения, которые в примерах и в тестах обязаны быть заведомо ненастоящими.
 PLACEHOLDERS = ("ЗАМЕНИТЕ", "change-me", "not-a-secret", "example", "placeholder", "<", "тут")
 
-# ЗАПРЕЩЁННЫЕ ПОДСТРОКИ для теста на утечку. Файл, а не голова: тест на логи и
-# метрики первого сервиса берёт список отсюда.
 FORBIDDEN_IN_OUTPUT = (
     "postgresql://",
     "postgres://",
@@ -184,12 +181,9 @@ def check(root: Path) -> tuple[list[str], int]:
 
 SELFTEST_FILES = {
     "deploy/secrets/secrets.json.example": '{"postgresql_settings": {"password": "ЗАМЕНИТЕ"}}\n',
-    # Чистый профиль: пароль заведомо ненастоящий.
     "deploy/env/local.env.example": "POSTGRES_PASSWORD=change-me-locally\n"
                                     "PDR_SECDIST_PATH=./deploy/secrets/secrets.json\n",
-    # Секрет из окружения в коде.
     "libs/pdr-core/src/infrastructure/env.cpp": 'const char* p = std::getenv("PDR_DB_PASSWORD");\n',
-    # Штатная опция, которая у нас запрещена, и missing-ok у провайдера.
     "services/scheduling/static_config.yaml": (
         "components_manager:\n"
         "    components:\n"
@@ -198,10 +192,8 @@ SELFTEST_FILES = {
         "            missing-ok: true\n"
         "            environment-secrets-key: SECDIST_CONFIG\n"
     ),
-    # Настоящий секрет в примере профиля и приватный ключ в истории.
     "deploy/env/ci.env.example": "POSTGRES_PASSWORD=hJ2k9Lm4Qw8x\n",
     "deploy/keys/service.pem.example": "-----BEGIN RSA PRIVATE KEY-----\nMIIE\n",
-    # Секрет в реестре динамических значений.
     "configs/dynamic/registry.yaml": (
         "PDR_YOOKASSA_SECRET_KEY:\n"
         "  description: ключ провайдера\n"
@@ -245,7 +237,6 @@ def selftest() -> int:
                     print("    " + line, file=sys.stderr)
                 return 1
 
-        # Права на настоящем файле секретов.
         secrets = root / SECRETS_FILE
         secrets.write_text("{}\n", encoding="utf-8")
         secrets.chmod(0o644)

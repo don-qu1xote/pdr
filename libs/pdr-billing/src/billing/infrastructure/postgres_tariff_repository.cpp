@@ -37,8 +37,6 @@ std::optional<Tariff> PostgresTariffRepository::FindByCode(const TariffCode& cod
 
     const auto currency = core::CurrencyCode::Parse(currency_text);
     if (!currency.has_value()) {
-        // Хранилище отдало то, чего в домене не бывает. Это поломка данных, а не
-        // «тариф не найден», и заминать её нельзя.
         throw std::runtime_error{"tariffs.currency_code не является кодом валюты: " +
                                  currency_text};
     }

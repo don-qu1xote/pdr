@@ -39,16 +39,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import migration_model as model  # noqa: E402  (после правки sys.path)
 
-# Параметр сессии, по которому политика узнаёт арендатора. Одно имя на схему,
-# на адаптер и на тесты: разъехаться им негде, потому что все трое сверяются
-# именно с этой строкой.
 PARAMETER = "pdr.tenant_id"
 
-# Колонка арендатора. Её наличие проверяет scripts/check_migrations.py; здесь
-# проверяется, что политика на неё смотрит.
 TENANT_COLUMN = "tenant_id"
 
-# Единственный файл, которому положено объявлять арендатора базе.
 ADAPTER = Path("libs/pdr-core/src/infrastructure/postgres_tenant_aware_repository.cpp")
 
 SET_CONFIG = re.compile(r"set_config\(\s*'([^']*)'\s*,\s*\$1\s*,\s*(true|false)\s*\)")
@@ -95,8 +89,6 @@ def check_migrations(migrations: Sequence[tuple[str, model.Migration]]) -> tuple
         for policy in migration.policies:
             policies.setdefault(policy.table, []).append((source, policy))
 
-    # Политика или включение на таблице, которой никто не заводил: почти всегда
-    # это опечатка в имени, и настоящая таблица осталась без защиты.
     for table, place in sorted({**enabled, **forced}.items()):
         if table not in created:
             violations.append(
@@ -115,14 +107,6 @@ def check_migrations(migrations: Sequence[tuple[str, model.Migration]]) -> tuple
     checked = 0
     for table, (place, definition) in sorted(created.items()):
         if table in model.META_TABLES and not _has_tenant(definition):
-            # Таблицы механизма не про предметную область: арендатора у них нет,
-            # защищать в них нечего. Список закрыт и объяснён в
-            # scripts/migration_model.py.
-            #
-            # Исключение действует ровно пока арендатора нет. Появился
-            # tenant_id — таблица проверяется как доменная: иначе список
-            # исключений становится способом завести таблицу с чужими данными
-            # мимо политики.
             continue
         checked += 1
 
@@ -150,9 +134,6 @@ def check_migrations(migrations: Sequence[tuple[str, model.Migration]]) -> tuple
         for source, policy in table_policies:
             spot = _place(source, policy.line)
             body = policy.body.lower()
-            # Разрешительные политики складываются по «или»: одна политика с
-            # using (true) открывает таблицу целиком, сколько бы правильных ни
-            # лежало рядом. Поэтому требование — к каждой.
             if f"current_setting('{PARAMETER}'" not in body:
                 violations.append(
                     f"{spot}: политика {policy.name} не смотрит на параметр сессии "
@@ -259,14 +240,12 @@ const userver::storages::postgres::Query kDeclareTenant{
 
 SELFTEST_FILES = {
     "V001__good.sql": GOOD_TABLE,
-    # Защиты нет вовсе.
     "V002__no_rls.sql": """
 create table scheduling_slot (
     tenant_id uuid not null,
     id        uuid not null
 );
 """,
-    # Включена, но не форсирована: владелец таблицы ходит мимо политики.
     "V003__not_forced.sql": """
 create table scheduling_lesson (
     tenant_id uuid not null,
@@ -277,7 +256,6 @@ create policy scheduling_lesson_isolation on scheduling_lesson
     using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)
     with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid);
 """,
-    # Политика есть, но открытая: складывается по «или» с правильной.
     "V004__open_policy.sql": """
 create table billing_invoice (
     tenant_id uuid not null,
@@ -291,7 +269,6 @@ create policy billing_invoice_isolation on billing_invoice
 create policy billing_invoice_reports on billing_invoice
     using (true) with check (true);
 """,
-    # Политика без with check: чужую строку можно вставить.
     "V005__no_with_check.sql": """
 create table notes_note (
     tenant_id uuid not null,
@@ -302,25 +279,20 @@ alter table notes_note force row level security;
 create policy notes_note_isolation on notes_note
     using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid);
 """,
-    # Защиту выключают «на время».
     "V006__disabled.sql": """
 alter table identity_person disable row level security;
 """,
-    # Опечатка в имени таблицы: политика легла мимо, таблица осталась открытой.
     "V007__typo.sql": """
 create policy identity_persons_isolation on identity_persons
     using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)
     with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid);
 """,
-    # Метатаблице механизма дописали арендатора: исключение из списка
-    # META_TABLES на этом заканчивается, политика обязана появиться.
     "V008__meta_with_tenant.sql": """
 create table jobs_lock (
     key       text not null,
     tenant_id uuid not null
 );
 """,
-    # А метатаблица без арендатора проходит: защищать в ней нечего.
     "V009__meta_plain.sql": """
 create table jobs_run (
     job        text        not null,
@@ -350,7 +322,6 @@ def selftest() -> int:
         adapter.parent.mkdir(parents=True)
         adapter.write_text(GOOD_ADAPTER, encoding="utf-8")
 
-        # Чистый случай: одна правильная таблица и правильный адаптер.
         (migrations / "V001__good.sql").write_text(GOOD_TABLE, encoding="utf-8")
         violations, checked = check(migrations, root, adapter)
         if violations or checked != 1:
@@ -378,7 +349,6 @@ def selftest() -> int:
                 print("    " + line, file=sys.stderr)
             return 1
 
-        # Адаптер объявляет чужой параметр и оставляет его на соединении.
         adapter.write_text(
             GOOD_ADAPTER.replace("pdr.tenant_id", "pdr.tenant").replace("$1, true", "$1, false"),
             encoding="utf-8",
@@ -391,7 +361,6 @@ def selftest() -> int:
             print("самопроверка: не поймано объявление мимо транзакции", file=sys.stderr)
             return 1
 
-        # Адаптера нет вовсе.
         adapter.unlink()
         if not any("некому" in line for line in check_adapter(adapter, str(ADAPTER))):
             print("самопроверка: не поймано отсутствие адаптера", file=sys.stderr)

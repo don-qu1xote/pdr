@@ -35,9 +35,6 @@ RunRecord RunPeriodicJob::Execute(const JobName& job,
         ++produced;
     }
 
-    // Отказ здесь означал бы, что часы пошли назад: конец прогона раньше его
-    // начала. Это ошибка адаптера часов, а не отказ домена, — и она обязана быть
-    // видна сразу, а не превратиться в отрицательную длительность в метрике.
     const auto record = RunRecord::Compose(started_at, clock_.Now(), outcome, produced, repeated);
     journal_.Finished(job, record.Value());
     return record.Value();

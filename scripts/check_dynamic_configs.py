@@ -51,7 +51,6 @@ REQUIRED_FIELDS = ("description", "kind", "owner", "jurisdiction", "breaks", "de
 KINDS = ("техническая", "продуктовая")
 JURISDICTIONS = ("да", "нет")
 
-# Объявление ключа: имя переменной, имя величины и текст умолчания до конца блока.
 KEY_DECLARATION = re.compile(
     r"dynamic_config::Key<[^>]*>\s+(\w+)\s*\{\s*(?:(?P<name>\"[A-Z0-9_]+\")|(?P<alias>[\w:]+))"
     r"(?P<tail>[^;]*);",
@@ -135,7 +134,6 @@ def parse_entry(name: str, block: Sequence[str]) -> dict[str, object]:
         if rest in (">-", ">", "|", "|-", ""):
             fields[field] = " ".join(part.strip() for part in nested if part.strip())
             if rest == "" and nested:
-                # Вложенный блок без скаляра — это дерево (schema, default: {}).
                 fields[field] = nested
         else:
             fields[field] = rest
@@ -202,9 +200,6 @@ def keys_in_code(root: Path) -> tuple[dict[str, tuple[Path, str]], list[str]]:
     found: dict[str, tuple[Path, str]] = {}
     violations: list[str] = []
 
-    # Имя величины часто лежит рядом константой — в том же файле или в заголовке
-    # компонента. Таблица собирается по всему дереву: иначе разбор увидит
-    # «Класс::kVariable» и не поймёт, о какой величине речь.
     aliases: dict[str, set[str]] = {}
     sources = list(source_files(root))
     for path in sources:
@@ -410,7 +405,6 @@ SELFTEST_FILES = {
         '    userver::dynamic_config::DefaultAsJsonString{R"({"lock": "x"})"},\n'
         '};\n'
     ),
-    # Ключ вне infrastructure и величина, которой нет в реестре.
     "libs/pdr-jobs/src/jobs/application/leaked.cpp": (
         'const userver::dynamic_config::Key<int> kLeaked{"PDR_UNREGISTERED", 1};\n'
     ),
@@ -460,7 +454,6 @@ def selftest() -> int:
             print(f"самопроверка: разобрано {entries} записей вместо пяти", file=sys.stderr)
             return 1
 
-        # Непонятый разбором реестр — отказ, а не «проверим, что поняли».
         (root / REGISTRY).write_text("это не реестр\n", encoding="utf-8")
         broken, _ = check(root)
         if not any("разбор не понял" in line for line in broken):

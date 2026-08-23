@@ -8,8 +8,6 @@ ContractService::ContractService(const ports::GuardianshipRepository& guardiansh
 bool ContractService::MayActFor(const core::TenantId& tenant,
                                 const core::PersonId& actor,
                                 const core::PersonId& student) const {
-    // Самостоятельный взрослый ученик действует за себя сам: опекуна у него нет
-    // вовсе, и это не пропущенная связь, а полноценный случай.
     if (actor == student) {
         return true;
     }

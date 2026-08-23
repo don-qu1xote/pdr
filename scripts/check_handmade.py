@@ -52,10 +52,8 @@ SKIPPED_DIRS = frozenset({".git", "build", "out", "node_modules", "_deps", "thir
 
 ADR = Path("docs/adr/0013-standard-over-handmade.md")
 
-# Директива инструмента: ключ и причина. Без причины — не директива.
 WAIVER = re.compile(r"//\s*штатное-ok:\s*([a-z0-9-]+)\s*[—-]\s*(\S.*)$")
 
-# Строка отступления в ADR: тот же ключ жирным.
 ADR_WAIVER = re.compile(r"^\s*\*\s+\*\*([a-z0-9-]+)\*\*")
 
 HANDMADE_NAMES = re.compile(
@@ -64,7 +62,6 @@ HANDMADE_NAMES = re.compile(
 )
 
 MAP_DECLARATION = re.compile(r"\bstd::(?:unordered_)?(?:multi)?map\s*<")
-# Слова, при которых мапа перестаёт быть просто мапой и становится кэшем.
 TTL_WORDS = re.compile(r"\b(?:ttl|expires_at|expire_at|expiry|expires|evict|eviction)\b",
                        re.IGNORECASE)
 
@@ -267,7 +264,6 @@ def check(root: Path) -> tuple[list[str], int]:
 
 
 SELFTEST_FILES = {
-    # Чистый случай: штатное на месте, мапа без времени жизни — обычная мапа.
     "libs/pdr-events/include/events/in_memory_bus.hpp": (
         "#pragma once\n"
         "#include <unordered_map>\n"
@@ -275,12 +271,10 @@ SELFTEST_FILES = {
         "    std::unordered_map<int, int> handlers_;\n"
         "};\n"
     ),
-    # Разговор про запреты — не нарушение: комментарии и литералы не считаются.
     "libs/pdr-core/src/core/talks.cpp": (
         "// свой Cache и std::thread здесь только на словах\n"
         "const char* kNote = \"nlohmann::json и prometheus упомянуты строкой\";\n"
     ),
-    # Ровно тот случай, который назван в задаче.
     "libs/pdr-core/src/infrastructure/my_cache.hpp": (
         "#pragma once\n"
         "class MyCache final {\n"
@@ -288,14 +282,12 @@ SELFTEST_FILES = {
         "    int Get(int key) const;\n"
         "};\n"
     ),
-    # Ограничитель, размыкатель и откат — из «НЕ делай».
     "libs/pdr-core/src/infrastructure/limits.hpp": (
         "#pragma once\n"
         "class TenantRateLimiter final {};\n"
         "class ProviderCircuitBreaker final {};\n"
         "struct ExponentialBackoff final {};\n"
     ),
-    # Мапа, ставшая кэшем: рядом живёт время жизни.
     "libs/pdr-core/src/infrastructure/ttl_store.hpp": (
         "#pragma once\n"
         "#include <unordered_map>\n"
@@ -305,7 +297,6 @@ SELFTEST_FILES = {
         "    void Evict();\n"
         "};\n"
     ),
-    # Периодика на потоке.
     "libs/pdr-core/src/infrastructure/ticker.cpp": (
         "#include <thread>\n"
         "void Start() {\n"
@@ -313,18 +304,15 @@ SELFTEST_FILES = {
         "    worker.detach();\n"
         "}\n"
     ),
-    # Вторая библиотека вместо штатной.
     "libs/pdr-core/src/infrastructure/foreign.cpp": (
         "#include <nlohmann/json.hpp>\n"
         "#include <spdlog/spdlog.h>\n"
     ),
-    # Отступление с директивой и строкой в ADR — проходит.
     "libs/pdr-core/src/infrastructure/allowed.hpp": (
         "#pragma once\n"
         "class RingBuffer final {  // штатное-ok: ring-buffer — в userver его нет\n"
         "};\n"
     ),
-    # Отступление без строки в ADR — не проходит.
     "libs/pdr-core/src/infrastructure/undocumented.hpp": (
         "#pragma once\n"
         "class SecondCache final {  // штатное-ok: second-cache — причина есть, строки нет\n"

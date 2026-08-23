@@ -113,7 +113,6 @@ TEST_F(RevokeGuardianshipTest, ContractAnswersWhoMayActForWhom) {
 
     EXPECT_TRUE(contract.MayActFor(tenant_, guardian_, student_));
 
-    // Самостоятельный взрослый ученик — сам себе представитель.
     EXPECT_TRUE(contract.MayActFor(tenant_, student_, student_));
 
     const FakeGuardianships without{std::nullopt};

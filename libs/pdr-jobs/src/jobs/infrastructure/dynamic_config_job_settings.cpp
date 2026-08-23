@@ -29,9 +29,6 @@ JobSettings Parse(const userver::formats::json::Value& value,
                   userver::formats::parse::To<JobSettings>) {
     const auto lock = JobName::Parse(value["lock"].As<std::string>());
     if (!lock.has_value()) {
-        // Отказ разбора отменяет обновление конфига целиком, и это правильно:
-        // задание с неразборным именем блокировки не должно тихо остаться на
-        // старом значении.
         throw std::runtime_error{"jobs: имя блокировки не по правилу: " +
                                  value["lock"].As<std::string>()};
     }

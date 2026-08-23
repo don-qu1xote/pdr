@@ -78,8 +78,6 @@ std::string FormatUuid(const IdBytes& bytes) {
 }
 
 std::size_t HashBytes(const IdBytes& bytes) noexcept {
-    // FNV-1a: идентификаторы кладут в unordered_map, а свой хеш в каждом модуле —
-    // это разные качества раскладки и разные ошибки.
     std::uint64_t hash = 1469598103934665603ULL;
     for (const std::uint8_t byte : bytes) {
         hash ^= byte;

@@ -25,14 +25,8 @@ COMMENT_ON_TABLE = re.compile(
     r"comment\s+on\s+table\s+([a-z_][a-z0-9_]*)\s+is\s+'((?:[^']|'')*)'", re.I
 )
 
-# Долларовые кавычки: $$ ... $$ или $tag$ ... $tag$. Внутри может быть что
-# угодно, включая одиночную кавычку, — без этого разбора строковый сканер
-# рассинхронизировался бы и стёр половину файла молча.
 DOLLAR_TAG = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)?\$")
 
-# alter table в ЕДИНСТВЕННОЙ форме, которую разбор понимает: включение,
-# выключение и форсирование построчной защиты. Всякая другая форма alter table
-# по-прежнему отказ (см. unsupported ниже).
 ALTER_ROW_SECURITY = re.compile(
     r"\balter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?([a-z_][a-z0-9_]*)\s+"
     r"(enable|disable|force|no\s+force)\s+row\s+level\s+security\b",
@@ -49,8 +43,6 @@ CREATE_INDEX = re.compile(
     re.I,
 )
 
-# Типы из нескольких слов: разбирать их как «первое слово» нельзя, иначе
-# «timestamp without time zone» окажется просто «timestamp».
 COMPOUND_TYPES = (
     "timestamp with time zone",
     "timestamp without time zone",
@@ -60,19 +52,9 @@ COMPOUND_TYPES = (
     "character varying",
 )
 
-# Слова, с которых начинается ТАБЛИЧНОЕ ограничение, а не колонка.
 CONSTRAINT_STARTS = ("constraint", "primary", "unique", "foreign", "check", "exclude", "like")
 
 
-# Таблицы механизма, а не предметной области. У них нет контекста-владельца и
-# нет tenant_id, потому что владеет ими не арендатор: реестром миграций владеет
-# сама применялка, блокировкой и журналом заданий — кластер. Список закрытый и
-# общий для линтера миграций и для сверки владения: новая строка здесь требует
-# причины, а не «ну это же служебная».
-#
-# Исключение действует ровно пока в таблице нет tenant_id. Появился арендатор —
-# появилась и политика: это проверяет scripts/check_rls.py, и метатаблица с
-# арендатором мимо RLS не пройдёт.
 META_TABLES = {
     "schema_version": "реестр применённых миграций",
     "jobs_lock": "распределённая блокировка периодических заданий, одна на кластер",
@@ -247,7 +229,6 @@ def _type_of(definition: str) -> str:
 def parse_tables(sql: str, source: str) -> tuple[Table, ...]:
     """Таблицы, заводимые этим текстом."""
     text = strip_comments(sql)
-    # Подписи берём из исходного текста: в очищенном строковые литералы стёрты.
     comments = {
         match.group(1): match.group(2).replace("''", "'")
         for match in COMMENT_ON_TABLE.finditer(sql)
@@ -281,8 +262,6 @@ def parse_tables(sql: str, source: str) -> tuple[Table, ...]:
         for offset, item in _split_top_level(body):
             cleaned = " ".join(item.split())
             first = cleaned.split(" ", 1)[0].lower()
-            # Номер строки — по первому непробельному символу элемента: перенос
-            # перед именем колонки принадлежит элементу и сдвинул бы отсчёт.
             lead = len(item) - len(item.lstrip())
             item_line = text[: match.end() + offset + lead].count("\n") + 1
             if first in CONSTRAINT_STARTS:
@@ -374,17 +353,11 @@ def parse_indexes(sql: str) -> tuple[Index, ...]:
     )
 
 
-# Чего разбор не понимает. Конструкцию, меняющую уже заведённую таблицу, он
-# обязан понимать ДО того, как такая миграция появится: иначе и линтер, и
-# документ схемы начнут тихо врать. `alter table` разобран только в форме
-# row level security — всякая другая форма ловится отдельно, ниже.
 UNSUPPORTED = (
     (re.compile(r"\bdrop\s+table\b", re.I), "drop table"),
     (re.compile(r"\bcreate\s+table\s+[^\s(]+\s+as\b", re.I), "create table as"),
     (re.compile(r"\b(?:drop|alter)\s+policy\b", re.I), "drop/alter policy"),
     (re.compile(r"\bdrop\s+index\b", re.I), "drop index"),
-    # Не «пока не умеет», а «не бывает»: миграция применяется одной транзакцией,
-    # а concurrently вне транзакции. Отдельный механизм — отдельное решение.
     (re.compile(r"\bcreate\s+(?:unique\s+)?index\s+concurrently\b", re.I),
      "create index concurrently"),
 )

@@ -23,7 +23,6 @@ core::IdBytes RandomIdGenerator::NextBytes() const {
         value = static_cast<std::uint8_t>(byte(Engine()));
     }
 
-    // Версия 4 и вариант по RFC 4122: чтобы чужой разбор узнавал наш UUID.
     bytes[6] = static_cast<std::uint8_t>((bytes[6] & 0x0FU) | 0x40U);
     bytes[8] = static_cast<std::uint8_t>((bytes[8] & 0x3FU) | 0x80U);
 

@@ -9,8 +9,6 @@ void InMemoryBus::PublishErased(std::type_index type, const void* event) {
 
     const auto found = handlers_.find(type);
     if (found == handlers_.end()) {
-        // Событие без подписчиков — нормальная жизнь, а не ошибка: издатель и
-        // не должен знать, слушает его кто-нибудь или нет.
         return;
     }
 

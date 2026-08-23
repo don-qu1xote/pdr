@@ -20,6 +20,9 @@ Unit-тесты (`ctest -R jobs`) проверяют механизм проти
 Тест пишет в базу профиля и убирает за собой: живого продакшена у проекта нет
 (ADR-0007), а на чужих данных такое не запускают.
 
+Воркеров здесь двое, и отличаются они идентификатором владельца: у userver он
+составной — «хост:локер», и блокировка узнаёт своего держателя именно по нему.
+
 Подключение — обычными переменными PG*, их выставляет Makefile из профиля:
 
     make test-jobs
@@ -42,18 +45,14 @@ import check_isolation as live  # noqa: E402  (после правки sys.path)
 JOB = "pdr-check-jobs"
 LOCK = "pdr.check_jobs"
 
-# Два воркера. Идентификатор владельца у userver составной — «хост:локер», и
-# отличаются воркеры именно им.
 WORKER_A = "host-a:locker-1"
 WORKER_B = "host-b:locker-2"
 
 TENANT_A = "0d0d0d0d-0000-4000-8000-000000000001"
 TENANT_B = "0d0d0d0d-0000-4000-8000-000000000002"
 
-# План задания: три единицы работы с детерминированными ключами.
 KEYS = ("lesson-1", "lesson-2", "lesson-3")
 
-# Запросы штатной стратегии: взять (с продлением своей) и отпустить.
 ACQUIRE = """
 insert into jobs_lock as t (key, owner, expiration_time)
 select '{lock}', '{owner}', current_timestamp + make_interval(secs => {ttl})
@@ -93,8 +92,6 @@ set started_at = now() - make_interval(secs => {duration} / 1000.0), finished_at
 where job = '{job}';
 """
 
-# Задание, не отрабатывавшее дольше отведённого, обязано быть ВИДНО. Запрос —
-# тот самый, по которому это видно: незакрытый прогон считается молчанием.
 SILENT = """
 select count(*) from jobs_run
 where job = '{job}'
@@ -185,7 +182,6 @@ def only_one_worker_holds_the_lock(database: live.Database) -> list[str]:
     elif rows[0][0] != WORKER_A:
         problems.append(f"блокировкой владеет «{rows[0][0]}», а взял её {WORKER_A}")
 
-    # Продление своей блокировки — не потеря: держатель обновляет срок и остаётся.
     if not first.acquire():
         problems.append("держатель не смог продлить свою же блокировку")
     if second.acquire():
@@ -207,7 +203,6 @@ def a_dead_worker_does_not_hold_the_lock_forever(database: live.Database) -> lis
     if not first.acquire():
         problems.append("первый воркер не смог взять блокировку")
 
-    # Воркер умер: срок больше не продлевается и истекает.
     database.owner(
         f"update jobs_lock set expiration_time = current_timestamp - interval '1 second' "
         f"where key = '{LOCK}';"
@@ -220,7 +215,6 @@ def a_dead_worker_does_not_hold_the_lock_forever(database: live.Database) -> lis
     if not rows or rows[0][0] != WORKER_B:
         problems.append("после перехвата владелец блокировки не сменился")
 
-    # Отпустить чужую блокировку нельзя: удаление идёт по владельцу.
     if first.release():
         problems.append("воркер отпустил блокировку, которой не владеет")
     if not second.release():
@@ -245,7 +239,6 @@ def lock_loss_does_not_send_twice(database: live.Database) -> list[str]:
     if not first.claim(TENANT_A, KEYS[0]):
         problems.append("первый воркер не смог поставить след своего действия")
 
-    # Блокировка ушла: воркер обязан остановиться, а не доделывать план.
     database.owner(
         f"update jobs_lock set expiration_time = current_timestamp - interval '1 second' "
         f"where key = '{LOCK}';"
@@ -290,7 +283,6 @@ select pg_sleep(1.5);
 """)
 
     try:
-        # Даём первой сессии дойти до вставки, но не до конца.
         time.sleep(0.5)
 
         waiting = database.app_refusal(
@@ -302,8 +294,6 @@ select pg_sleep(1.5);
                 f"55P03: два воркера ставят один след одновременно"
             )
     finally:
-        # Сессию дожидаемся всегда: брошенный процесс закоммитит вставку уже
-        # после уборки, и следующий прогон споткнётся на чужой строке.
         _, complaint = holding.communicate()
         if holding.returncode != 0:
             problems.append(f"сессия, державшая след, завершилась ошибкой: {complaint.strip()}")
@@ -326,7 +316,6 @@ def a_trace_belongs_to_its_tenant(database: live.Database) -> list[str]:
 
     if not Worker(database, WORKER_A).claim(TENANT_A, key):
         problems.append("след арендатора А не поставился")
-    # Ключ совпал буква в букву, а арендаторы разные: это две разные работы.
     if not Worker(database, WORKER_A).claim(TENANT_B, key):
         problems.append("след с тем же ключом у другого арендатора не поставился")
 
@@ -336,7 +325,6 @@ def a_trace_belongs_to_its_tenant(database: live.Database) -> list[str]:
     if int(visible[0][0]) != 1:
         problems.append(f"под арендатором А видно следов: {visible[0][0]} вместо одного")
 
-    # Переписать уже произведённое действие нельзя: права не выданы.
     code = database.app_refusal(
         f"update jobs_effect set produced_at = now() where effect_key = '{key}';", TENANT_A
     )
@@ -379,8 +367,6 @@ from jobs_run where job = '{JOB}';
     if attempted != "t":
         problems.append("последняя попытка начата позже конца прогона: перемешаны два прогона")
 
-    # Начало попытки не затирает последний завершённый прогон: во время работы
-    # возраст последнего удачного обязан остаться известен.
     database.app(RUN_STARTED.format(job=JOB))
     kept = database.owner(f"""
 select finished_at is not null, outcome, attempt_at > finished_at
@@ -393,15 +379,12 @@ from jobs_run where job = '{JOB}';
     if kept[0][2] != "t":
         problems.append("идущая попытка не отличима от прошлого прогона по времени начала")
 
-    # Исход не из списка — отказ схемы, а не строка в метрике.
     code = database.app_refusal(
         f"update jobs_run set outcome = 'кажется, всё хорошо' where job = '{JOB}';"
     )
     if code != "23514":
         problems.append(f"неизвестный исход прошёл в журнал: «{code or 'успех'}» вместо 23514")
 
-    # Половина записи о прогоне тоже не проходит: «конец есть, длительности нет»
-    # превратился бы в пустое место в метрике.
     code = database.app_refusal(
         f"update jobs_run set duration_ms = null where job = '{JOB}';"
     )
@@ -434,7 +417,6 @@ def silence_grows_while_the_worker_is_stopped(database: live.Database) -> list[s
     if int(database.owner(SILENT.format(job=JOB, allowed=allowed))[0][0]) != 0:
         problems.append("только что отработавшее задание объявлено замолчавшим")
 
-    # Воркер стоит сутки: задание обязано быть видно.
     database.owner(f"""
 update jobs_run
 set started_at = now() - interval '25 hours', finished_at = now() - interval '25 hours'
@@ -443,8 +425,6 @@ where job = '{JOB}';
     if int(database.owner(SILENT.format(job=JOB, allowed="24 hours"))[0][0]) != 1:
         problems.append("задание, не отрабатывавшее сутки, не видно запросом молчания")
 
-    # Прогон, начавшийся и не закончившийся, — тоже молчание: воркер, упавший
-    # посреди работы, не должен выглядеть отработавшим.
     database.owner(f"""
 update jobs_run
 set started_at = null, finished_at = null, duration_ms = null, attempt_at = now()

@@ -213,8 +213,6 @@ TEST_F(RunPeriodicJobTest, RepeatedRunSendsNothingTwice) {
 
     EXPECT_EQ(first.Produced(), 2);
     EXPECT_EQ(second.Produced(), 0);
-    // Повтор виден в счётчике, а не только в отсутствии писем: молчаливое
-    // «ничего не сделал» так же выглядит у сломанного планирования.
     EXPECT_EQ(second.Repeated(), 2);
     EXPECT_EQ(world.TimesSent("lesson-1"), 1);
     EXPECT_EQ(world.TimesSent("lesson-2"), 1);
@@ -240,7 +238,6 @@ TEST_F(RunPeriodicJobTest, SecondWorkerWithoutTheLockDoesNothing) {
 TEST_F(RunPeriodicJobTest, LockLostMidWorkDoesNotSendTwice) {
     World world;
 
-    // Первый воркер успевает одну единицу из трёх, дальше блокировку отбирают.
     Reminders first{world, tenant_, {"lesson-1", "lesson-2", "lesson-3"}};
     FailingLock failing{1};
     auto runner = Runner();
@@ -249,7 +246,6 @@ TEST_F(RunPeriodicJobTest, LockLostMidWorkDoesNotSendTwice) {
     EXPECT_EQ(interrupted.Result(), Outcome::kLockLost);
     EXPECT_EQ(interrupted.Produced(), 1);
 
-    // Второй подхватывает и строит тот же план: уже сделанное он пропускает.
     Reminders second{world, tenant_, {"lesson-1", "lesson-2", "lesson-3"}};
     HeldLock held;
     const auto continued = runner.Execute(job_, Settings(), second, held);
@@ -303,8 +299,6 @@ TEST_F(RunPeriodicJobTest, SilenceGrowsWhileTheWorkerIsStopped) {
     const auto last = journal_.Last(job_);
     ASSERT_TRUE(last.has_value());
 
-    // Воркер стоит: прогонов больше нет, а часы идут. Возраст последнего
-    // прогона растёт — по нему задание и видно.
     EXPECT_TRUE(SilenceFor(*last, clock_.Now()) == 0s);
     clock_.Advance(6h);
     EXPECT_TRUE(SilenceFor(*last, clock_.Now()) == 6h);
@@ -345,8 +339,6 @@ TEST_F(RunPeriodicJobTest, EffectsOfOneTenantDoNotBlockAnother) {
     const auto first = runner.Execute(job_, Settings(), mine, lock);
     const auto second = runner.Execute(job_, Settings(), theirs, lock);
 
-    // Ключ действия совпал буквой в букву, а арендаторы разные: это две разные
-    // работы, и обе обязаны состояться.
     EXPECT_EQ(first.Produced(), 1);
     EXPECT_EQ(second.Produced(), 1);
     EXPECT_EQ(second.Repeated(), 0);

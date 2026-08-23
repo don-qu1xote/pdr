@@ -166,6 +166,24 @@ jobs:
       - name: Документ схемы свежий
         run: python3 scripts/gen_schema_doc.py --check
 
+  comments:
+    name: Комментарии
+    runs-on: ubuntu-latest
+    needs: changes
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # Джоба без условия по областям намеренно: правило действует на все языки
+      # разом, а комментарий, нарушающий его, приезжает вместе с любой правкой.
+      #
+      # Та же цель Makefile, что зовёт человек у себя и хук githooks/pre-commit:
+      # не три похожие команды, а буквально одна.
+      - name: Проверка самой проверки (отрицательный случай)
+        run: python3 scripts/check_comments.py --selftest
+
+      - name: Только то, без чего не соберётся сборка
+        run: make comments
+
   lint:
     name: Формат кода
     runs-on: ubuntu-latest

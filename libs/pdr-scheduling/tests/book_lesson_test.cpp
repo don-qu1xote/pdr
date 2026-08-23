@@ -152,7 +152,7 @@ TEST_F(BookLessonTest, ClockMovesAndTheSameSlotBecomesThePast) {
     const auto book = Booking(identity);
 
     const auto request = Request();
-    clock_.Advance(72h);  // мгновенно, без единого sleep
+    clock_.Advance(72h);
 
     const auto refused = book.Execute(request);
     ASSERT_FALSE(refused.HasValue());

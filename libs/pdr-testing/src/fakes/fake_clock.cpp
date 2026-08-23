@@ -3,7 +3,6 @@
 namespace pdr::testing {
 namespace {
 
-// 2024-01-01T00:00:00Z в секундах от эпохи Unix.
 constexpr std::int64_t kDefaultStartSeconds = 1704067200;
 constexpr std::int64_t kMicrosInSecond = 1000000;
 

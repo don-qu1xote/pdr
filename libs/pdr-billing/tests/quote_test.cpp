@@ -78,7 +78,6 @@ TEST(BillingContract, ParsesRawValuesAtItsOwnBorder) {
     ASSERT_TRUE(priced.HasValue());
     EXPECT_EQ(priced.Value().MinorUnits(), 1000000);
 
-    // Чужой контекст присылает строку — разбираем и отвергаем здесь, а не там.
     const auto refused = contract.QuotePackage("не код", 4);
     ASSERT_FALSE(refused.HasValue());
     EXPECT_EQ(refused.Failure().Kind(), ErrorKind::kValidation);

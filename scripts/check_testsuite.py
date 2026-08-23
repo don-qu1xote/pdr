@@ -49,18 +49,12 @@ from typing import Iterator, Sequence
 
 SKIPPED_DIRS = frozenset({".git", "build", "out", "node_modules", "_deps", "__pycache__", "venv"})
 
-# Каталоги, где живут не тесты контура, а инструменты разработчика: они ходят в
-# базу через psql и поднимают что угодно, потому что сервиса им не нужно.
 TOOLING_DIRS = ("scripts",)
 
 PLUGIN = "pytest_userver"
 
-# Исключение с обязательной причиной: «контур-ok:» без объяснения не считается.
 WAIVER = re.compile(r"#\s*контур-ok:\s*(\S.*)$")
 
-# Каждое правило: имя, что искать, чем это заменяется и можно ли отступить с
-# причиной. Заменяющее средство названо в самом сообщении — иначе проверка
-# сообщает о запрете, но не о выходе.
 Rule = tuple[str, re.Pattern[str], str, bool]
 
 RULES: tuple[Rule, ...] = (
@@ -255,8 +249,6 @@ def check(root: Path) -> tuple[list[str], int]:
 
 
 SELFTEST_FILES = {
-    # Чистый случай: так выглядит правильный набор — плагин подключён, сервис
-    # поднимает он, внешнее закрыто mockserver, фон дожидается testpoint.
     "services/main/tests/conftest.py": (
         "import pytest\n"
         "\n"
@@ -276,7 +268,6 @@ SELFTEST_FILES = {
         "    assert response.status == 201\n"
         "    await drained.wait_call()\n"
     ),
-    # Свой стенд и свои порты.
     "services/main/tests/test_own_stand.py": (
         "import subprocess\n"
         "import socket\n"
@@ -286,7 +277,6 @@ SELFTEST_FILES = {
         "    service = subprocess.Popen(['./pdr_main'])\n"
         "    service.kill()\n"
     ),
-    # Свой HTTP-мок и свой клиент к сервису.
     "services/main/tests/test_own_mock.py": (
         "import http.server\n"
         "import requests\n"
@@ -295,8 +285,6 @@ SELFTEST_FILES = {
         "    server = http.server.HTTPServer(('', 8080), None)\n"
         "    requests.post('http://localhost:8080/v1/lessons')\n"
     ),
-    # Sleep вместо ожидания: блокирующий — совсем нельзя, даже с маркером,
-    # асинхронный — только с маркером и причиной.
     "services/main/tests/test_sleep.py": (
         "import asyncio\n"
         "import time\n"
@@ -308,19 +296,16 @@ SELFTEST_FILES = {
         "    await asyncio.sleep(1)  # контур-ok: проверяем, что НИЧЕГО не пришло\n"
         "    await asyncio.sleep(2)  # контур-ok:\n"
     ),
-    # Разговор про запреты — не нарушение: строки и комментарии не считаются.
     "services/main/tests/test_talks_about_it.py": (
         "async def test_documented(service_client):\n"
         "    # никакого time.sleep(1) и никакого subprocess.Popen здесь нет\n"
         "    reason = 'flask и requests.get упомянуты строкой'\n"
         "    assert reason\n"
     ),
-    # Тесты без подключённого плагина — та самая болезнь предыдущего проекта.
     "services/chat/tests/test_orphan.py": (
         "async def test_chat(service_client):\n"
         "    assert await service_client.get('/ping')\n"
     ),
-    # Инструменты разработчика проверкой не покрыты: им можно и psql, и subprocess.
     "scripts/check_something.py": (
         "import subprocess\n"
         "\n"
@@ -372,8 +357,6 @@ def selftest() -> int:
                     print("    " + line, file=sys.stderr)
                 return 1
 
-        # Маркер обязан работать построчно и не спасать блокирующий sleep, а
-        # маркер без причины — не маркер.
         blocking = [line for line in violations if "блокирующий sleep" in line]
         if len(blocking) != 2:
             print(f"самопроверка: маркер простил блокирующий sleep: {blocking}", file=sys.stderr)
@@ -385,7 +368,6 @@ def selftest() -> int:
                   f"без причины: {waived}", file=sys.stderr)
             return 1
 
-        # Пустое дерево — не нарушение: сервиса нет, контура нет, проверять нечего.
         empty, empty_checked = check(root / "services" / "nothing-here")
         if empty or empty_checked:
             print("самопроверка: пустое дерево объявлено нарушением", file=sys.stderr)

@@ -112,8 +112,6 @@ def check(map_path: Path, migrations: Path, root: Path) -> tuple[list[str], int,
         if table in owners:
             continue
         if table in model.META_TABLES:
-            # Таблица самого механизма миграций: контекста-владельца у неё нет
-            # и быть не может. Список исключений — в scripts/migration_model.py.
             continue
         try:
             display = path.relative_to(root)
@@ -184,7 +182,6 @@ def selftest() -> int:
             print(f"самопроверка: чистый случай не прошёл: {violations}", file=sys.stderr)
             return 1
 
-        # Таблица у двух владельцев и таблица, названная не по владельцу.
         map_path.write_text(SELFTEST_BROKEN_MAP, encoding="utf-8")
         violations, _, _ = check(map_path, migrations, root)
         if len(violations) != 2:
@@ -198,12 +195,9 @@ def selftest() -> int:
             print("самопроверка: не поймано имя не по владельцу", file=sys.stderr)
             return 1
 
-        # Миграция завела таблицу, которой нет на карте.
         map_path.write_text(SELFTEST_MAP, encoding="utf-8")
         (migrations / "0002_notes.sql").write_text(SELFTEST_BAD_MIGRATION, encoding="utf-8")
         violations, _, _ = check(map_path, migrations, root)
-        # Метатаблица механизма исключением не считается нарушением, а
-        # неизвестная доменная — считается.
         if len(violations) != 1 or "lesson_notes" not in violations[0]:
             print(f"самопроверка: не поймана таблица мимо карты: {violations}", file=sys.stderr)
             return 1

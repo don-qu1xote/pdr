@@ -36,8 +36,6 @@ import migration_model as model  # noqa: E402  (после правки sys.path
 APP_ROLE = "pdr_app"
 PARAMETER = "pdr.tenant_id"
 
-# Данные теста. Идентификаторы постоянные и узнаваемые: если они останутся в
-# базе после падения, видно, чьи они, а повторный запуск уберёт их сам.
 TENANT_A = "0a0a0a0a-0000-4000-8000-000000000001"
 TENANT_B = "0b0b0b0b-0000-4000-8000-000000000002"
 GUARDIAN_A = "0a0a0a0a-0000-4000-8000-00000000a001"
@@ -53,8 +51,6 @@ NEW_ROW = "0c0c0c0c-0000-4000-8000-00000000e001"
 TABLES = ("identity_tenant", "identity_person", "identity_role_assignment",
           "identity_guardianship")
 
-# psql печатает «psql:<stdin>:4: ERROR:  42501: ...» — приставка с местом в
-# потоке нам не нужна, нужен код.
 SQLSTATE = re.compile(r"\bERROR:\s+([0-9A-Z]{5}):")
 
 
@@ -117,7 +113,6 @@ class Database:
     def _as_app(sql: str, tenant: str | None) -> str:
         declare = ""
         if tenant is not None:
-            # perform, а не select: объявление не должно засорять вывод строкой.
             declare = (
                 f"do $$ begin perform set_config('{PARAMETER}', '{tenant}', false); end $$;\n"
             )

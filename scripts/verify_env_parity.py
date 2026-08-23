@@ -38,15 +38,9 @@ from typing import Sequence
 
 EXAMPLE_SUFFIX = ".env.example"
 
-# Переменные, которым РАЗРЕШЕНО отличаться между профилями. Каждая — с причиной;
-# строка без причины в этом списке равнозначна её отсутствию.
 PROFILE_DIFFERENCES = {
-    # Имя профиля попадает в имя проекта, сети и тома: local и ci должны уметь
-    # стоять на одной машине одновременно.
     "ENV_PROFILE": "имя профиля отличает проект в docker",
-    # Пароль локальной базы у каждого свой и в историю не попадает.
     "POSTGRES_PASSWORD": "пароль базы задаётся на месте",
-    # На раннере может оказаться чужой Postgres на 5432.
     "POSTGRES_PORT": "порт занят чужим процессом чаще, чем хотелось бы",
 }
 
@@ -123,9 +117,6 @@ def check(compose_file: Path, env_dir: Path, root: Path,
 
     first = profiles[0]
 
-    # Разрешённым различиям во всех профилях подставляется значение первого
-    # профиля: после этого расхождение в отрисовке означает настоящее
-    # расхождение, а не разные пароль и порт.
     canonical = {name: variables[first][name] for name in allowed if name in variables[first]}
     rendered = {
         profile: render(compose_file, {**variables[profile], **canonical}, profile)
@@ -222,9 +213,7 @@ def selftest() -> int:
             return 1
 
         cases = {
-            # Профили разъехались образом — то, ради чего всё.
             "образ": "DB_IMAGE=postgres:16\n",
-            # Переменная, которой нет в списке разрешённых различий.
             "предел памяти": "MEM_LIMIT=256m\n",
         }
         replacements = {"образ": "DB_IMAGE=postgres:15\n", "предел памяти": "MEM_LIMIT=512m\n"}
@@ -238,7 +227,6 @@ def selftest() -> int:
                 print(f"самопроверка: расхождение «{name}» не поймано", file=sys.stderr)
                 return 1
 
-        # Лишний сервис только в одном профиле.
         original_compose = compose_file.read_text(encoding="utf-8")
         compose_file.write_text(
             original_compose + '  extra:\n    <<: *hardening\n    image: alpine:3.20\n',
@@ -251,7 +239,6 @@ def selftest() -> int:
                   file=sys.stderr)
             return 1
 
-        # Разрешённое различие остаётся разрешённым.
         violations, _ = check(compose_file, env_dir, root, allowed)
         if violations:
             print(f"самопроверка: разрешённые различия посчитаны нарушением: {violations}",

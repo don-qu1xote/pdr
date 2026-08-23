@@ -138,10 +138,7 @@ def run(binary: str, files: Sequence[str], fix: bool, root: Path) -> int:
     return 0
 
 
-# Подставные форматтеры: каждый в своём каталоге, потому что проверять надо
-# «у разработчика ТОЛЬКО эта версия», а не «эта версия есть среди прочих».
 STUBS = {
-    # каталог: (имя файла, что печатает --version, код возврата)
     "good": ("clang-format-18", "Ubuntu clang-format version 18.1.3 (1ubuntu1)", 0),
     "old": ("clang-format", "clang-format version 14.0.0", 0),
     "broken": ("clang-format", "не тот вывод вовсе", 0),
@@ -184,8 +181,6 @@ def selftest() -> int:
                 print("самопроверка: закреплённая версия не найдена", file=sys.stderr)
                 return 1
 
-            # Явно указанный путь тоже обязан работать: не у всех форматтер
-            # называется clang-format-18.
             os.environ["CLANG_FORMAT"] = str(root / "good" / "clang-format-18")
             if Path(resolve("18")).name != "clang-format-18":
                 print("самопроверка: CLANG_FORMAT не учтён", file=sys.stderr)
@@ -206,7 +201,6 @@ def selftest() -> int:
                     print(f"самопроверка: {place} принят за версию 18", file=sys.stderr)
                     return 1
 
-            # Форматтера нет вовсе — отказ с тем, как его поставить.
             os.environ["PATH"] = str(root / "empty")
             try:
                 resolve("18")

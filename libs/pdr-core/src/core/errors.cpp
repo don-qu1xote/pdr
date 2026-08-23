@@ -13,7 +13,7 @@ std::string_view Name(ErrorKind kind) noexcept {
         case ErrorKind::kForbidden:
             return "forbidden";
     }
-    return "validation";  // недостижимо: перечисление разобрано целиком
+    return "validation";
 }
 
 }  // namespace pdr::core

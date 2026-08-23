@@ -22,6 +22,11 @@ contract-набор хранилища гоняется только на фей
 принятое решение заменяют новым (docs/adr/README.md). Значит, собирать долги
 может только отдельная страница, которая ссылается на ADR, а не наоборот.
 
+Ссылка на файл узнаётся по пути в круглых скобках, и путь не содержит пробелов и
+скобок намеренно: иначе ссылка внутри скобок прозы — «(см. [layers.md](layers.md))»
+— склеилась бы в несуществующий файл, а список долгов начал бы врать про
+собственные ссылки.
+
 Запуск:
     python3 scripts/check_debts.py
     python3 scripts/check_debts.py --selftest
@@ -38,8 +43,6 @@ from typing import Sequence
 
 DEBTS = Path("docs/architecture/first-service.md")
 
-# Про первый сервис говорят этими словами. Список узкий намеренно: «когда появится
-# второй человек» из ADR-0001 — не про сервис, и ловить его не надо.
 MENTIONS = re.compile(
     r"перв(?:ый|ого|ым|ому) сервис(?:|а|ом|у)\b|"
     r"первого живого прогона|"
@@ -47,10 +50,7 @@ MENTIONS = re.compile(
     re.IGNORECASE,
 )
 
-# Строка таблицы долгов: четыре столбца между вертикальными чертами.
 TABLE_ROW = re.compile(r"^\|(?P<cells>.+)\|\s*$")
-# Путь в ссылке: только символы пути. Иначе ссылка внутри скобок прозы
-# «(см. [layers.md](layers.md))» склеивается в несуществующий файл.
 PATH_IN_TEXT = re.compile(r"\(([^()\[\]\s]+\.(?:md|yaml|yml|py|hpp|cpp|sql))(?:#[^)]*)?\)")
 
 SKIPPED_DIRS = frozenset({".git", "build", "out", "_deps", "__pycache__"})
@@ -109,9 +109,6 @@ def check(root: Path) -> tuple[list[str], int]:
         display = str(path.relative_to(root))
         name = path.name
 
-        # Страница, которая сама ссылается на список, уже находима: читатель
-        # доберётся до долга. Проверять надо обратное — долг, о котором список
-        # не знает.
         if DEBTS.name in path.read_text(encoding="utf-8", errors="replace"):
             continue
 
@@ -159,11 +156,8 @@ SELFTEST_FILES = {
     "docs/architecture/first-service.md": SELFTEST_DEBTS,
     "docs/testing.md": "Контур появится вместе с первым сервисом.\n",
     "docs/adr/0013.md": "Кэш справочников ждёт первого сервиса.\n",
-    # Про первый сервис говорит, а в списке не назван.
     "docs/adr/0014-orphan.md": "Это заведёт первый сервис, когда появится.\n",
-    # Не про сервис: похожая формулировка про людей не считается.
     "docs/adr/0001.md": "Когда появится второй человек, это станет условием найма.\n",
-    # Говорит про первый сервис, но сама ссылается на список — значит находима.
     "README.md": "Долги первого сервиса — [first-service.md](docs/architecture/first-service.md).\n",
 }
 
@@ -190,7 +184,6 @@ def selftest() -> int:
         for name, fragment in SELFTEST_EXPECTED:
             hits = [line for line in violations if name in line and fragment in line]
             if not hits:
-                # «в списке долгов не названа» печатается как «в docs/.../first-service.md не названа»
                 hits = [line for line in violations if name in line
                         and fragment.replace("в списке долгов ", "") in line]
             if not hits:

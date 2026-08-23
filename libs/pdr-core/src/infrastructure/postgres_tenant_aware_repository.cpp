@@ -29,13 +29,10 @@ PostgresTenantAwareRepository::PostgresTenantAwareRepository(
 void PostgresTenantAwareRepository::Run(const core::TenantId& tenant, const Work& work) {
     auto transaction = cluster_->Begin(userver::storages::postgres::ClusterHostType::kMaster,
                                        userver::storages::postgres::TransactionOptions{});
-    // До работы, а не после: первый же её запрос обязан идти уже под политикой.
     transaction.Execute(kDeclareTenant, tenant.ToString());
 
     work(transaction);
 
-    // Исключение из работы сюда не дойдёт, и это правильно: деструктор
-    // транзакции откатит её вместе с объявлением арендатора.
     transaction.Commit();
 }
 

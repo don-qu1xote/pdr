@@ -93,15 +93,6 @@ services:
   # Имена — из карты процессов в docs/architecture/context-map.md; там же
   # написано, какие контексты живут в каждом и по какому наблюдаемому условию
   # процесс выделяется в отдельный.
-  #
-  # main:        <<: [*hardening, *logging]   # identity, scheduling, billing, notifications — фаза 1
-  #   image: ${MAIN_IMAGE}
-  # chat:        <<: [*hardening, *logging]   # chat — фаза 5, отдельный с рождения: websockets держат соединения
-  # classroom:   <<: [*hardening, *logging]   # video, content, notes — фаза 2
-  # learning:    <<: [*hardening, *logging]   # exercises, practice, media — фаза 3
-  # insight:     <<: [*hardening, *logging]   # progress, recommend — фаза 4
-  # market:      <<: [*hardening, *logging]   # profile, matching, reputation — фаза 5
-  # analytics:   <<: [*hardening, *logging]   # business — фаза 6, отдельный с рождения: пакетные витрины
 
 volumes:
   pgdata:
