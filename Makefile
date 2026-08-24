@@ -139,6 +139,9 @@ test:
 	python3 scripts/check_dynamic_configs.py
 	python3 scripts/check_integrations.py --selftest
 	python3 scripts/check_integrations.py
+	python3 scripts/check_sovereignty.py --selftest
+	python3 scripts/check_sovereignty.py
+	python3 scripts/compare_quality.py --selftest
 	python3 scripts/check_debts.py --selftest
 	python3 scripts/check_debts.py
 	python3 scripts/check_secrets.py --selftest

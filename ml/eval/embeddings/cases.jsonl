@@ -1,0 +1,6 @@
+{"id": "q-discriminant", "input": "как найти корни через дискриминант", "reference": ["ex-quad-001", "ex-quad-004"]}
+{"id": "q-viete", "input": "сумма и произведение корней квадратного уравнения", "reference": ["ex-quad-007"]}
+{"id": "q-participle-comma", "input": "когда причастный оборот выделяется запятыми", "reference": ["ex-rus-013", "ex-rus-014"]}
+{"id": "q-present-perfect", "input": "чем present perfect отличается от past simple", "reference": ["ex-eng-002"]}
+{"id": "q-newton-second", "input": "задачи на связь силы массы и ускорения", "reference": ["ex-phys-021", "ex-phys-022"]}
+{"id": "q-mole", "input": "как посчитать количество вещества через число авогадро", "reference": ["ex-chem-005"]}

@@ -36,6 +36,7 @@ if(PDR_BUILD_TESTS)
         tests/adapter_contract_test.cpp
         tests/integration_contract_test.cpp
         tests/repository_contract_test.cpp
+        tests/sovereignty_contract_test.cpp
     )
     target_link_libraries(pdr_contract_tests
                           PRIVATE pdr_testing pdr_infrastructure GTest::gtest_main)
@@ -57,4 +58,13 @@ if(PDR_BUILD_TESTS)
     add_test(NAME contract.load_bearing_integration_must_fail
              COMMAND pdr_broken_integration_contract_test)
     set_tests_properties(contract.load_bearing_integration_must_fail PROPERTIES WILL_FAIL TRUE)
+
+    # И для сквозного прогона «работаем без интернета»: продукт, которому для
+    # конспекта нужна сеть, ОБЯЗАН уронить прогон (ADR-0015).
+    add_executable(pdr_network_bound_contract_test tests/sovereignty_contract_broken_test.cpp)
+    target_link_libraries(pdr_network_bound_contract_test
+                          PRIVATE pdr_testing GTest::gtest_main)
+    add_test(NAME contract.network_bound_product_must_fail
+             COMMAND pdr_network_bound_contract_test)
+    set_tests_properties(contract.network_bound_product_must_fail PROPERTIES WILL_FAIL TRUE)
 endif()

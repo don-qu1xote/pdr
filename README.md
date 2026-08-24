@@ -251,6 +251,8 @@ userver, а не пишутся руками: [ADR-0013](docs/adr/0013-standard-
   примеры «было / стало»,
   [`integrations.md`](docs/architecture/integrations.md) — внешние API: реестр,
   правило «чужой API не бывает несущим» и набор «сервиса нет навсегда»,
+  [`ai-sovereignty.md`](docs/architecture/ai-sovereignty.md) — ИИ-узлы: у
+  каждого своя реализация без сети, переключение конфигом, замер качества,
   [`plans.md`](docs/architecture/plans.md) — планы горячих запросов: что
   попадает в список и что делать, когда индекс потерян,
   [`jobs.md`](docs/architecture/jobs.md) — одиночные фоновые задания: блокировка,

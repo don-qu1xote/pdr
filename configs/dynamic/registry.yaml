@@ -394,3 +394,41 @@ PDR_INTEGRATIONS:
         enabled:
           description: ходить ли наружу за этой функцией
           type: boolean
+
+PDR_AI_NODES:
+  description: >-
+    Чем считает каждый ИИ-узел: своей моделью или внешним провайдером. Ключ
+    словаря — имя узла из docs/architecture/ai-sovereignty.md. Рядом с выбором
+    живёт external_min_gain: насколько внешняя обязана быть лучше своей, чтобы
+    её стоило включать. Решение принимается числом с фиксированного набора
+    (scripts/compare_quality.py), а не ощущением от пяти примеров.
+  kind: продуктовая
+  owner: владелец продукта вместе с тем, кто держит железо
+  jurisdiction: нет
+  awaits: ARCH
+  breaks: >-
+    implementation external у узла, у которого нет своей реализации, — это
+    единственная законная зависимость (handwriting). У остальных external по
+    умолчанию означает, что своя реализация проверяется только в день отказа
+    провайдера, то есть не проверяется (ADR-0015); умолчания сверяются с
+    таблицей узлов проверкой scripts/check_sovereignty.py. external_min_gain
+    ноль означает «включаем внешнюю при любом выигрыше», в том числе при
+    выигрыше в пределах погрешности набора; единица означает «не включаем
+    никогда».
+  default: {"transcription_final": {"implementation": "own", "external_min_gain": 0.15}, "transcription_live": {"implementation": "own", "external_min_gain": 0.2}, "embeddings": {"implementation": "own", "external_min_gain": 0.1}, "text_generation": {"implementation": "own", "external_min_gain": 0.25}, "handwriting": {"implementation": "external", "external_min_gain": 0.0}}
+  schema:
+    type: object
+    additionalProperties:
+      type: object
+      additionalProperties: false
+      required: [implementation, external_min_gain]
+      properties:
+        implementation:
+          description: чем считает узел прямо сейчас
+          type: string
+          enum: [own, external]
+        external_min_gain:
+          description: доля, на которую внешняя обязана быть лучше своей
+          type: number
+          minimum: 0.0
+          maximum: 1.0

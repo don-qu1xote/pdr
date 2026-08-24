@@ -131,6 +131,16 @@ jobs:
           python3 scripts/check_integrations.py --selftest
           python3 scripts/check_integrations.py
 
+      # У каждого ИИ-узла есть своя реализация: умолчание «своя» сверяется с
+      # таблицей узлов, обращение наружу вне адаптера роняет сборку здесь, а
+      # замер качества считается на фиксированном наборе, а не на ощущениях.
+      - name: Суверенитет ИИ-узлов
+        run: |
+          set -eu
+          python3 scripts/check_sovereignty.py --selftest
+          python3 scripts/check_sovereignty.py
+          python3 scripts/compare_quality.py --selftest
+
       - name: Секреты не в окружении и не в истории
         run: |
           set -eu

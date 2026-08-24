@@ -73,6 +73,7 @@
 | [ADR-0012](0012-testsuite-on-pytest-userver.md) | тестовый контур — штатный pytest_userver, своего стенда не будет |
 | [ADR-0013](0013-standard-over-handmade.md) | берём штатное: список механизмов, которые не пишутся руками |
 | [ADR-0014](0014-external-apis-are-never-load-bearing.md) | чужой API не бывает несущим: цена удаления считается до интеграции |
+| [ADR-0015](0015-own-model-for-every-ai-node.md) | у каждого ИИ-узла есть своя реализация, работающая без сети |
 
 У [ADR-0014](0014-external-apis-are-never-load-bearing.md) есть шаблон:
 [TEMPLATE-integration.md](TEMPLATE-integration.md) — по нему пишется ADR каждой
