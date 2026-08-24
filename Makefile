@@ -151,6 +151,9 @@ logs: check-env
 
 # Тесты не требуют ни базы, ни докера, ни сети — поэтому цель не зависит от up.
 # Уровни пирамиды и куда писать новый тест — docs/testing.md.
+#
+# Кроме cmake и python3 цели нужен node: правила речи проверяются по файлам
+# локализации, а они живут в clients/ (docs/product/voice.md).
 test:
 	cmake -S . -B $(BUILD_DIR) -DCMAKE_BUILD_TYPE=Debug
 	cmake --build $(BUILD_DIR) --parallel
@@ -173,6 +176,8 @@ test:
 	python3 scripts/check_product_events.py
 	python3 scripts/check_glossary.py --selftest
 	python3 scripts/check_glossary.py
+	node scripts/check-copy.mjs --selftest
+	node scripts/check-copy.mjs
 	python3 scripts/check_integrations.py --selftest
 	python3 scripts/check_integrations.py
 	python3 scripts/check_sovereignty.py --selftest

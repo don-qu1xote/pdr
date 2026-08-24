@@ -189,7 +189,13 @@ def scan_python(text: str, source: str) -> list[Comment]:
 
 
 def scan_slash(text: str, lines: Sequence[str]) -> list[Comment]:
-    """Комментарии // и /* */ мимо строковых и символьных литералов."""
+    """Комментарии // и /* */ мимо строковых и символьных литералов.
+
+    Обратная кавычка — тоже литерал: в шаблонной строке JavaScript живут и
+    адреса вида https://..., и звёздочки в путях, и ни то ни другое не является
+    комментарием. Внутри самих комментариев обратная кавычка сюда не доходит:
+    комментарий разобран раньше и целиком.
+    """
     found: list[Comment] = []
     index = 0
     size = len(text)
@@ -212,7 +218,7 @@ def scan_slash(text: str, lines: Sequence[str]) -> list[Comment]:
         symbol = text[index]
         following = text[index + 1] if index + 1 < size else ""
 
-        if symbol in "\"'":
+        if symbol in "\"'`":
             quote = symbol
             index += 1
             while index < size:
@@ -548,6 +554,12 @@ SELFTEST_FILES = {
         "\n"
         "}  // namespace pdr::core\n"
     ),
+    "scripts/tool.mjs": (
+        "#!/usr/bin/env node\n"
+        "/** Докстринг остаётся: часть контракта. */\n"
+        "const address = `https://example.test/a/*b*/c`;\n"
+        "export default address;\n"
+    ),
     "libs/pdr-core/src/core/money.cpp": (
         "#include \"core/money.hpp\"\n"
         "\n"
@@ -606,6 +618,8 @@ SELFTEST_KEPT = (
     ("libs/pdr-core/src/core/money.hpp", "NOLINT"),
     ("libs/pdr-core/src/core/money.hpp", "}  // namespace pdr::core"),
     ("scripts/tool.py", "#!/usr/bin/env python3"),
+    ("scripts/tool.mjs", "Докстринг остаётся"),
+    ("scripts/tool.mjs", "https://example.test"),
     ("scripts/tool.py", "Докстринг остаётся"),
     ("scripts/tool.py", "noqa"),
     ("scripts/tool.py", '"# не комментарий"'),
