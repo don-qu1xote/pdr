@@ -122,6 +122,15 @@ jobs:
           python3 scripts/check_dynamic_configs.py --selftest
           python3 scripts/check_dynamic_configs.py
 
+      # Чужой API не бывает несущим: неофициальный источник в несущей роли,
+      # интеграция без посчитанной цены удаления, порт с одной реализацией и
+      # чужой идентификатор первичным ключом роняют сборку здесь.
+      - name: Внешние интеграции
+        run: |
+          set -eu
+          python3 scripts/check_integrations.py --selftest
+          python3 scripts/check_integrations.py
+
       - name: Секреты не в окружении и не в истории
         run: |
           set -eu

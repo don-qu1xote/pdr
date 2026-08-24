@@ -367,3 +367,30 @@ PDR_REPEATED_MISTAKE:
         type: integer
         minimum: 2
         maximum: 100
+
+PDR_INTEGRATIONS:
+  description: >-
+    Включённые внешние интеграции: ключ словаря — имя интеграции из
+    docs/architecture/integrations.md, значение — включена ли она. Отключение
+    внешнего сервиса это снятый флаг, а не правка кода и не выкатка.
+  kind: техническая
+  owner: тот, кто держит сервис, вместе с владельцем продукта
+  jurisdiction: нет
+  awaits: ARCH
+  breaks: >-
+    Интеграции, которой нет в словаре, для механизма не существует, и это
+    осознанное умолчание: забытый флаг означает выключённое украшение, а не
+    молчаливое обращение наружу. Включённая интеграция, за которой нет живого
+    адаптера, ходит в никуда на каждом сценарии — поэтому имя ключа сверяется
+    с реестром интеграций (scripts/check_integrations.py).
+  default: {}
+  schema:
+    type: object
+    additionalProperties:
+      type: object
+      additionalProperties: false
+      required: [enabled]
+      properties:
+        enabled:
+          description: ходить ли наружу за этой функцией
+          type: boolean

@@ -249,6 +249,8 @@ userver, а не пишутся руками: [ADR-0013](docs/adr/0013-standard-
   писать новый,
   [`comments.md`](docs/comments.md) — какие комментарии остаются в коде и
   примеры «было / стало»,
+  [`integrations.md`](docs/architecture/integrations.md) — внешние API: реестр,
+  правило «чужой API не бывает несущим» и набор «сервиса нет навсегда»,
   [`plans.md`](docs/architecture/plans.md) — планы горячих запросов: что
   попадает в список и что делать, когда индекс потерян,
   [`jobs.md`](docs/architecture/jobs.md) — одиночные фоновые задания: блокировка,

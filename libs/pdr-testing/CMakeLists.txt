@@ -34,6 +34,7 @@ if(PDR_BUILD_TESTS)
     # userver) на адаптере Postgres.
     add_executable(pdr_contract_tests
         tests/adapter_contract_test.cpp
+        tests/integration_contract_test.cpp
         tests/repository_contract_test.cpp
     )
     target_link_libraries(pdr_contract_tests
@@ -47,4 +48,13 @@ if(PDR_BUILD_TESTS)
     target_link_libraries(pdr_broken_fake_contract_test PRIVATE pdr_testing GTest::gtest_main)
     add_test(NAME contract.broken_fake_must_fail COMMAND pdr_broken_fake_contract_test)
     set_tests_properties(contract.broken_fake_must_fail PROPERTIES WILL_FAIL TRUE)
+
+    # То же самое для набора «внешнего сервиса нет навсегда»: интеграция,
+    # сделанная несущей, ОБЯЗАНА уронить прогон (ADR-0014).
+    add_executable(pdr_broken_integration_contract_test tests/integration_contract_broken_test.cpp)
+    target_link_libraries(pdr_broken_integration_contract_test
+                          PRIVATE pdr_testing GTest::gtest_main)
+    add_test(NAME contract.load_bearing_integration_must_fail
+             COMMAND pdr_broken_integration_contract_test)
+    set_tests_properties(contract.load_bearing_integration_must_fail PROPERTIES WILL_FAIL TRUE)
 endif()
