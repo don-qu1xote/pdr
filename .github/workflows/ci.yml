@@ -131,6 +131,15 @@ jobs:
           python3 scripts/check_product_events.py --selftest
           python3 scripts/check_product_events.py
 
+      # Инженерный термин в тексте, который видит человек, — баг: словарь из
+      # docs/product/glossary.md прогоняется по строкам клиента и по самим
+      # утверждённым формулировкам. Процент при числе роняет сборку здесь же.
+      - name: Словарь продукта
+        run: |
+          set -eu
+          python3 scripts/check_glossary.py --selftest
+          python3 scripts/check_glossary.py
+
       # Чужой API не бывает несущим: неофициальный источник в несущей роли,
       # интеграция без посчитанной цены удаления, порт с одной реализацией и
       # чужой идентификатор первичным ключом роняют сборку здесь.

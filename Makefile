@@ -171,6 +171,8 @@ test:
 	python3 scripts/check_dynamic_configs.py
 	python3 scripts/check_product_events.py --selftest
 	python3 scripts/check_product_events.py
+	python3 scripts/check_glossary.py --selftest
+	python3 scripts/check_glossary.py
 	python3 scripts/check_integrations.py --selftest
 	python3 scripts/check_integrations.py
 	python3 scripts/check_sovereignty.py --selftest
