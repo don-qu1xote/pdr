@@ -130,4 +130,5 @@ runbooks. Без имитации продакшена — см. следующ�
 | Продавец — репетитор, не платформа | [ADR-0008](adr/0008-tutor-is-the-seller.md) |
 | Родитель видит не всё | [ADR-0006](adr/0006-parental-access-by-design.md) |
 | Никакого фиктивного прода | [ADR-0007](adr/0007-local-without-fake-production.md) |
+| Меньше времени в продукте — лучше продукт | [ADR-0016](adr/0016-less-time-in-product-is-better.md) |
 | Модель не считает — факты считает код | — |
