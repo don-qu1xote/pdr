@@ -150,6 +150,15 @@ jobs:
           node scripts/check-copy.mjs --selftest
           node scripts/check-copy.mjs
 
+      # Ревизия открытости: строка про внешнюю зависимость без набора «сервиса
+      # нет навсегда», доменная таблица мимо полной выгрузки аккаунта и постулат
+      # без ссылки на тест роняют сборку здесь.
+      - name: Открытость и постулаты
+        run: |
+          set -eu
+          python3 scripts/check_openness.py --selftest
+          python3 scripts/check_openness.py
+
       # Чужой API не бывает несущим: неофициальный источник в несущей роли,
       # интеграция без посчитанной цены удаления, порт с одной реализацией и
       # чужой идентификатор первичным ключом роняют сборку здесь.
@@ -400,6 +409,34 @@ jobs:
           set -eu
           make product-events-prune ENV_PROFILE=ci DAYS=30
           ! make product-events-prune ENV_PROFILE=ci
+
+      # «Данные ваши» — обещание, которое подтверждается работающей командой.
+      # Проверяется и то, что выгрузка отдаёт данные, и то, что она отдаёт
+      # ТОЛЬКО их: арендатор в выгрузке ровно один.
+      - name: Полная выгрузка аккаунта
+        run: |
+          set -eu
+          tenant=0e0e0e0e-0000-4000-8000-000000000007
+          make account-export ENV_PROFILE=ci TENANT="$tenant" OUT=/tmp/account.json
+          python3 - "$tenant" <<'PY'
+          import json
+          import sys
+
+          account = json.load(open("/tmp/account.json", encoding="utf-8"))
+          parts = account["parts"]
+          expected = {
+              "identity_tenant",
+              "identity_person",
+              "identity_role_assignment",
+              "identity_guardianship",
+              "observability_product_event",
+          }
+          assert set(parts) == expected, f"состав выгрузки разошёлся: {sorted(parts)}"
+          assert all(parts[name] for name in expected), "часть выгрузки пуста на засеянной базе"
+          tenants = {row["tenant_id"] for rows in parts.values() for row in rows}
+          assert tenants == {sys.argv[1]}, f"в выгрузке чужие арендаторы: {sorted(tenants)}"
+          print(f"выгрузка: частей {len(parts)}, арендатор один")
+          PY
 
       - name: Погасить вместе с томами
         if: always()

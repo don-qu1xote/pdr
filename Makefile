@@ -22,7 +22,8 @@ PG_ENV = set -a; . ./$(ENV_FILE); set +a; \
 .DEFAULT_GOAL := help
 .PHONY: help up down test test-unit test-isolation test-jobs test-plans fmt fmt-check \
         comments comments-fix hooks logs migrate migrate-verify migrate-status schema-doc \
-        product-events-lock product-events-export product-events-prune ps check-env
+        product-events-lock product-events-export product-events-prune \
+        account-export ps check-env
 
 help:
 	@echo "Цели:"
@@ -46,6 +47,7 @@ help:
 	@echo "  make product-events-lock     пересобрать снимок опубликованных схем событий"
 	@echo "  make product-events-export OUT=<файл>   выгрузить продуктовый поток в CSV"
 	@echo "  make product-events-prune DAYS=<дней>   убрать записи старше срока"
+	@echo "  make account-export TENANT=<uuid> OUT=<файл>   полная выгрузка аккаунта"
 	@echo "  make ps          что сейчас запущено"
 	@echo
 	@echo "Уровни тестов и куда писать новый — docs/testing.md"
@@ -132,6 +134,23 @@ product-events-export: check-env
 		-f db/observability/export.sql > $(OUT)
 	@echo "выгружено: $(OUT), строк вместе с заголовком: $$(wc -l < $(OUT))"
 
+# Полная выгрузка аккаунта одним действием: обещание «данные ваши» проверяется
+# командой, а не абзацем в оферте. Идёт под ролью приложения с объявленным
+# арендатором — то есть отдаёт ровно то, что видит сам аккаунт, и ни строкой
+# больше (docs/architecture/openness.md).
+account-export: check-env
+	@test -n "$(TENANT)" || { \
+		echo "чей аккаунт: make account-export TENANT=<uuid> OUT=account.json"; \
+		exit 1; \
+	}
+	@test -n "$(OUT)" || { \
+		echo "куда выгружать: make account-export TENANT=<uuid> OUT=account.json"; \
+		exit 1; \
+	}
+	@$(PG_ENV) psql --no-psqlrc -v ON_ERROR_STOP=1 -qtA -v tenant=$(TENANT) \
+		-f db/account/export.sql > $(OUT)
+	@echo "выгружено: $(OUT), частей: $$(grep -c '": \[' $(OUT))"
+
 # Уборка по сроку жизни. Числа по умолчанию у цели нет намеренно: срок живёт в
 # PDR_PRODUCT_EVENTS.retention_days, и второго источника правды не заводится.
 product-events-prune: check-env
@@ -178,6 +197,8 @@ test:
 	python3 scripts/check_glossary.py
 	node scripts/check-copy.mjs --selftest
 	node scripts/check-copy.mjs
+	python3 scripts/check_openness.py --selftest
+	python3 scripts/check_openness.py
 	python3 scripts/check_integrations.py --selftest
 	python3 scripts/check_integrations.py
 	python3 scripts/check_sovereignty.py --selftest
