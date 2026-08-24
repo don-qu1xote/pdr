@@ -270,7 +270,8 @@ jobs:
       - name: Один набор на обеих реализациях
         run: |
           set -eu
-          cmake --build build --target pdr_contract_tests pdr_broken_fake_contract_test --parallel
+          cmake --build build --target pdr_contract_tests pdr_broken_fake_contract_test \
+            pdr_broken_integration_contract_test pdr_network_bound_contract_test --parallel
           ctest --test-dir build --output-on-failure -R '^contract'
 
   domain-without-userver:
