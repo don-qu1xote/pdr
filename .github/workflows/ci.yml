@@ -374,6 +374,7 @@ jobs:
     if: github.event_name == 'push' && needs.changes.outputs.cpp == 'true'
     container:
       image: ghcr.io/userver-framework/ubuntu-22.04-userver:latest
+      options: --security-opt seccomp=unconfined
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
