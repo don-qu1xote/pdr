@@ -22,7 +22,7 @@ PG_ENV = set -a; . ./$(ENV_FILE); set +a; \
 .DEFAULT_GOAL := help
 .PHONY: help up down test test-unit test-isolation test-jobs test-plans fmt fmt-check \
         comments comments-fix hooks logs migrate migrate-verify migrate-status schema-doc \
-        ps check-env
+        product-events-lock product-events-export product-events-prune ps check-env
 
 help:
 	@echo "Цели:"
@@ -43,6 +43,9 @@ help:
 	@echo "  make migrate-verify   сверить суммы, ничего не применяя"
 	@echo "  make migrate-status   что применено, что ждёт"
 	@echo "  make schema-doc  пересобрать docs/architecture/schema.md"
+	@echo "  make product-events-lock     пересобрать снимок опубликованных схем событий"
+	@echo "  make product-events-export OUT=<файл>   выгрузить продуктовый поток в CSV"
+	@echo "  make product-events-prune DAYS=<дней>   убрать записи старше срока"
 	@echo "  make ps          что сейчас запущено"
 	@echo
 	@echo "Уровни тестов и куда писать новый — docs/testing.md"
@@ -111,6 +114,35 @@ test-plans: check-env
 schema-doc:
 	python3 scripts/gen_schema_doc.py
 
+# Снимок опубликованных схем продуктовых событий. Пишет машина; поле, пропавшее
+# из уже опубликованной пары «тип + версия», цель записать откажется — обход
+# правила не состоит из одной команды (docs/architecture/product-events.md).
+product-events-lock:
+	@python3 scripts/check_product_events.py --update
+
+# Выгрузка обезличенного потока для анализа. Идёт под административной ролью, а
+# не под pdr_app: политика для выгрузки исключений не делает, и читать поток
+# целиком может только тот, кто и так может всё.
+product-events-export: check-env
+	@test -n "$(OUT)" || { \
+		echo "куда выгружать: make product-events-export OUT=product-events.csv"; \
+		exit 1; \
+	}
+	@$(PG_ENV) psql --no-psqlrc -v ON_ERROR_STOP=1 -qtA \
+		-f db/observability/export.sql > $(OUT)
+	@echo "выгружено: $(OUT), строк вместе с заголовком: $$(wc -l < $(OUT))"
+
+# Уборка по сроку жизни. Числа по умолчанию у цели нет намеренно: срок живёт в
+# PDR_PRODUCT_EVENTS.retention_days, и второго источника правды не заводится.
+product-events-prune: check-env
+	@test -n "$(DAYS)" || { \
+		echo "сколько дней хранить: make product-events-prune DAYS=730"; \
+		echo "значение — PDR_PRODUCT_EVENTS.retention_days из configs/dynamic/registry.yaml"; \
+		exit 1; \
+	}
+	@$(PG_ENV) psql --no-psqlrc -v ON_ERROR_STOP=1 -tA -v days=$(DAYS) \
+		-f db/observability/prune.sql
+
 ps: check-env
 	$(COMPOSE) ps
 
@@ -137,6 +169,8 @@ test:
 	python3 scripts/check_handmade.py
 	python3 scripts/check_dynamic_configs.py --selftest
 	python3 scripts/check_dynamic_configs.py
+	python3 scripts/check_product_events.py --selftest
+	python3 scripts/check_product_events.py
 	python3 scripts/check_integrations.py --selftest
 	python3 scripts/check_integrations.py
 	python3 scripts/check_sovereignty.py --selftest

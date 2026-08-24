@@ -122,6 +122,15 @@ jobs:
           python3 scripts/check_dynamic_configs.py --selftest
           python3 scripts/check_dynamic_configs.py
 
+      # Событие без вопроса, вопрос без события, продуктовое число без вопроса,
+      # поле, именующее человека, и поле, пропавшее из уже опубликованной версии
+      # схемы, роняют сборку здесь.
+      - name: Продуктовые события и вопросы, на которые они отвечают
+        run: |
+          set -eu
+          python3 scripts/check_product_events.py --selftest
+          python3 scripts/check_product_events.py
+
       # Чужой API не бывает несущим: неофициальный источник в несущей роли,
       # интеграция без посчитанной цены удаления, порт с одной реализацией и
       # чужой идентификатор первичным ключом роняют сборку здесь.
@@ -354,6 +363,24 @@ jobs:
       # тот же след, — это утверждение, а не проверка.
       - name: Одиночные задания на живой базе
         run: make test-jobs ENV_PROFILE=ci
+
+      # Хранение и выгрузка продуктового потока: обе цели ходят в живую базу, и
+      # обе ломаются молча — опечатка в SQL выясняется в день, когда выгрузку
+      # спросят. Выгрузка идёт под административной ролью: pdr_app без
+      # объявленного арендатора не видит ни строки, и это проверено выше.
+      - name: Выгрузка обезличенного потока
+        run: |
+          set -eu
+          make product-events-export ENV_PROFILE=ci OUT=/tmp/product-events.csv
+          head -1 /tmp/product-events.csv | \
+            grep -qx 'tenant_id,type,version,actor_role,occurred_at,recorded_at,fields'
+          ! grep -qiE '(person|email|phone|login)' /tmp/product-events.csv
+
+      - name: Уборка по сроку жизни
+        run: |
+          set -eu
+          make product-events-prune ENV_PROFILE=ci DAYS=30
+          ! make product-events-prune ENV_PROFILE=ci
 
       - name: Погасить вместе с томами
         if: always()

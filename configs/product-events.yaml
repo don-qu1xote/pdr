@@ -1,0 +1,253 @@
+# Реестр продуктовых событий ПДР.
+#
+# Продуктовое событие отвечает на вопрос «что сделал человек», а не «сколько
+# миллисекунд занял запрос». Технические метрики живут отдельным потоком — это
+# штатные utils::statistics userver, и смешивать их с этим потоком нельзя:
+# у них разный срок жизни, разные читатели и разные права доступа.
+#
+# СОБЫТИЕ БЕЗ ВОПРОСА НЕ ЗАВОДИТСЯ. У каждой записи ниже есть поле closes —
+# вопросы из docs/product/open-questions.md, которые без неё не закроются.
+# Сбор «на всякий случай» — это данные, которые никто не смотрит, и риск,
+# который никто не считал.
+#
+# ОБЯЗАТЕЛЬНЫЕ ПОЛЯ записи:
+#   description  что именно произошло, словами для человека
+#   closes       вопросы из реестра, ради которых событие пишется
+#   version      версия схемы; меняется по правилам ниже
+#   fields       поля события: имя, тип и зачем оно
+#
+# ВЕРСИОНИРОВАНИЕ. Поле добавили — версия та же: старый читатель не заметит
+# нового поля, новый увидит его отсутствующим у старых записей. Поле
+# переименовали, убрали или сменили ему смысл — версия +1, потому что старые
+# записи остаются в таблице и читаются тем же кодом. Схема без версии
+# запрещена: менять её придётся, и придётся не один раз.
+#
+# ОБЕЗЛИЧИВАНИЕ. В событии нет идентификатора человека — ни прямого, ни
+# косвенного. Ссылка только на арендатора и роль. Ответ на вопрос «репетиторы
+# правят конспекты?» не требует знать, кто именно правил.
+#
+# Отсюда главное правило полей: СЧИТАЕТ ИЗДАТЕЛЬ, А НЕ АНАЛИТИК. «Какое это
+# занятие по счёту у ученика» вычисляет тот, кто пишет событие и знает ученика;
+# в событие попадает число. Иначе пришлось бы связывать записи одного человека
+# между собой, а для этого — хранить его ключ.
+#
+# ТИПЫ ПОЛЕЙ (закрытый список, проверяется scripts/check_product_events.py):
+#   count      целое неотрицательное
+#   minutes    сколько минут прошло
+#   hours      сколько часов прошло
+#   days       сколько дней прошло
+#   flag       да или нет
+#   bucket     корзина из закрытого перечня: диапазон вместо точного значения
+#   code       код из закрытого перечня: роль, причина, исход
+#   reference  идентификатор сущности, которая НЕ человек: материал, задание
+#   score      оценка по объявленной шкале
+
+notes.note_published:
+  description: >-
+    Репетитор опубликовал конспект занятия. Пишется в момент публикации, а не
+    правки: правок может быть много, публикация одна.
+  closes: [note_delay_and_edits]
+  version: 1
+  fields:
+    minutes_after_lesson:
+      type: minutes
+      description: сколько прошло от конца занятия до публикации
+    draft_edited_share:
+      type: bucket
+      description: >-
+        насколько правили черновик от модели: none, light, half, rewritten.
+        Корзина, а не проценты: точная доля правки — это почти текст конспекта
+    had_transcript:
+      type: flag
+      description: был ли черновик собран из транскрипта или репетитор писал сам
+
+scheduling.lesson_cancelled:
+  description: Занятие отменено — тем, кто отменил, и за столько-то часов до начала.
+  closes: [booking_windows]
+  version: 1
+  fields:
+    hours_before_start:
+      type: hours
+      description: сколько часов оставалось до начала
+    initiator_role:
+      type: code
+      description: кто отменил — tutor, student, guardian, system
+    within_free_window:
+      type: flag
+      description: попала ли отмена в бесплатное окно по действующему значению
+
+scheduling.lesson_rescheduled:
+  description: Занятие перенесено на другое время без отмены.
+  closes: [booking_windows]
+  version: 1
+  fields:
+    hours_before_start:
+      type: hours
+      description: сколько часов оставалось до начала
+    initiator_role:
+      type: code
+      description: кто перенёс — tutor, student, guardian
+    shift_hours:
+      type: hours
+      description: на сколько часов сдвинулось занятие
+
+scheduling.lesson_completed:
+  description: >-
+    Занятие состоялось. Порядковый номер считает издатель: он знает ученика, а
+    событию хватает числа.
+  closes:
+    - second_lesson
+    - schedule_horizon
+    - lessons_per_day
+  version: 1
+  fields:
+    ordinal_for_student:
+      type: count
+      description: какое это занятие по счёту у этого ученика с этим репетитором
+    lessons_same_day:
+      type: count
+      description: сколько занятий у ученика было в этот день, включая это
+    booked_hours_ahead:
+      type: hours
+      description: за сколько часов до начала занятие было записано
+
+billing.autocharge_objected:
+  description: Плательщик возразил против автосписания после уведомления о нём.
+  closes: [objection_window]
+  version: 1
+  fields:
+    hours_after_notice:
+      type: hours
+      description: сколько прошло от уведомления до возражения
+    within_window:
+      type: flag
+      description: успело ли возражение в действующее окно
+    payer_role:
+      type: code
+      description: кто возразил — student, guardian
+
+content.material_opened:
+  description: Материал открыт. Число повторов считает издатель, ключа человека нет.
+  closes: [material_reopened]
+  version: 1
+  fields:
+    material:
+      type: reference
+      description: какой материал открыт
+    open_ordinal:
+      type: count
+      description: какое это открытие по счёту у этого человека
+    days_since_first_open:
+      type: days
+      description: сколько дней прошло с первого открытия; ноль при первом
+    reader_role:
+      type: code
+      description: кто открыл — tutor, student, guardian
+
+content.plan_state:
+  description: >-
+    Состояние учебного плана у репетитора на момент занятия. Пишется по занятию,
+    а не по репетитору: иначе «сколько репетиторов работают без плана» считалось
+    бы по тем, кто вообще ничего не делает.
+  closes: [plan_adoption]
+  version: 1
+  fields:
+    has_plan:
+      type: flag
+      description: есть ли у репетитора учебный план для этого ученика
+    lessons_done:
+      type: bucket
+      description: сколько занятий уже прошло — first, few, many
+    plan_followed:
+      type: flag
+      description: шло ли занятие по плану, если он есть
+
+identity.self_account_granted:
+  description: >-
+    Опекун включил ученику права по возрасту. Первая половина пары, без которой
+    откат не с чем сравнивать.
+  closes: [self_account_rollback, self_account_age]
+  version: 1
+  fields:
+    student_age_years:
+      type: count
+      description: сколько лет ученику на момент включения
+    lessons_before:
+      type: bucket
+      description: сколько занятий прошло до этого — none, few, many
+
+identity.self_account_revoked:
+  description: >-
+    ОТКАТ САМОСТОЯТЕЛЬНОСТИ: опекун отключил ученику права, которые сам включил.
+    Поведенческая половина вопроса о пороге 14/16 измеряется только этим
+    событием, и никаким опросом её не заменить.
+  closes: [self_account_rollback, self_account_age]
+  version: 1
+  fields:
+    student_age_years:
+      type: count
+      description: сколько лет ученику на момент отката
+    days_granted:
+      type: days
+      description: сколько дней права продержались
+    reason:
+      type: code
+      description: >-
+        названная причина — no_reason, missed_lessons, payment, request_of_student,
+        other. Свободного текста здесь нет: он неизбежно про конкретную семью
+
+reputation.rating_recorded:
+  description: >-
+    Записана оценка занятия. Доля низких оценок за скользящее окно считается
+    издателем и кладётся сюда же: инфляцию надо увидеть до того, как все оценки
+    станут пятёрками, а не после.
+  closes:
+    - reputation_prior
+    - review_publication
+    - rating_inflation
+  version: 1
+  fields:
+    score:
+      type: score
+      description: оценка по шкале от 1 до 5
+    low_share_in_window:
+      type: bucket
+      description: >-
+        доля оценок ниже четырёх за скользящее окно тенанта на момент записи —
+        none, low, noticeable, high
+    lessons_before_rating:
+      type: count
+      description: после какого по счёту занятия поставлена оценка
+    with_text:
+      type: flag
+      description: сопровождалась ли оценка текстом отзыва
+
+matching.newcomer_shown:
+  description: В выдаче подбора показан репетитор без отзывов.
+  closes: [newcomer_share]
+  version: 1
+  fields:
+    position_bucket:
+      type: bucket
+      description: место в выдаче — top, middle, tail
+    results_shown:
+      type: count
+      description: сколько всего репетиторов было в выдаче
+    newcomers_shown:
+      type: count
+      description: сколько из них без отзывов
+
+practice.mistake_repeated:
+  description: Ошибка повторилась столько раз, что признана пробелом.
+  closes: [repeated_mistake]
+  version: 1
+  fields:
+    attempts:
+      type: count
+      description: сколько раз ошибка повторилась
+    window_attempts:
+      type: count
+      description: за сколько последних попыток
+    skill:
+      type: reference
+      description: какое умение

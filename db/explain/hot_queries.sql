@@ -76,3 +76,22 @@ select id, role
 -- индекс: jobs_effect_by_age
 delete from jobs_effect
  where produced_at < now() - make_interval(days => {keep_days});
+
+-- запрос: observability_product_event_cleanup
+-- откуда: уборка продуктового потока по сроку жизни (db/observability/prune.sql),
+--         ради которой заведён observability_product_event_by_age. Поток растёт
+--         быстрее любой другой таблицы, и перебор здесь стоит дороже всего
+-- индекс: observability_product_event_by_age
+delete from observability_product_event
+ where recorded_at < now() - make_interval(days => {keep_days});
+
+-- запрос: observability_product_event_by_type
+-- откуда: чтение под вопрос реестра — «все оценки за последнее время»
+--         (docs/product/open-questions.md, вопрос rating_inflation). Вопрос
+--         всегда про ОДИН тип события, ради этого и заведён
+--         observability_product_event_by_type
+-- индекс: observability_product_event_by_type
+select occurred_at, actor_role, fields
+  from observability_product_event
+ where type = 'reputation.rating_recorded'
+   and occurred_at >= now() - make_interval(days => {keep_days});

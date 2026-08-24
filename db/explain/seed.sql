@@ -76,6 +76,34 @@ select ('0e0e0e0e-0000-4000-8000-' || lpad(tenant::text, 12, '0'))::uuid,
                                           else effect % 25 end)
 from generate_series(1, 200) as tenant, generate_series(1, 250) as effect;
 
+-- Продуктовый поток: двести пятьдесят событий на арендатора. Возраст записей
+-- распределён так, как он выглядит у системы, где уборка ДЕЙСТВИТЕЛЬНО ходит:
+-- свежих много, старше месяца — единицы. Иначе старым окажется полтаблицы,
+-- перебор станет правильным планом, и проверять будет нечего.
+--
+-- Типов несколько, и оценки среди них меньшинство: вопрос реестра всегда про
+-- ОДИН тип события, и индекс заведён ровно под такую выборку.
+insert into observability_product_event
+    (tenant_id, id, type, version, actor_role, occurred_at, recorded_at, fields)
+select ('0e0e0e0e-0000-4000-8000-' || lpad(tenant::text, 12, '0'))::uuid,
+       ('0e0e0e0e-0004-4000-8000-' || lpad((tenant * 1000 + event)::text, 12, '0'))::uuid,
+       case event % 5
+           when 0 then 'reputation.rating_recorded'
+           when 1 then 'scheduling.lesson_completed'
+           when 2 then 'scheduling.lesson_cancelled'
+           when 3 then 'content.material_opened'
+           else 'notes.note_published'
+       end,
+       1,
+       case event % 3 when 0 then 'tutor' when 1 then 'student' else 'guardian' end,
+       now() - make_interval(days => case when event % 50 = 0 then 31 + event % 20
+                                          else event % 25 end)
+             - interval '5 minutes',
+       now() - make_interval(days => case when event % 50 = 0 then 31 + event % 20
+                                          else event % 25 end),
+       jsonb_build_object('score', 4 + event % 2, 'low_share_in_window', 'low')
+from generate_series(1, 200) as tenant, generate_series(1, 250) as event;
+
 -- Без свежей статистики планировщик считает по умолчаниям, и план не про эти
 -- данные, а про воображаемые.
 analyze identity_tenant;
@@ -83,3 +111,4 @@ analyze identity_person;
 analyze identity_role_assignment;
 analyze identity_guardianship;
 analyze jobs_effect;
+analyze observability_product_event;

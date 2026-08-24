@@ -4,7 +4,7 @@
      правка переживёт ровно до следующей пересборки. Изменить схему — значит
      написать новую миграцию. -->
 
-Собрано из миграций: 3. Таблиц: 8.
+Собрано из миграций: 4. Таблиц: 9.
 
 Правила, которым подчиняется каждая колонка, — в
 [migrations.md](migrations.md). Как устроена изоляция арендаторов и почему у
@@ -216,6 +216,44 @@
 
 Не доменная таблица: журнал последнего прогона задания, один на кластер. Арендатора и политики у неё нет.
 
+### observability_product_event
+
+Поток продуктовых событий: что сделал человек, обезличенно. Ссылка на арендатора и роль, идентификатора человека нет ни колонкой, ни ключом в fields. Отдельно от технических метрик: у них разные читатели, права и срок жизни.
+
+Заведена миграцией `V004__observability.sql`.
+
+| Колонка | Тип | Определение |
+| --- | --- | --- |
+| `tenant_id` | `uuid` | uuid not null references identity_tenant (tenant_id) |
+| `id` | `uuid` | uuid not null |
+| `type` | `text` | text not null |
+| `version` | `integer` | integer not null |
+| `actor_role` | `text` | text not null |
+| `occurred_at` | `timestamptz` | timestamptz not null |
+| `recorded_at` | `timestamptz` | timestamptz not null default now() |
+| `fields` | `jsonb` | jsonb not null |
+
+Ограничения:
+
+* `constraint observability_product_event_pk primary key (tenant_id, id)`
+* `constraint observability_product_event_type_shaped check (type ~ )`
+* `constraint observability_product_event_version_from_one check (version >= 1)`
+* `constraint observability_product_event_role_known check (actor_role in ( , , , ))`
+* `constraint observability_product_event_fields_are_object check (jsonb_typeof(fields) = )`
+* `constraint observability_product_event_fields_are_anonymous check (not jsonb_path_exists( fields, ))`
+* `constraint observability_product_event_recorded_after_occurred check (recorded_at >= occurred_at)`
+
+Индексы:
+
+* `observability_product_event_by_age` — обычный, `(recorded_at)`
+* `observability_product_event_by_type` — обычный, `(tenant_id, type, occurred_at)`
+
+Построчная защита включена и форсирована.
+
+Политики:
+
+* `observability_product_event_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
+
 ### schema_version
 
 Применённые миграции: версия, момент применения в UTC и контрольная сумма файла.
@@ -235,3 +273,4 @@
 1. `V001__schema_version.sql` — schema_version
 1. `V002__init.sql` — identity_tenant, identity_person, identity_role_assignment, identity_guardianship
 1. `V003__jobs.sql` — jobs_lock, jobs_run, jobs_effect
+1. `V004__observability.sql` — observability_product_event
