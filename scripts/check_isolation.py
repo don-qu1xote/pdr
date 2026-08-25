@@ -136,12 +136,23 @@ insert into identity_role_assignment (tenant_id, id, person_id, role) values
 insert into identity_guardianship (tenant_id, id, guardian_id, student_id) values
     ('{TENANT_A}', '{LINK_A}', '{GUARDIAN_A}', '{STUDENT_A}'),
     ('{TENANT_B}', '{LINK_B}', '{GUARDIAN_B}', '{STUDENT_B}');
+insert into observability_product_event
+    (tenant_id, id, type, version, actor_role, occurred_at, recorded_at, fields) values
+    ('{TENANT_A}', '0a0a0a0a-0000-4000-8000-00000000e001',
+     'scheduling.lesson_completed', 1, 'tutor',
+     now() - interval '1 hour', now() - interval '1 hour',
+     '{{"score": 4}}'),
+    ('{TENANT_B}', '0b0b0b0b-0000-4000-8000-00000000e001',
+     'scheduling.lesson_completed', 1, 'tutor',
+     now() - interval '1 hour', now() - interval '1 hour',
+     '{{"score": 5}}');
 """)
 
 
 def teardown(database: Database) -> None:
     tenants = f"('{TENANT_A}', '{TENANT_B}')"
     database.owner(f"""
+delete from observability_product_event where tenant_id in {tenants};
 delete from identity_guardianship where tenant_id in {tenants};
 delete from identity_role_assignment where tenant_id in {tenants};
 delete from identity_person where tenant_id in {tenants};
