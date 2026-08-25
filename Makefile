@@ -199,6 +199,8 @@ test:
 	node scripts/check-copy.mjs
 	python3 scripts/check_openness.py --selftest
 	python3 scripts/check_openness.py
+	python3 scripts/check_diagrams.py --selftest
+	python3 scripts/check_diagrams.py
 	python3 scripts/check_integrations.py --selftest
 	python3 scripts/check_integrations.py
 	python3 scripts/check_sovereignty.py --selftest
