@@ -50,8 +50,6 @@ WORKER_B = "host-b:locker-2"
 
 TENANT_A = "0d0d0d0d-0000-4000-8000-000000000001"
 TENANT_B = "0d0d0d0d-0000-4000-8000-000000000002"
-
-# Арендатор, нужный полной выгрузке аккаунта в CI (ci.yml).
 EXPORT_TENANT = "0e0e0e0e-0000-4000-8000-000000000007"
 
 KEYS = ("lesson-1", "lesson-2", "lesson-3")
