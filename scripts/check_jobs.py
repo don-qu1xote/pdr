@@ -51,6 +51,9 @@ WORKER_B = "host-b:locker-2"
 TENANT_A = "0d0d0d0d-0000-4000-8000-000000000001"
 TENANT_B = "0d0d0d0d-0000-4000-8000-000000000002"
 
+# Арендатор, нужный полной выгрузке аккаунта в CI (ci.yml).
+EXPORT_TENANT = "0e0e0e0e-0000-4000-8000-000000000007"
+
 KEYS = ("lesson-1", "lesson-2", "lesson-3")
 
 ACQUIRE = """
@@ -146,7 +149,28 @@ def seed(database: live.Database) -> None:
     database.owner(f"""
 insert into identity_tenant (tenant_id, name, tz) values
     ('{TENANT_A}', 'Арендатор заданий А', 'Europe/Moscow'),
-    ('{TENANT_B}', 'Арендатор заданий Б', 'Asia/Tbilisi');
+    ('{TENANT_B}', 'Арендатор заданий Б', 'Asia/Tbilisi'),
+    ('{EXPORT_TENANT}', 'Арендатор выгрузки', 'Europe/Moscow');
+insert into identity_person (tenant_id, id, display_name, email, tz) values
+    ('{EXPORT_TENANT}', '0e0e0e0e-0000-4000-8000-00000000a001',
+     'Человек выгрузки', 'export@example.test', 'Europe/Moscow');
+insert into identity_role_assignment (tenant_id, id, person_id, role) values
+    ('{EXPORT_TENANT}', '0e0e0e0e-0000-4000-8000-00000000d001',
+     '0e0e0e0e-0000-4000-8000-00000000a001', 'student');
+insert into identity_guardianship (tenant_id, id, guardian_id, student_id) values
+    ('{EXPORT_TENANT}', '0e0e0e0e-0000-4000-8000-00000000c001',
+     '0e0e0e0e-0000-4000-8000-00000000a001',
+     '0e0e0e0e-0000-4000-8000-00000000a001');
+insert into observability_product_event
+    (tenant_id, id, type, version, actor_role, occurred_at, recorded_at, fields) values
+    ('{TENANT_A}', '0d0d0d0d-0000-4000-8000-00000000e001',
+     'scheduling.lesson_completed', 1, 'tutor',
+     now() - interval '1 hour', now() - interval '1 hour',
+     '{{"score": 4}}'),
+    ('{EXPORT_TENANT}', '0e0e0e0e-0000-4000-8000-00000000e001',
+     'scheduling.lesson_completed', 1, 'tutor',
+     now() - interval '1 hour', now() - interval '1 hour',
+     '{{"score": 5}}');
 """)
 
 
@@ -156,11 +180,16 @@ def teardown(database: live.Database) -> None:
     Следы удаляются ПО ЗАДАНИЮ и без условия по арендатору: строка могла
     остаться от прогона, упавшего на середине, и тогда `delete from
     identity_tenant` упёрся бы во внешний ключ.
+
+    EXPORT_TENANT не удаляется: его данные нужны экспорту аккаунта, который
+    идёт следом (ci.yml).
     """
     database.owner(f"""
 delete from jobs_effect where job = '{JOB}';
 delete from jobs_lock where key = '{LOCK}';
 delete from jobs_run where job = '{JOB}';
+delete from observability_product_event
+    where tenant_id in ('{TENANT_A}', '{TENANT_B}');
 delete from identity_tenant where tenant_id in ('{TENANT_A}', '{TENANT_B}');
 """)
 
