@@ -151,14 +151,18 @@ insert into identity_tenant (tenant_id, name, tz) values
     ('{EXPORT_TENANT}', 'Арендатор выгрузки', 'Europe/Moscow');
 insert into identity_person (tenant_id, id, display_name, email, tz) values
     ('{EXPORT_TENANT}', '0e0e0e0e-0000-4000-8000-00000000a001',
-     'Человек выгрузки', 'export@example.test', 'Europe/Moscow');
+     'Человек выгрузки', 'export@example.test', 'Europe/Moscow'),
+    ('{EXPORT_TENANT}', '0e0e0e0e-0000-4000-8000-00000000a002',
+     'Ученик выгрузки', 'student@example.test', 'Europe/Moscow');
 insert into identity_role_assignment (tenant_id, id, person_id, role) values
     ('{EXPORT_TENANT}', '0e0e0e0e-0000-4000-8000-00000000d001',
-     '0e0e0e0e-0000-4000-8000-00000000a001', 'student');
+     '0e0e0e0e-0000-4000-8000-00000000a001', 'parent'),
+    ('{EXPORT_TENANT}', '0e0e0e0e-0000-4000-8000-00000000d002',
+     '0e0e0e0e-0000-4000-8000-00000000a002', 'student');
 insert into identity_guardianship (tenant_id, id, guardian_id, student_id) values
     ('{EXPORT_TENANT}', '0e0e0e0e-0000-4000-8000-00000000c001',
      '0e0e0e0e-0000-4000-8000-00000000a001',
-     '0e0e0e0e-0000-4000-8000-00000000a001');
+     '0e0e0e0e-0000-4000-8000-00000000a002');
 insert into observability_product_event
     (tenant_id, id, type, version, actor_role, occurred_at, recorded_at, fields) values
     ('{TENANT_A}', '0d0d0d0d-0000-4000-8000-00000000e001',
