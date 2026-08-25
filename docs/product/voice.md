@@ -80,6 +80,9 @@ problem+json — это по определению отказ.
 | `event_type_malformed` | то же |
 | `event_version_below_one` | то же |
 | `event_without_fields` | то же |
+| `guardianship_across_tenants` | опекуна выбирают из списка своего кабинета, чужих там нет |
+| `guardianship_guardian_role_missing` | роль проверяется до показа списка: не опекун туда не попадает |
+| `guardianship_student_role_missing` | то же со стороны ученика |
 
 Строка сюда добавляется вместе с кодом, а не вместо текста, когда текст лень
 писать. Отличить одно от другого может только ревью — и это единственное место

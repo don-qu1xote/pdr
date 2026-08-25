@@ -46,11 +46,11 @@ public:
         return *this;
     }
 
+    /// Собирается всегда через `Restore`, даже для действующей связи: билдер
+    /// строит заведомо годное значение, и разбирать здесь отказ было бы
+    /// притворством. Отказы `Grant` проверяются своими случаями в тесте.
     Guardianship Build() const {
-        if (revoked_at_.has_value()) {
-            return Guardianship::Restore(tenant_, guardian_, student_, granted_at_, revoked_at_);
-        }
-        return Guardianship::Grant(tenant_, guardian_, student_, granted_at_);
+        return Guardianship::Restore(tenant_, guardian_, student_, granted_at_, revoked_at_);
     }
 
 private:

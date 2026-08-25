@@ -8,7 +8,12 @@
 add_library(pdr_identity STATIC
     src/identity/application/contract_service.cpp
     src/identity/application/revoke_guardianship.cpp
+    src/identity/core/age_status.cpp
+    src/identity/core/birth_date.cpp
+    src/identity/core/email.cpp
     src/identity/core/guardianship.cpp
+    src/identity/core/membership.cpp
+    src/identity/core/tenant.cpp
 )
 target_include_directories(pdr_identity
     PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/contract"
@@ -25,7 +30,9 @@ if(PDR_BUILD_TESTS)
     # живут рядом со своим контекстом — платформенная оснастка зависеть от него
     # не имеет права.
     pdr_unit_test_sources(
+        tests/age_status_test.cpp
         tests/guardianship_test.cpp
+        tests/participants_test.cpp
         tests/revoke_guardianship_test.cpp
     )
     pdr_unit_test_includes(src tests)

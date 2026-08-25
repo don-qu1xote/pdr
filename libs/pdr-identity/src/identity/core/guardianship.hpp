@@ -5,19 +5,34 @@
 #include "core/errors.hpp"
 #include "core/types/ids.hpp"
 #include "core/types/time.hpp"
+#include "identity/core/membership.hpp"
 
 namespace pdr::identity {
 
 /// Опека: кто вправе действовать от имени ученика.
 ///
+/// Отдельное значение, а не поле в ученике: у ученика бывает двое родителей, у
+/// родителя — несколько детей, и полем это не выражается ни в одну сторону.
+///
 /// Отзыв — не удаление: связь была, и по ней принимались решения. Отозванная
-/// опека остаётся с датой отзыва.
+/// опека остаётся с датой отзыва, потому что на вопрос «кто имел доступ в
+/// марте» отвечают журналом, а не памятью.
 class Guardianship final {
 public:
-    static Guardianship Grant(core::TenantId tenant,
-                              core::PersonId guardian,
-                              core::PersonId student,
-                              core::Instant granted_at);
+    /// Завести связь между двумя участниками ОДНОГО арендатора.
+    ///
+    /// Участия приходят целиком, а не идентификаторами, ровно затем, чтобы
+    /// «опекун из чужого арендатора» было выразимо и отвергнуто: у голых
+    /// идентификаторов арендатора не видно, и проверять было бы нечего.
+    static core::Result<Guardianship> Establish(const TenantMembership& guardian,
+                                                const TenantMembership& student,
+                                                core::Instant granted_at);
+
+    /// Выдать опеку по идентификаторам внутри известного арендатора.
+    static core::Result<Guardianship> Grant(core::TenantId tenant,
+                                            core::PersonId guardian,
+                                            core::PersonId student,
+                                            core::Instant granted_at);
 
     /// Собрать из хранилища — вместе с уже случившимся отзывом, если он был.
     static Guardianship Restore(core::TenantId tenant,
