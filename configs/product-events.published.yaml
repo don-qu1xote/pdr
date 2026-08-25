@@ -1,0 +1,71 @@
+# Опубликованные схемы продуктовых событий. Файл пишет машина:
+# python3 scripts/check_product_events.py --update (make product-events-lock).
+#
+# Он существует ради одного правила: ОПУБЛИКОВАННАЯ СХЕМА НЕ МЕНЯЕТСЯ. Поле можно
+# добавить — старый читатель не заметит нового поля. Убрать или переименовать
+# нельзя: старые записи остаются в таблице и читаются тем же кодом. Нужно убрать —
+# поднимите версию: снимок получит новую строку, а старая останется навсегда.
+#
+# Строки исчезнувших версий отсюда НЕ удаляются: событие убрали из реестра, а
+# записи о нём в базе остались, и читать их кто-то будет.
+
+billing.autocharge_objected@1:
+  hours_after_notice: hours
+  payer_role: code
+  within_window: flag
+
+content.material_opened@1:
+  days_since_first_open: days
+  material: reference
+  open_ordinal: count
+  reader_role: code
+
+content.plan_state@1:
+  has_plan: flag
+  lessons_done: bucket
+  plan_followed: flag
+
+identity.self_account_granted@1:
+  lessons_before: bucket
+  student_age_years: count
+
+identity.self_account_revoked@1:
+  days_granted: days
+  reason: code
+  student_age_years: count
+
+matching.newcomer_shown@1:
+  newcomers_shown: count
+  position_bucket: bucket
+  results_shown: count
+
+notes.note_published@1:
+  draft_edited_share: bucket
+  had_transcript: flag
+  minutes_after_lesson: minutes
+
+practice.mistake_repeated@1:
+  attempts: count
+  skill: reference
+  window_attempts: count
+
+reputation.rating_recorded@1:
+  lessons_before_rating: count
+  low_share_in_window: bucket
+  score: score
+  with_text: flag
+
+scheduling.lesson_cancelled@1:
+  hours_before_start: hours
+  initiator_role: code
+  within_free_window: flag
+
+scheduling.lesson_completed@1:
+  booked_hours_ahead: hours
+  lessons_same_day: count
+  ordinal_for_student: count
+
+scheduling.lesson_rescheduled@1:
+  hours_before_start: hours
+  initiator_role: code
+  shift_hours: hours
