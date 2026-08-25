@@ -156,7 +156,7 @@ insert into identity_person (tenant_id, id, display_name, email, tz) values
      'Ученик выгрузки', 'student@example.test', 'Europe/Moscow');
 insert into identity_role_assignment (tenant_id, id, person_id, role) values
     ('{EXPORT_TENANT}', '0e0e0e0e-0000-4000-8000-00000000d001',
-     '0e0e0e0e-0000-4000-8000-00000000a001', 'parent'),
+     '0e0e0e0e-0000-4000-8000-00000000a001', 'guardian'),
     ('{EXPORT_TENANT}', '0e0e0e0e-0000-4000-8000-00000000d002',
      '0e0e0e0e-0000-4000-8000-00000000a002', 'student');
 insert into identity_guardianship (tenant_id, id, guardian_id, student_id) values
