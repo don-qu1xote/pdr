@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 #include <pdr/testing/clock_contract.hpp>
 #include <pdr/testing/id_generator_contract.hpp>
+#include <pdr/testing/secret_generator_contract.hpp>
 
 #include "core/types/ids.hpp"
 #include "fakes/fake_clock.hpp"
@@ -47,6 +48,11 @@ PDR_CLOCK_CONTRACT(System, SystemClockWorld);
 
 PDR_ID_GENERATOR_CONTRACT(Fake, FakeIdGeneratorWorld);
 PDR_ID_GENERATOR_CONTRACT(Random, RandomIdGeneratorWorld);
+
+/// Настоящий источник секретов здесь не инстанцируется: ему нужен userver, а
+/// эта цель собирается и без него. Тот же набор гоняется на нём в цели
+/// pdr_adapter_tests (libs/pdr-core/tests/crypto_secret_generator_test.cpp).
+PDR_SECRET_GENERATOR_CONTRACT(Fake, FakeSecretGeneratorWorld);
 
 namespace {
 

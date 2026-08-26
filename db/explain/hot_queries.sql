@@ -20,7 +20,8 @@
 --   перебор     таблицы, где Seq Scan допустим и почему. Без этого ключа любой
 --               Seq Scan в плане роняет джобу.
 --
--- Подстановки: {tenant} {person} {guardian} {email} {job} {keep_days} —
+-- Подстановки: {tenant} {person} {guardian} {email} {session} {token} {job}
+--             {keep_days} —
 -- их заполняет scripts/check_plans.py значениями из db/explain/seed.sql.
 
 -- запрос: identity_person_by_tenant
@@ -68,6 +69,30 @@ select id, role
   from identity_role_assignment
  where person_id = '{person}'
    and revoked_at is null;
+
+-- запрос: identity_session_by_id
+-- откуда: identity::ports::SessionStore::Find — САМЫЙ ЧАСТЫЙ запрос системы:
+--         он идёт на каждом обращении любого человека, а не раз в занятие
+-- индекс: identity_session_pk
+select person_id, expires_at, revoked_at
+  from identity_session
+ where id = '{session}';
+
+-- запрос: identity_credential_by_email
+-- откуда: identity::ports::CredentialStore::FindByEmail — вход; пароль лежит
+--         отдельно от человека, поэтому план проверяется на джойне
+-- индекс: identity_person_email_unique
+select c.person_id, c.password_hash
+  from identity_credential c
+  join identity_person p on p.tenant_id = c.tenant_id and p.id = c.person_id
+ where p.email = '{email}';
+
+-- запрос: identity_one_time_token_by_hash
+-- откуда: identity::ports::OneTimeTokens::Find — переход по ссылке из письма
+-- индекс: identity_one_time_token_secret_unique
+select id, purpose, role, person_id, expires_at, used_at
+  from identity_one_time_token
+ where token_hash = '{token}';
 
 -- запрос: identity_access_log_by_subject
 -- откуда: «кто смотрел мои данные» — единственный вопрос к журналу доступа,

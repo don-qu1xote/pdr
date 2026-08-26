@@ -50,6 +50,17 @@ if(userver_FOUND)
     target_link_libraries(pdr_postgres PUBLIC pdr_core pdr_application userver::postgresql)
 endif()
 
+# Настоящая случайность для секретов. Отдельная цель, а не часть
+# pdr_infrastructure: криптографический источник берётся у userver
+# (crypto::GenerateRandomBlock), а pdr_infrastructure линкуют contract-тесты,
+# которые собираются и без него. Своего перемешивания байтов в дереве нет и не
+# будет — ADR-0013.
+if(userver_FOUND)
+    add_library(pdr_crypto STATIC src/infrastructure/crypto_secret_generator.cpp)
+    target_include_directories(pdr_crypto PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_link_libraries(pdr_crypto PUBLIC pdr_core pdr_application userver::core)
+endif()
+
 if(PDR_BUILD_TESTS)
     # УРОВЕНЬ UNIT: домен и порты на фейках. Свой исполняемый файл модуль не
     # заводит — все unit-тесты собираются в одну цель pdr_unit_tests.
@@ -60,6 +71,13 @@ if(PDR_BUILD_TESTS)
         tests/time_test.cpp
     )
     pdr_unit_test_libraries(pdr_core pdr_application)
+
+    # УРОВЕНЬ CONTRACT на настоящем источнике случайности. Цель собирается
+    # только там, где есть userver: криптографический источник берётся у него.
+    if(userver_FOUND)
+        pdr_adapter_test_sources(tests/crypto_secret_generator_test.cpp)
+        pdr_adapter_test_libraries(pdr_crypto pdr_testing)
+    endif()
 
     # Отрицательные тесты: эти цели ОБЯЗАНЫ не собираться. Без них «перепутать
     # нельзя», «сессию не получить мимо области» и «соединение не унести из

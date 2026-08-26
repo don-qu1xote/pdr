@@ -30,6 +30,7 @@ ADR отвечают на вопрос «почему» и лежат в [docs/a
 | [layers.md](layers.md) | core, application, infrastructure и куда что кладут |
 | [first-service.md](first-service.md) | долги, которые подберёт первый сервис |
 | [tenancy.md](tenancy.md) | изоляция арендаторов: RLS, параметр сессии, чего она не покрывает |
+| [authentication.md](authentication.md) | вход: Argon2id, серверные сессии, приглашения, пороги перебора |
 | [migrations.md](migrations.md) | правила колонок и как устроен механизм миграций |
 | [schema.md](schema.md) | документ схемы; собирается из миграций, руками не пишется |
 | [plans.md](plans.md) | горячие запросы и снятие планов на живой базе |

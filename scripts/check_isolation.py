@@ -48,10 +48,19 @@ ROLE_A = "0a0a0a0a-0000-4000-8000-00000000d001"
 ROLE_B = "0b0b0b0b-0000-4000-8000-00000000d002"
 LOG_A = "0a0a0a0a-0000-4000-8000-00000000f001"
 LOG_B = "0b0b0b0b-0000-4000-8000-00000000f002"
+SESSION_A = "0a0a0a0a-0000-4000-8000-000000005001"
+SESSION_B = "0b0b0b0b-0000-4000-8000-000000005002"
+TOKEN_A = "0a0a0a0a-0000-4000-8000-000000006001"
+TOKEN_B = "0b0b0b0b-0000-4000-8000-000000006002"
 NEW_ROW = "0c0c0c0c-0000-4000-8000-00000000e001"
 
+DIGEST_A = "a" * 64
+DIGEST_B = "b" * 64
+ARGON2 = "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$aGFzaGhhc2hoYXNoaGFzaA"
+
 TABLES = ("identity_tenant", "identity_person", "identity_role_assignment",
-          "identity_guardianship", "identity_access_log")
+          "identity_guardianship", "identity_access_log", "identity_credential",
+          "identity_session", "identity_one_time_token", "identity_login_attempt")
 
 SQLSTATE = re.compile(r"\bERROR:\s+([0-9A-Z]{5}):")
 
@@ -141,12 +150,35 @@ insert into identity_guardianship (tenant_id, id, guardian_id, student_id) value
 insert into identity_access_log (tenant_id, id, actor_id, subject_id, resource_kind, at) values
     ('{TENANT_A}', '{LOG_A}', '{GUARDIAN_A}', '{STUDENT_A}', 'recording',   now()),
     ('{TENANT_B}', '{LOG_B}', '{GUARDIAN_B}', '{STUDENT_B}', 'transcript', now());
+insert into identity_credential (tenant_id, person_id, password_hash) values
+    ('{TENANT_A}', '{STUDENT_A}', '{ARGON2}'),
+    ('{TENANT_B}', '{STUDENT_B}', '{ARGON2}');
+insert into identity_session
+    (tenant_id, id, person_id, expires_at, user_agent_hash, ip_hash) values
+    ('{TENANT_A}', '{SESSION_A}', '{STUDENT_A}', now() + interval '30 days',
+     '{DIGEST_A}', '{DIGEST_A}'),
+    ('{TENANT_B}', '{SESSION_B}', '{STUDENT_B}', now() + interval '30 days',
+     '{DIGEST_B}', '{DIGEST_B}');
+insert into identity_one_time_token
+    (tenant_id, id, purpose, token_hash, role, expires_at) values
+    ('{TENANT_A}', '{TOKEN_A}', 'invitation', '{DIGEST_A}', 'student',
+     now() + interval '7 days'),
+    ('{TENANT_B}', '{TOKEN_B}', 'invitation', '{DIGEST_B}', 'student',
+     now() + interval '7 days');
+insert into identity_login_attempt
+    (tenant_id, subject_kind, subject_hash, window_started_at, attempts) values
+    ('{TENANT_A}', 'account', '{DIGEST_A}', now(), 1),
+    ('{TENANT_B}', 'account', '{DIGEST_B}', now(), 1);
 """)
 
 
 def teardown(database: Database) -> None:
     tenants = f"('{TENANT_A}', '{TENANT_B}')"
     database.owner(f"""
+delete from identity_login_attempt where tenant_id in {tenants};
+delete from identity_one_time_token where tenant_id in {tenants};
+delete from identity_session where tenant_id in {tenants};
+delete from identity_credential where tenant_id in {tenants};
 delete from identity_access_log where tenant_id in {tenants};
 delete from identity_guardianship where tenant_id in {tenants};
 delete from identity_role_assignment where tenant_id in {tenants};
@@ -442,6 +474,65 @@ def the_journal_is_append_only(database: Database) -> list[str]:
     return problems
 
 
+def a_foreign_session_is_not_found_by_its_identifier(database: Database) -> list[str]:
+    """Знать чужой идентификатор сессии — не значит войти по нему.
+
+    Ради этого случая арендатор и едет вместе с секретом: строку сессии закрывает
+    та же построчная защита, что и всё остальное, и без объявленного арендатора
+    она не отвечает вовсе. Подставленный чужой идентификатор даёт «такой сессии
+    нет», а не чужого человека.
+    """
+    problems = []
+    mine = database.app(f"select count(*) from identity_session where id = '{SESSION_A}';",
+                        TENANT_A)
+    if int(mine[0][0]) != 1:
+        problems.append("под своим арендатором не находится собственная сессия")
+
+    theirs = database.app(f"select count(*) from identity_session where id = '{SESSION_A}';",
+                          TENANT_B)
+    if int(theirs[0][0]) != 0:
+        problems.append("чужая сессия находится по прямому обращению по идентификатору")
+
+    token = database.app(
+        f"select count(*) from identity_one_time_token where token_hash = '{DIGEST_A}';", TENANT_B
+    )
+    if int(token[0][0]) != 0:
+        problems.append("чужая одноразовая ссылка находится по отпечатку")
+    return problems
+
+
+def a_revoked_access_leaves_a_trace(database: Database) -> list[str]:
+    """Отозванную сессию и сработавшую ссылку не стереть из-под приложения.
+
+    Права роли — только `select`, `insert` и `update` (V006__auth.sql). «Когда
+    этот доступ забрали» — вопрос, который задают после того, как что-то
+    случилось; отвечать на него должно хранилище, а не память.
+
+    Счётчик попыток, наоборот, чистить можно и нужно: удачный вход забывает
+    счёт, а уборка выносит отработавшие окна. Поэтому в конце проверяется
+    обратное — что он вычищается.
+    """
+    problems = []
+    attempts = (
+        ("сессию", f"delete from identity_session where id = '{SESSION_A}';"),
+        ("одноразовую ссылку", f"delete from identity_one_time_token where id = '{TOKEN_A}';"),
+        ("хеш пароля", f"delete from identity_credential where person_id = '{STUDENT_A}';"),
+    )
+    for what, sql in attempts:
+        code = database.app_refusal(sql, TENANT_A)
+        if code != "42501":
+            problems.append(f"удаление строки «{what}» дало «{code or 'успех'}» вместо отказа 42501")
+
+    forgotten = database.app(f"""
+begin;
+with removed as (delete from identity_login_attempt returning 1) select count(*) from removed;
+rollback;
+""", TENANT_A)
+    if int(forgotten[0][0]) != 1:
+        problems.append("счётчик попыток не вычищается из-под приложения — забыть счёт нечем")
+    return problems
+
+
 def protection_cannot_be_switched_off(database: Database) -> list[str]:
     """Роль приложения не может ни снять защиту, ни заглянуть в реестр миграций."""
     problems = []
@@ -474,6 +565,8 @@ CASES = (
     ("своя вставка проходит и остаётся своей", own_insert_passes_and_stays_own),
     ("delete без where трогает только своё", bare_delete_touches_only_own_rows),
     ("журнал доступа не правится и не исчезает", the_journal_is_append_only),
+    ("чужая сессия не находится по идентификатору", a_foreign_session_is_not_found_by_its_identifier),
+    ("отозванный доступ оставляет след", a_revoked_access_leaves_a_trace),
     ("защиту не выключить из-под приложения", protection_cannot_be_switched_off),
 )
 

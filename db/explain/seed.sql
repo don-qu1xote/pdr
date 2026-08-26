@@ -22,6 +22,18 @@ delete from jobs_effect where tenant_id in (
 delete from identity_access_log where tenant_id in (
     select tenant_id from identity_tenant where name like 'План %'
 );
+delete from identity_login_attempt where tenant_id in (
+    select tenant_id from identity_tenant where name like 'План %'
+);
+delete from identity_one_time_token where tenant_id in (
+    select tenant_id from identity_tenant where name like 'План %'
+);
+delete from identity_session where tenant_id in (
+    select tenant_id from identity_tenant where name like 'План %'
+);
+delete from identity_credential where tenant_id in (
+    select tenant_id from identity_tenant where name like 'План %'
+);
 delete from identity_guardianship where tenant_id in (
     select tenant_id from identity_tenant where name like 'План %'
 );
@@ -96,6 +108,42 @@ select ('0e0e0e0e-0000-4000-8000-' || lpad(tenant::text, 12, '0'))::uuid,
 from generate_series(1, 200) as tenant, generate_series(1, 99, 2) as person,
      generate_series(1, 5) as look;
 
+-- Пароль каждому: двадцать тысяч строк. Вход ищет хеш по почте, а почта живёт
+-- в другой таблице — значит, план проверяется на джойне, а не на одиночном
+-- чтении.
+insert into identity_credential (tenant_id, person_id, password_hash)
+select ('0e0e0e0e-0000-4000-8000-' || lpad(tenant::text, 12, '0'))::uuid,
+       ('0e0e0e0e-0001-4000-8000-' || lpad((tenant * 1000 + person)::text, 12, '0'))::uuid,
+       '$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$aGFzaGhhc2hoYXNoaGFzaA'
+from generate_series(1, 200) as tenant, generate_series(1, 100) as person;
+
+-- Сессия каждому. САМАЯ ГОРЯЧАЯ ТАБЛИЦА СИСТЕМЫ: её читают на КАЖДОМ запросе
+-- любого человека, а не раз в занятие. Перебор здесь означает, что медленно
+-- становится всё сразу, и виноватого ищут где угодно, только не тут.
+insert into identity_session
+    (tenant_id, id, person_id, created_at, expires_at, user_agent_hash, ip_hash)
+select ('0e0e0e0e-0000-4000-8000-' || lpad(tenant::text, 12, '0'))::uuid,
+       ('0e0e0e0e-0006-4000-8000-' || lpad((tenant * 1000 + person)::text, 12, '0'))::uuid,
+       ('0e0e0e0e-0001-4000-8000-' || lpad((tenant * 1000 + person)::text, 12, '0'))::uuid,
+       now() - interval '1 day',
+       now() + make_interval(days => 1 + person % 30),
+       md5('agent-' || tenant || '-' || person) || md5('agent'),
+       md5('address-' || tenant) || md5('address')
+from generate_series(1, 200) as tenant, generate_series(1, 100) as person;
+
+-- Приглашения: по десять на арендатора. Ссылку ищут по отпечатку, и перебор
+-- здесь стоил бы чтения всех приглашений системы на каждый переход по ссылке.
+insert into identity_one_time_token
+    (tenant_id, id, purpose, token_hash, role, created_at, expires_at)
+select ('0e0e0e0e-0000-4000-8000-' || lpad(tenant::text, 12, '0'))::uuid,
+       ('0e0e0e0e-0007-4000-8000-' || lpad((tenant * 100 + token)::text, 12, '0'))::uuid,
+       'invitation',
+       md5('token-' || tenant || '-' || token) || md5('token'),
+       'student',
+       now() - interval '1 hour',
+       now() + interval '7 days'
+from generate_series(1, 200) as tenant, generate_series(1, 10) as token;
+
 -- Продуктовый поток: двести пятьдесят событий на арендатора. Возраст записей
 -- распределён так, как он выглядит у системы, где уборка ДЕЙСТВИТЕЛЬНО ходит:
 -- свежих много, старше месяца — единицы. Иначе старым окажется полтаблицы,
@@ -131,5 +179,8 @@ analyze identity_person;
 analyze identity_role_assignment;
 analyze identity_guardianship;
 analyze identity_access_log;
+analyze identity_credential;
+analyze identity_session;
+analyze identity_one_time_token;
 analyze jobs_effect;
 analyze observability_product_event;

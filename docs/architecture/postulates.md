@@ -22,6 +22,13 @@ ctest, либо пометка «намерение».
 | Соединение берётся только с объявленным арендатором | `libs/pdr-core/src/infrastructure/db/tenant_context.hpp` | `scripts/check_layers.py`, `tenant_scope_without_tenant`, `tenant_scope_stashed` |
 | Объявление арендатора не переживает транзакцию | `libs/pdr-core/src/infrastructure/db/tenant_context.cpp` | `scripts/check_rls.py`, `scripts/check_isolation.py` |
 | Кто смотрел чужое — видно в журнале, и строку из него не убрать | `db/migrations/V005__access_log.sql` | `libs/pdr-identity/tests/access_log_test.cpp`, `scripts/check_isolation.py` |
+| Пароль считается Argon2id, а не своей схемой | `libs/pdr-identity/src/identity/infrastructure/auth/argon2_password_hasher.cpp` | `libs/pdr-identity/tests/password_test.cpp`, `scripts/check_handmade.py` |
+| Сессия серверная: отзыв действует немедленно | `db/migrations/V006__auth.sql` | `libs/pdr-identity/tests/sign_in_test.cpp`, `scripts/check_isolation.py` |
+| Идентификатор сессии меняется при входе и смене пароля | `libs/pdr-identity/src/identity/application/sign_in.cpp` | `libs/pdr-identity/tests/sign_in_test.cpp` |
+| Проверка сессии не знает, каким транспортом её принесли | `libs/pdr-identity/src/identity/application/authenticate_session.hpp` | `libs/pdr-identity/tests/session_transport_test.cpp` |
+| Одноразовый токен хранится отпечатком, а не собой | `libs/pdr-identity/src/identity/application/ports/one_time_tokens.hpp` | `libs/pdr-identity/tests/invitation_test.cpp`, `scripts/check_isolation.py` |
+| Счёт попыток входа живёт в базе, а не в памяти процесса | `libs/pdr-identity/src/identity/infrastructure/auth/postgres_login_attempts.hpp` | `libs/pdr-identity/tests/login_throttle_test.cpp` |
+| Секреты берутся у криптографического источника, а не у mt19937 | `libs/pdr-core/src/application/ports/secret_generator.hpp` | `libs/pdr-core/tests/crypto_secret_generator_test.cpp` |
 | Сессию хранилища не получить мимо области арендатора | `libs/pdr-core/src/application/ports/tenant_aware_repository.hpp` | `tenant_session_outside_scope` |
 | Время — `timestamptz` в UTC плюс отдельная зона IANA | `libs/pdr-core/src/core/types/time.cpp` | `scripts/check_migrations.py`, `libs/pdr-core/tests/time_test.cpp` |
 | Деньги — целые минорные единицы и код валюты | `libs/pdr-core/src/core/money.cpp` | `scripts/check_migrations.py`, `libs/pdr-billing/tests/quote_test.cpp` |

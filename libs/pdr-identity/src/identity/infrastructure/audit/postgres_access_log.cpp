@@ -1,30 +1,22 @@
 #include "identity/infrastructure/audit/postgres_access_log.hpp"
 
-#include <chrono>
 #include <string>
 
-#include <userver/storages/postgres/io/chrono.hpp>
 #include <userver/storages/postgres/query.hpp>
 
 #include "core/types/ids.hpp"
-#include "core/types/time.hpp"
+#include "infrastructure/db/timestamps.hpp"
 
 namespace pdr::identity {
 namespace {
 
-using Timestamptz = userver::storages::postgres::TimePointTz;
+using infrastructure::db::AsTimestamptz;
 
 /// Идентификатор строки журнала. Метки в общем списке `core/types/ids.hpp` для
 /// него нет намеренно: на строку журнала не ссылается никто — ни домен, ни
 /// другая таблица. Она нужна базе, чтобы у строки был первичный ключ, и живёт
 /// ровно здесь.
 using RowId = core::StrongId<struct AccessLogRowTag>;
-
-Timestamptz AsTimestamptz(core::Instant instant) {
-    return Timestamptz{userver::storages::postgres::TimePoint{
-        std::chrono::duration_cast<userver::storages::postgres::TimePoint::duration>(
-            std::chrono::microseconds{instant.UnixMicros()})}};
-}
 
 /// Приведение `::uuid` написано явно. Идентификатор уезжает текстом — тем же
 /// `ToString()`, что и всюду, — а колонка типизирована; полагаться на то, что

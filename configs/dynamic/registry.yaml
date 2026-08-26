@@ -467,3 +467,122 @@ PDR_PRODUCT_EVENTS:
         type: integer
         minimum: 30
         maximum: 3650
+
+PDR_SIGN_IN_RULES:
+  description: >-
+    Как считается хеш пароля и какой пароль вообще принимается: память, проходы
+    и нити Argon2id плюс наименьшая длина. Стоимость счёта подбирают под живое
+    железо — столько, чтобы вход занимал заметное, но терпимое время.
+  kind: техническая
+  owner: тот, кто держит сервис
+  jurisdiction: нет
+  breaks: >-
+    Память или проходы ниже рекомендованных — перебор украденной базы паролей
+    становится дешёвым, и никто об этом не узнает. Слишком большие — вход
+    занимает секунды, а одновременных входов бывает много, и сервис ложится сам
+    от собственной защиты. Нити выше памяти Argon2 не принимает вовсе; нижние
+    пределы и связь между величинами проверяет домен
+    (identity::PasswordRules::Compose), негодная запись отвергается целиком.
+    Порог длины ниже восьми знаков означает пароль, который перебирается
+    целиком независимо от стоимости счёта.
+  default: {"memory_kib": 19456, "iterations": 2, "parallelism": 1, "min_length": 10}
+  schema:
+    type: object
+    additionalProperties: false
+    required: [memory_kib, iterations, parallelism, min_length]
+    properties:
+      memory_kib:
+        description: сколько памяти занимает один счёт хеша
+        type: integer
+        minimum: 19456
+        maximum: 1048576
+      iterations:
+        description: сколько проходов по этой памяти
+        type: integer
+        minimum: 2
+        maximum: 20
+      parallelism:
+        description: во сколько нитей идёт счёт
+        type: integer
+        minimum: 1
+        maximum: 16
+      min_length:
+        description: сколько знаков должно быть в новом пароле
+        type: integer
+        minimum: 8
+        maximum: 256
+
+PDR_LOGIN_THROTTLE:
+  description: >-
+    Сколько неудачных попыток входа и за какое окно считается перебором.
+    Считается отдельно по учётной записи и по адресу: одно без другого не
+    закрывает ни перебора списка учеников с одной машины, ни подбора пароля к
+    одной записи из ботнета.
+  kind: техническая
+  owner: тот, кто держит сервис
+  jurisdiction: нет
+  breaks: >-
+    Порог по записи слишком низкий — человек, дважды ошибшийся в раскладке,
+    заперт, а звонить ему некому. Слишком высокий — перебор идёт свободно.
+    Порог по адресу ниже порога по записи запирает целый класс из школы, у
+    которого один адрес на всех; это отвергает домен
+    (identity::ThrottleLimits::Compose). Окно в минуту снимает запрет раньше,
+    чем человек успевает заметить, что он заперт.
+  default: {"window_minutes": 15, "per_account": 10, "per_address": 50}
+  schema:
+    type: object
+    additionalProperties: false
+    required: [window_minutes, per_account, per_address]
+    properties:
+      window_minutes:
+        description: за сколько минут считаются попытки
+        type: integer
+        minimum: 1
+        maximum: 1440
+      per_account:
+        description: сколько неудач по одной учётной записи запирают вход
+        type: integer
+        minimum: 1
+        maximum: 1000
+      per_address:
+        description: сколько неудач с одного адреса запирают вход
+        type: integer
+        minimum: 1
+        maximum: 10000
+
+PDR_AUTH_LIFETIMES:
+  description: >-
+    Сколько живут сессия, приглашение и ссылка сброса пароля. Три разных срока,
+    потому что риск у них разный: сессию можно отозвать, одноразовую ссылку —
+    уже нет, она либо сработает, либо истечёт.
+  kind: техническая
+  owner: тот, кто держит сервис, вместе с владельцем продукта
+  jurisdiction: нет
+  breaks: >-
+    Сессия в час превращает продукт в форму входа: репетитор ведёт занятие и
+    входит заново посреди него. Сессия в годы означает, что унесённый ноутбук
+    открыт до тех пор, пока кто-нибудь не спохватится. Приглашение в час не
+    доживает до вечера, когда родитель открывает почту. Ссылка сброса,
+    живущая дольше приглашения, — самая опасная строка в системе, и это
+    отвергает домен (identity::AuthLifetimes::Compose).
+  default: {"session_hours": 720, "invitation_hours": 168, "password_reset_minutes": 30}
+  schema:
+    type: object
+    additionalProperties: false
+    required: [session_hours, invitation_hours, password_reset_minutes]
+    properties:
+      session_hours:
+        description: сколько часов живёт сессия, если её не отозвали
+        type: integer
+        minimum: 1
+        maximum: 8760
+      invitation_hours:
+        description: сколько часов действует приглашение
+        type: integer
+        minimum: 1
+        maximum: 720
+      password_reset_minutes:
+        description: сколько минут действует ссылка сброса пароля
+        type: integer
+        minimum: 5
+        maximum: 1440

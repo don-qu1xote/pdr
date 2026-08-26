@@ -6,15 +6,28 @@
 # договорились, а потому, что её нет в его путях поиска.
 
 add_library(pdr_identity STATIC
+    src/identity/application/accept_invitation.cpp
+    src/identity/application/authenticate_session.cpp
+    src/identity/application/change_password.cpp
     src/identity/application/contract_service.cpp
+    src/identity/application/invite_participant.cpp
     src/identity/application/note_sensitive_access.cpp
+    src/identity/application/reset_password.cpp
     src/identity/application/revoke_guardianship.cpp
+    src/identity/application/sign_in.cpp
+    src/identity/application/sign_out.cpp
     src/identity/core/access_record.cpp
     src/identity/core/age_status.cpp
+    src/identity/core/auth_lifetimes.cpp
     src/identity/core/birth_date.cpp
+    src/identity/core/digest.cpp
     src/identity/core/email.cpp
     src/identity/core/guardianship.cpp
+    src/identity/core/login_throttle.cpp
     src/identity/core/membership.cpp
+    src/identity/core/one_time_token.cpp
+    src/identity/core/password.cpp
+    src/identity/core/session.cpp
     src/identity/core/tenant.cpp
 )
 target_include_directories(pdr_identity
@@ -31,11 +44,44 @@ if(userver_FOUND)
     # (docs/architecture/context-map.md).
     add_library(pdr_identity_infrastructure STATIC
         src/identity/infrastructure/audit/postgres_access_log.cpp
+        src/identity/infrastructure/auth/dynamic_config_auth_settings.cpp
+        src/identity/infrastructure/auth/postgres_credential_store.cpp
+        src/identity/infrastructure/auth/postgres_login_attempts.cpp
+        src/identity/infrastructure/auth/postgres_one_time_tokens.cpp
+        src/identity/infrastructure/auth/postgres_participant_directory.cpp
+        src/identity/infrastructure/auth/postgres_session_store.cpp
+        src/identity/infrastructure/auth/sha256_digests.cpp
     )
+    # PUBLIC, а не PRIVATE: цель проверок адаптеров (pdr_adapter_tests) включает
+    # заголовки отсюда. Наружу это ничего не открывает — чужой контекст с этой
+    # целью не линкуется, а его попытку включить внутренность ловит
+    # scripts/check_layers.py.
     target_include_directories(pdr_identity_infrastructure
-                               PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+                               PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_link_libraries(pdr_identity_infrastructure
-                          PUBLIC pdr_identity pdr_postgres userver::postgresql)
+                          PUBLIC pdr_identity pdr_postgres pdr_crypto userver::postgresql)
+
+    # Argon2id — отдельной целью, потому что ей нужна libargon2, а её в системе
+    # может не быть. Своей схемы хеширования паролей в дереве нет и не будет:
+    # «SHA с солью» подбирается на видеокарте миллиардами в секунду (ADR-0013),
+    # поэтому при отсутствии библиотеки цель ПРОПУСКАЕТСЯ, а не подменяется
+    # чем-нибудь попроще. В CI библиотека ставится (джоба adapters-with-userver),
+    # то есть счёт паролей проверяется на каждом пуше.
+    find_path(PDR_ARGON2_INCLUDE_DIR argon2.h)
+    find_library(PDR_ARGON2_LIBRARY argon2)
+    if(PDR_ARGON2_INCLUDE_DIR AND PDR_ARGON2_LIBRARY)
+        message(STATUS "pdr: libargon2 найдена, счёт паролей собирается")
+        add_library(pdr_identity_passwords STATIC
+            src/identity/infrastructure/auth/argon2_password_hasher.cpp
+        )
+        target_include_directories(pdr_identity_passwords
+                                   PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src"
+                                   PRIVATE "${PDR_ARGON2_INCLUDE_DIR}")
+        target_link_libraries(pdr_identity_passwords
+                              PUBLIC pdr_identity PRIVATE "${PDR_ARGON2_LIBRARY}")
+    else()
+        message(STATUS "pdr: libargon2 не найдена, счёт паролей пропущен")
+    endif()
 endif()
 
 if(PDR_BUILD_TESTS)
@@ -47,9 +93,27 @@ if(PDR_BUILD_TESTS)
         tests/access_log_test.cpp
         tests/age_status_test.cpp
         tests/guardianship_test.cpp
+        tests/invitation_test.cpp
+        tests/login_throttle_test.cpp
+        tests/one_time_token_test.cpp
         tests/participants_test.cpp
+        tests/password_test.cpp
         tests/revoke_guardianship_test.cpp
+        tests/session_transport_test.cpp
+        tests/sign_in_test.cpp
     )
     pdr_unit_test_includes(src tests)
     pdr_unit_test_libraries(pdr_identity)
+
+    # УРОВЕНЬ CONTRACT/ADAPTER: адаптеры против штатных заглушек userver и
+    # против настоящей libargon2. Ни сервиса, ни базы им не нужно.
+    if(userver_FOUND)
+        pdr_adapter_test_sources(tests/dynamic_config_auth_settings_test.cpp)
+        pdr_adapter_test_libraries(pdr_identity_infrastructure)
+
+        if(TARGET pdr_identity_passwords)
+            pdr_adapter_test_sources(tests/argon2_password_hasher_test.cpp)
+            pdr_adapter_test_libraries(pdr_identity_passwords pdr_testing)
+        endif()
+    endif()
 endif()

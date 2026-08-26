@@ -6,25 +6,16 @@
 #include <utility>
 
 #include <userver/storages/postgres/cluster_types.hpp>
-#include <userver/storages/postgres/io/chrono.hpp>
 #include <userver/storages/postgres/query.hpp>
+
+#include "infrastructure/db/timestamps.hpp"
 
 namespace pdr::jobs {
 namespace {
 
-using Timestamptz = userver::storages::postgres::TimePointTz;
-
-Timestamptz AsTimestamptz(core::Instant instant) {
-    return Timestamptz{userver::storages::postgres::TimePoint{
-        std::chrono::duration_cast<userver::storages::postgres::TimePoint::duration>(
-            std::chrono::microseconds{instant.UnixMicros()})}};
-}
-
-core::Instant AsInstant(Timestamptz value) {
-    return core::Instant::FromUnixMicros(std::chrono::duration_cast<std::chrono::microseconds>(
-                                             value.GetUnderlying().time_since_epoch())
-                                             .count());
-}
+using infrastructure::db::AsInstant;
+using infrastructure::db::AsTimestamptz;
+using infrastructure::db::Timestamptz;
 
 std::optional<Outcome> OutcomeFrom(const std::string& stored) {
     if (stored == "done") {

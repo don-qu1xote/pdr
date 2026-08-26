@@ -4,7 +4,7 @@
      правка переживёт ровно до следующей пересборки. Изменить схему — значит
      написать новую миграцию. -->
 
-Собрано из миграций: 5. Таблиц: 10.
+Собрано из миграций: 6. Таблиц: 14.
 
 Правила, которым подчиняется каждая колонка, — в
 [migrations.md](migrations.md). Как устроена изоляция арендаторов и почему у
@@ -46,6 +46,31 @@
 
 * `identity_access_log_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
 
+### identity_credential
+
+Хеш пароля человека, Argon2id. Человека без пароля здесь просто нет строки.
+
+Заведена миграцией `V006__auth.sql`.
+
+| Колонка | Тип | Определение |
+| --- | --- | --- |
+| `tenant_id` | `uuid` | uuid not null references identity_tenant (tenant_id) |
+| `person_id` | `uuid` | uuid not null |
+| `password_hash` | `text` | text not null |
+| `updated_at` | `timestamptz` | timestamptz not null default now() |
+
+Ограничения:
+
+* `constraint identity_credential_pk primary key (tenant_id, person_id)`
+* `constraint identity_credential_person_fk foreign key (tenant_id, person_id) references identity_person (tenant_id, id)`
+* `constraint identity_credential_argon2id check (password_hash like )`
+
+Построчная защита включена и форсирована.
+
+Политики:
+
+* `identity_credential_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
+
 ### identity_guardianship
 
 Опека: кто вправе действовать от имени ученика. Отзыв не удаляет связь, а проставляет дату.
@@ -79,6 +104,73 @@
 Политики:
 
 * `identity_guardianship_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
+
+### identity_login_attempt
+
+Неудачные попытки входа по учётной записи и по адресу. Лежит в базе, а не в памяти процесса: реплик бывает больше одной.
+
+Заведена миграцией `V006__auth.sql`.
+
+| Колонка | Тип | Определение |
+| --- | --- | --- |
+| `tenant_id` | `uuid` | uuid not null references identity_tenant (tenant_id) |
+| `subject_kind` | `text` | text not null |
+| `subject_hash` | `text` | text not null |
+| `window_started_at` | `timestamptz` | timestamptz not null |
+| `attempts` | `integer` | integer not null |
+
+Ограничения:
+
+* `constraint identity_login_attempt_pk primary key (tenant_id, subject_kind, subject_hash)`
+* `constraint identity_login_attempt_kind_known check (subject_kind in ( , ))`
+* `constraint identity_login_attempt_hashed check (subject_hash ~ )`
+* `constraint identity_login_attempt_count_positive check (attempts > 0)`
+
+Индексы:
+
+* `identity_login_attempt_by_age` — обычный, `(window_started_at)`
+
+Построчная защита включена и форсирована.
+
+Политики:
+
+* `identity_login_attempt_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
+
+### identity_one_time_token
+
+Приглашение ученика и сброс пароля: один механизм. Хранится отпечаток секрета, сам секрет отдаётся человеку один раз и больше нигде не появляется.
+
+Заведена миграцией `V006__auth.sql`.
+
+| Колонка | Тип | Определение |
+| --- | --- | --- |
+| `tenant_id` | `uuid` | uuid not null references identity_tenant (tenant_id) |
+| `id` | `uuid` | uuid not null |
+| `purpose` | `text` | text not null |
+| `token_hash` | `text` | text not null |
+| `role` | `text` | text |
+| `person_id` | `uuid` | uuid |
+| `created_at` | `timestamptz` | timestamptz not null default now() |
+| `expires_at` | `timestamptz` | timestamptz not null |
+| `used_at` | `timestamptz` | timestamptz |
+
+Ограничения:
+
+* `constraint identity_one_time_token_pk primary key (tenant_id, id)`
+* `constraint identity_one_time_token_secret_unique unique (tenant_id, token_hash)`
+* `constraint identity_one_time_token_person_fk foreign key (tenant_id, person_id) references identity_person (tenant_id, id)`
+* `constraint identity_one_time_token_purpose_known check (purpose in ( , ))`
+* `constraint identity_one_time_token_hashed check (token_hash ~ )`
+* `constraint identity_one_time_token_role_known check (role is null or role in ( , , , ))`
+* `constraint identity_one_time_token_points_at_one_thing check ( (purpose = and role is not null and person_id is null) or (purpose = and role is null and person_id is not null))`
+* `constraint identity_one_time_token_expires_after_created check (expires_at > created_at)`
+* `constraint identity_one_time_token_used_after_created check (used_at is null or used_at >= created_at)`
+
+Построчная защита включена и форсирована.
+
+Политики:
+
+* `identity_one_time_token_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
 
 ### identity_person
 
@@ -145,6 +237,42 @@
 Политики:
 
 * `identity_role_assignment_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
+
+### identity_session
+
+Серверная сессия. Отзыв — строка с датой, действующая немедленно: подписанный токен без состояния так не умеет.
+
+Заведена миграцией `V006__auth.sql`.
+
+| Колонка | Тип | Определение |
+| --- | --- | --- |
+| `tenant_id` | `uuid` | uuid not null references identity_tenant (tenant_id) |
+| `id` | `uuid` | uuid not null |
+| `person_id` | `uuid` | uuid not null |
+| `created_at` | `timestamptz` | timestamptz not null default now() |
+| `expires_at` | `timestamptz` | timestamptz not null |
+| `revoked_at` | `timestamptz` | timestamptz |
+| `user_agent_hash` | `text` | text not null |
+| `ip_hash` | `text` | text not null |
+
+Ограничения:
+
+* `constraint identity_session_pk primary key (tenant_id, id)`
+* `constraint identity_session_person_fk foreign key (tenant_id, person_id) references identity_person (tenant_id, id)`
+* `constraint identity_session_expires_after_created check (expires_at > created_at)`
+* `constraint identity_session_revoked_after_created check (revoked_at is null or revoked_at >= created_at)`
+* `constraint identity_session_agent_hashed check (user_agent_hash ~ )`
+* `constraint identity_session_address_hashed check (ip_hash ~ )`
+
+Индексы:
+
+* `identity_session_alive_by_person` — обычный, `(tenant_id, person_id) where revoked_at is null`
+
+Построчная защита включена и форсирована.
+
+Политики:
+
+* `identity_session_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
 
 ### identity_tenant
 
@@ -308,3 +436,4 @@
 1. `V003__jobs.sql` — jobs_lock, jobs_run, jobs_effect
 1. `V004__observability.sql` — observability_product_event
 1. `V005__access_log.sql` — identity_access_log
+1. `V006__auth.sql` — identity_credential, identity_session, identity_one_time_token, identity_login_attempt

@@ -491,23 +491,35 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      # Argon2id считается ЭТАЛОННОЙ БИБЛИОТЕКОЙ, а не своей схемой (ADR-0013).
+      # В образе userver лежит только libargon2.so.1 — без заголовков цель
+      # счёта паролей пропускается конфигурацией, и проверять было бы нечего.
+      - name: Библиотека счёта паролей
+        run: |
+          set -eu
+          apt-get update -qq
+          apt-get install -y -qq libargon2-dev
+
       # ПЕРВАЯ настоящая проверка слоя адаптеров: без userver цели
-      # pdr_postgres, pdr_jobs_infrastructure и pdr_billing_infrastructure
-      # пропускаются конфигурацией, то есть не компилируются вовсе
-      # (docs/architecture/first-service.md).
+      # pdr_postgres, pdr_jobs_infrastructure, pdr_billing_infrastructure и
+      # pdr_identity_infrastructure пропускаются конфигурацией, то есть не
+      # компилируются вовсе (docs/architecture/first-service.md).
       - name: Конфигурация с userver
         run: cmake -S . -B build-userver -DCMAKE_BUILD_TYPE=Debug
 
       - name: Сборка адаптеров
         run: |
           set -eu
-          cmake --build build-userver --target pdr_postgres pdr_jobs_infrastructure \
-            pdr_billing_infrastructure --parallel
+          cmake --build build-userver --target pdr_postgres pdr_crypto \
+            pdr_jobs_infrastructure pdr_billing_infrastructure \
+            pdr_identity_infrastructure pdr_identity_passwords --parallel
 
       # Проверки адаптеров против ШТАТНЫХ заглушек userver: умолчание из кода без
       # источника, применение без пересоздания адаптера, отказ значению вне
-      # диапазона со старым значением на месте и журнал «было → стало». Ни
-      # сервиса, ни базы им не нужно — нужен только userver, а он есть здесь.
+      # диапазона со старым значением на месте и журнал «было → стало». Сюда же
+      # попадает настоящий счёт пароля Argon2id и настоящий источник
+      # случайности. Ни сервиса, ни базы им не нужно — нужен только userver, а
+      # он есть здесь.
       - name: Адаптеры против заглушек userver
         run: |
           set -eu

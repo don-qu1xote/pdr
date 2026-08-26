@@ -84,6 +84,23 @@ problem+json — это по определению отказ.
 | `guardianship_guardian_role_missing` | роль проверяется до показа списка: не опекун туда не попадает |
 | `guardianship_student_role_missing` | то же со стороны ученика |
 | `access_log_self_view` | своё человек открывает без всякого следа; отказ ловит ошибку в коде, который позвал журнал не на том |
+| `digest_malformed` | отпечаток пришёл из хранилища или от счётчика, а не от человека |
+| `session_id_malformed` | разбор того, что принёс браузер; человек в ответ видит «войдите заново», а не этот код |
+| `session_lifetime_not_positive` | срок сессии из динамического конфига |
+| `token_lifetime_not_positive` | срок одноразовой ссылки оттуда же |
+| `auth_lifetime_not_positive` | то же: сроки входа в динамическом конфиге |
+| `auth_reset_outlives_invitation` | связь между сроками, схема реестра её не выражает |
+| `password_memory_too_small` | стоимость счёта хеша в динамическом конфиге |
+| `password_iterations_too_few` | то же |
+| `password_parallelism_too_low` | то же |
+| `password_memory_below_parallelism` | то же: связь между двумя величинами |
+| `password_min_length_too_low` | порог длины пароля в динамическом конфиге |
+| `password_min_length_above_max` | то же |
+| `password_hash_not_argon2id` | разбор строки из хранилища: человек такого не вводит |
+| `password_hashing_failed` | библиотека счёта хеша отказала — это поломка, а не действие человека |
+| `throttle_window_not_positive` | пороги перебора в динамическом конфиге |
+| `throttle_limit_too_low` | то же |
+| `throttle_address_below_account` | то же: связь между двумя порогами |
 
 Строка сюда добавляется вместе с кодом, а не вместо текста, когда текст лень
 писать. Отличить одно от другого может только ревью — и это единственное место
