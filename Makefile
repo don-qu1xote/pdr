@@ -23,7 +23,7 @@ PG_ENV = set -a; . ./$(ENV_FILE); set +a; \
 .PHONY: help up down test test-unit test-isolation test-jobs test-plans fmt fmt-check \
         comments comments-fix hooks logs migrate migrate-verify migrate-status schema-doc \
         product-events-lock product-events-export product-events-prune \
-        account-export ps check-env
+        account-export ps check-env permissions-lock
 
 help:
 	@echo "Цели:"
@@ -111,6 +111,18 @@ test-jobs: check-env
 test-plans: check-env
 	@$(PG_ENV) psql --no-psqlrc -v ON_ERROR_STOP=1 -qtA -f db/explain/seed.sql >/dev/null
 	@$(PG_ENV) python3 scripts/check_plans.py
+
+# Матрица прав не пишется руками — она собирается из самих политик опросом по
+# всем действиям, ролям и отношениям. Написанная руками, она расходится с кодом
+# на первой правке и после этого хуже, чем её отсутствие: по ней принимают
+# решения, а она врёт. Сверяет её тот же прогон, что и всё остальное (make test).
+permissions-lock:
+	cmake -S . -B $(BUILD_DIR) -DCMAKE_BUILD_TYPE=Debug
+	cmake --build $(BUILD_DIR) --target pdr_unit_tests --parallel
+	@$(BUILD_DIR)/pdr_unit_tests \
+		--gtest_filter='PermissionsMatrix.TheFileInDocsSaysWhatTheCodeDoes' >/dev/null || true
+	@cp $(BUILD_DIR)/permissions.md docs/architecture/permissions.md
+	@echo "матрица прав перезаписана: docs/architecture/permissions.md"
 
 # Документ схемы не пишется руками — он собирается из миграций.
 schema-doc:

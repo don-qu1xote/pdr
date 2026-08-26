@@ -63,7 +63,8 @@ select id, guardian_id
    and revoked_at is null;
 
 -- запрос: identity_role_assignment_by_person
--- откуда: роли человека в тенанте; проверяются на каждом обращении
+-- откуда: identity::ports::RoleRepository::RolesOf — права спрашиваются на
+--         каждом действии, и роли для этого читаются каждый раз
 -- индекс: identity_role_assignment_by_person
 select id, role
   from identity_role_assignment

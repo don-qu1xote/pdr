@@ -12,11 +12,19 @@ add_library(pdr_identity STATIC
     src/identity/application/contract_service.cpp
     src/identity/application/invite_participant.cpp
     src/identity/application/note_sensitive_access.cpp
+    src/identity/application/policies/billing_policy.cpp
+    src/identity/application/policies/content_policy.cpp
+    src/identity/application/policies/matrix.cpp
+    src/identity/application/policies/policy_set.cpp
+    src/identity/application/policies/progress_policy.cpp
+    src/identity/application/policies/scheduling_policy.cpp
+    src/identity/application/policies/subject.cpp
     src/identity/application/reset_password.cpp
     src/identity/application/revoke_guardianship.cpp
     src/identity/application/sign_in.cpp
     src/identity/application/sign_out.cpp
     src/identity/core/access_record.cpp
+    src/identity/core/action.cpp
     src/identity/core/age_status.cpp
     src/identity/core/auth_lifetimes.cpp
     src/identity/core/birth_date.cpp
@@ -39,10 +47,11 @@ target_link_libraries(pdr_identity PUBLIC pdr_core pdr_events PRIVATE pdr_applic
 # Адаптеры к Postgres собираются только там, где есть userver. Без него
 # контекст остаётся собираемым и проверяемым целиком, кроме этого слоя.
 if(userver_FOUND)
-    # Журнал доступа пишется отсюда, и больше ниоткуда: таблицей
-    # identity_access_log владеет этот контекст
-    # (docs/architecture/context-map.md).
+    # Всё, что этот контекст кладёт в базу и берёт из неё: журнал доступа, вход,
+    # роли. Таблицами identity_* владеет он один (docs/architecture/context-map.md).
     add_library(pdr_identity_infrastructure STATIC
+        src/identity/infrastructure/access/logging_configuration_faults.cpp
+        src/identity/infrastructure/access/postgres_role_repository.cpp
         src/identity/infrastructure/audit/postgres_access_log.cpp
         src/identity/infrastructure/auth/dynamic_config_auth_settings.cpp
         src/identity/infrastructure/auth/postgres_credential_store.cpp
@@ -98,6 +107,9 @@ if(PDR_BUILD_TESTS)
         tests/one_time_token_test.cpp
         tests/participants_test.cpp
         tests/password_test.cpp
+        tests/permissions_matrix_test.cpp
+        tests/policies_test.cpp
+        tests/policy_registry_test.cpp
         tests/revoke_guardianship_test.cpp
         tests/session_transport_test.cpp
         tests/sign_in_test.cpp

@@ -164,6 +164,14 @@ if(PDR_BUILD_TESTS)
         target_link_libraries(pdr_unit_tests PRIVATE ${unit_libraries} GTest::gtest_main)
         add_test(NAME unit COMMAND pdr_unit_tests)
 
+        # Путь к дереву нужен РОВНО ОДНОМУ тесту — сверке матрицы прав с
+        # docs/architecture/permissions.md. Матрица собирается из самих политик,
+        # и написанная руками она разошлась бы с кодом на первой правке.
+        # Перезаписать файл: make permissions-lock.
+        target_compile_definitions(pdr_unit_tests
+                                   PRIVATE PDR_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+                                           PDR_BINARY_DIR="${CMAKE_BINARY_DIR}")
+
         # ГЛАВНАЯ ГРАНИЦА ПИРАМИДЫ, и она проверяется сборкой, а не обещанием:
         # у unit-прогона нет ни адаптеров, ни драйвера базы, ни userver. Значит,
         # «а я тут быстренько сходил в Postgres» не компилируется — вместо того

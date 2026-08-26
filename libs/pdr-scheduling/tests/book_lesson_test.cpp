@@ -33,6 +33,13 @@ public:
         return allowed_;
     }
 
+    identity::PolicyDecision Decide(const core::TenantId&,
+                                    const core::PersonId&,
+                                    identity::Action,
+                                    const identity::Resource&) const override {
+        return allowed_ ? identity::Allowed() : identity::Denied(identity::DenyReason::kNotYours);
+    }
+
 private:
     bool allowed_;
 };

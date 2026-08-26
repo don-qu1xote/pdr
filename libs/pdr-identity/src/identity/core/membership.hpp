@@ -1,6 +1,8 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
+#include <initializer_list>
 #include <optional>
 #include <string_view>
 #include <utility>
@@ -24,6 +26,57 @@ enum class Role : std::uint8_t {
 std::string_view Name(Role role) noexcept;
 
 std::optional<Role> ParseRole(std::string_view text);
+
+/// Набор ролей одного человека в одном арендаторе.
+///
+/// НЕСКОЛЬКО РОЛЕЙ — НОРМА, а не краевой случай, и авторизации нужен именно
+/// набор: репетитор, который у соседа родитель, приходит с двумя ролями сразу.
+/// Отдельный тип, а не `std::set<Role>`: в наборе четыре значения, и хранить
+/// ради них дерево — способ сделать проверку прав самой дорогой операцией
+/// запроса.
+class RoleSet final {
+public:
+    RoleSet() noexcept = default;
+
+    static RoleSet Of(std::initializer_list<Role> roles) noexcept {
+        RoleSet set;
+        for (const auto role : roles) {
+            set = set.With(role);
+        }
+        return set;
+    }
+
+    RoleSet With(Role role) const noexcept {
+        RoleSet set;
+        set.bits_ = static_cast<std::uint8_t>(bits_ | Bit(role));
+        return set;
+    }
+
+    bool Has(Role role) const noexcept {
+        return (bits_ & Bit(role)) != 0U;
+    }
+
+    bool Empty() const noexcept {
+        return bits_ == 0U;
+    }
+
+    friend bool operator==(const RoleSet&, const RoleSet&) = default;
+
+private:
+    static std::uint8_t Bit(Role role) noexcept {
+        return static_cast<std::uint8_t>(1U << static_cast<std::uint8_t>(role));
+    }
+
+    std::uint8_t bits_{0};
+};
+
+/// Все роли подряд — для обхода реестра прав.
+inline constexpr std::array<Role, 4> kEveryRole{
+    Role::kOwner,
+    Role::kTutor,
+    Role::kStudent,
+    Role::kGuardian,
+};
 
 /// Участие человека в арендаторе: одна роль, одна запись.
 ///

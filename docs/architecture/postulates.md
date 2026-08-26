@@ -29,6 +29,12 @@ ctest, либо пометка «намерение».
 | Одноразовый токен хранится отпечатком, а не собой | `libs/pdr-identity/src/identity/application/ports/one_time_tokens.hpp` | `libs/pdr-identity/tests/invitation_test.cpp`, `scripts/check_isolation.py` |
 | Счёт попыток входа живёт в базе, а не в памяти процесса | `libs/pdr-identity/src/identity/infrastructure/auth/postgres_login_attempts.hpp` | `libs/pdr-identity/tests/login_throttle_test.cpp` |
 | Секреты берутся у криптографического источника, а не у mt19937 | `libs/pdr-core/src/application/ports/secret_generator.hpp` | `libs/pdr-core/tests/crypto_secret_generator_test.cpp` |
+| Права решаются в одном месте, а не в хендлерах | `libs/pdr-identity/contract/identity/contract.hpp` | `libs/pdr-identity/tests/policy_registry_test.cpp` |
+| У каждого действия есть политика, иначе не собирается прогон | `libs/pdr-identity/src/identity/application/policies/policy_set.cpp` | `libs/pdr-identity/tests/policy_registry_test.cpp` |
+| Отказ несёт причину, а не «нельзя» | `libs/pdr-identity/contract/identity/contract.hpp` | `libs/pdr-identity/tests/policies_test.cpp` |
+| Действие без политики запрещено и объявлено поломкой | `libs/pdr-identity/src/identity/application/ports/configuration_faults.hpp` | `libs/pdr-identity/tests/policy_registry_test.cpp` |
+| Матрица прав собрана из кода, а не написана руками | `libs/pdr-identity/src/identity/application/policies/matrix.cpp` | `libs/pdr-identity/tests/permissions_matrix_test.cpp` |
+| Супер-администратора не существует | `docs/architecture/permissions.md` | `libs/pdr-identity/tests/policies_test.cpp` |
 | Сессию хранилища не получить мимо области арендатора | `libs/pdr-core/src/application/ports/tenant_aware_repository.hpp` | `tenant_session_outside_scope` |
 | Время — `timestamptz` в UTC плюс отдельная зона IANA | `libs/pdr-core/src/core/types/time.cpp` | `scripts/check_migrations.py`, `libs/pdr-core/tests/time_test.cpp` |
 | Деньги — целые минорные единицы и код валюты | `libs/pdr-core/src/core/money.cpp` | `scripts/check_migrations.py`, `libs/pdr-billing/tests/quote_test.cpp` |

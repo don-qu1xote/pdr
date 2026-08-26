@@ -7,6 +7,7 @@
 
 #include <gtest/gtest.h>
 
+#include "builders/access_world.hpp"
 #include "builders/guardianship_builder.hpp"
 #include "events/identity/guardianship_revoked.hpp"
 #include "events/in_memory_bus.hpp"
@@ -108,15 +109,19 @@ TEST_F(RevokeGuardianshipTest, SecondRevokeReturnsRefusalAndPublishesNothing) {
 }
 
 TEST_F(RevokeGuardianshipTest, ContractAnswersWhoMayActForWhom) {
+    const testing::FakeRoles roles;
+    const testing::FakeFaults faults;
+    const policies::PolicySet permissions{faults};
+
     const FakeGuardianships guardianships{Granted()};
-    const ContractService contract{guardianships};
+    const ContractService contract{guardianships, roles, permissions};
 
     EXPECT_TRUE(contract.MayActFor(tenant_, guardian_, student_));
 
     EXPECT_TRUE(contract.MayActFor(tenant_, student_, student_));
 
     const FakeGuardianships without{std::nullopt};
-    const ContractService strict{without};
+    const ContractService strict{without, roles, permissions};
     EXPECT_FALSE(strict.MayActFor(tenant_, guardian_, student_));
 }
 
