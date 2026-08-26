@@ -40,7 +40,12 @@ target_link_libraries(pdr_infrastructure PUBLIC pdr_core pdr_application)
 # с именем в политиках миграции.
 # userver ищет корневой CMakeLists — один раз на весь проект.
 if(userver_FOUND)
-    add_library(pdr_postgres STATIC src/infrastructure/postgres_tenant_aware_repository.cpp)
+    add_library(pdr_postgres STATIC
+        src/infrastructure/db/tenant_context.cpp
+        src/infrastructure/db/tenant_context_component.cpp
+        src/infrastructure/db/unscoped_access.cpp
+        src/infrastructure/postgres_tenant_aware_repository.cpp
+    )
     target_include_directories(pdr_postgres PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_link_libraries(pdr_postgres PUBLIC pdr_core pdr_application userver::postgresql)
 endif()
@@ -57,15 +62,27 @@ if(PDR_BUILD_TESTS)
     pdr_unit_test_libraries(pdr_core pdr_application)
 
     # Отрицательные тесты: эти цели ОБЯЗАНЫ не собираться. Без них «перепутать
-    # нельзя» и «сессию не получить мимо области» — обещания, а не свойства.
+    # нельзя», «сессию не получить мимо области» и «соединение не унести из
+    # области» — обещания, а не свойства.
     # Цели исключены из ALL, тест собирает их отдельно и ждёт провала.
     # Через двоеточие — с чем линковать: сессия хранилища живёт в оснастке
     # тестов, остальным случаям хватает ядра.
-    foreach(case IN ITEMS ids_person_as_tenant:pdr_core
-                          ids_implicit_to_string:pdr_core
-                          ids_implicit_to_int:pdr_core
-                          config_in_core:pdr_core
-                          tenant_session_outside_scope:pdr_testing)
+    set(compile_fail_cases ids_person_as_tenant:pdr_core
+                           ids_implicit_to_string:pdr_core
+                           ids_implicit_to_int:pdr_core
+                           config_in_core:pdr_core
+                           tenant_session_outside_scope:pdr_testing)
+
+    # Случаи про НАСТОЯЩУЮ область соединения добавляются только там, где есть
+    # userver. Без него они не собрались бы из-за ненайденных заголовков, то
+    # есть прошли бы по неправильной причине, а отрицательный тест, проходящий
+    # не за то, хуже отсутствующего.
+    if(userver_FOUND)
+        list(APPEND compile_fail_cases tenant_scope_without_tenant:pdr_postgres
+                                       tenant_scope_stashed:pdr_postgres)
+    endif()
+
+    foreach(case IN LISTS compile_fail_cases)
         string(REPLACE ":" ";" parts "${case}")
         list(GET parts 0 name)
         list(GET parts 1 needs)

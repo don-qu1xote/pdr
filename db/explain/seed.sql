@@ -19,6 +19,9 @@
 delete from jobs_effect where tenant_id in (
     select tenant_id from identity_tenant where name like 'План %'
 );
+delete from identity_access_log where tenant_id in (
+    select tenant_id from identity_tenant where name like 'План %'
+);
 delete from identity_guardianship where tenant_id in (
     select tenant_id from identity_tenant where name like 'План %'
 );
@@ -76,6 +79,23 @@ select ('0e0e0e0e-0000-4000-8000-' || lpad(tenant::text, 12, '0'))::uuid,
                                           else effect % 25 end)
 from generate_series(1, 200) as tenant, generate_series(1, 250) as effect;
 
+-- Журнал доступа: пять просмотров на каждую опекаемую пару. Смотрит опекун,
+-- смотрят ученика — то самое «чужое», ради которого журнал и заведён.
+--
+-- Объём здесь нужен по той же причине, что и везде: главный вопрос к журналу —
+-- «кто смотрел МОИ данные», и он обязан оставаться выборкой по одному ученику.
+-- На пятидесяти тысячах строк перебор журнала уже виден, а на пяти — нет.
+insert into identity_access_log (tenant_id, id, actor_id, subject_id, resource_kind, at)
+select ('0e0e0e0e-0000-4000-8000-' || lpad(tenant::text, 12, '0'))::uuid,
+       ('0e0e0e0e-0005-4000-8000-' ||
+        lpad((tenant * 10000 + person * 10 + look)::text, 12, '0'))::uuid,
+       ('0e0e0e0e-0001-4000-8000-' || lpad((tenant * 1000 + person)::text, 12, '0'))::uuid,
+       ('0e0e0e0e-0001-4000-8000-' || lpad((tenant * 1000 + person + 1)::text, 12, '0'))::uuid,
+       case look % 3 when 0 then 'recording' when 1 then 'transcript' else 'chat' end,
+       now() - make_interval(days => look)
+from generate_series(1, 200) as tenant, generate_series(1, 99, 2) as person,
+     generate_series(1, 5) as look;
+
 -- Продуктовый поток: двести пятьдесят событий на арендатора. Возраст записей
 -- распределён так, как он выглядит у системы, где уборка ДЕЙСТВИТЕЛЬНО ходит:
 -- свежих много, старше месяца — единицы. Иначе старым окажется полтаблицы,
@@ -110,5 +130,6 @@ analyze identity_tenant;
 analyze identity_person;
 analyze identity_role_assignment;
 analyze identity_guardianship;
+analyze identity_access_log;
 analyze jobs_effect;
 analyze observability_product_event;

@@ -163,6 +163,12 @@ insert into identity_guardianship (tenant_id, id, guardian_id, student_id) value
     ('{EXPORT_TENANT}', '0e0e0e0e-0000-4000-8000-00000000c001',
      '0e0e0e0e-0000-4000-8000-00000000a001',
      '0e0e0e0e-0000-4000-8000-00000000a002');
+insert into identity_access_log
+    (tenant_id, id, actor_id, subject_id, resource_kind, at) values
+    ('{EXPORT_TENANT}', '0e0e0e0e-0000-4000-8000-00000000f001',
+     '0e0e0e0e-0000-4000-8000-00000000a001',
+     '0e0e0e0e-0000-4000-8000-00000000a002',
+     'recording', now() - interval '30 minutes');
 insert into observability_product_event
     (tenant_id, id, type, version, actor_role, occurred_at, recorded_at, fields) values
     ('{TENANT_A}', '0d0d0d0d-0000-4000-8000-00000000e001',

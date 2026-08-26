@@ -8,6 +8,14 @@ application или infrastructure. Запрещено:
     application/  -> userver, pqxx/libpq, infrastructure/
     infrastructure/ -> ничего не запрещено, это внешний слой
 
+ПУЛ СОЕДИНЕНИЙ — отдельное правило и не про слои. Упоминать его (заголовок
+`userver/storages/postgres/cluster.hpp`, типы `ClusterPtr` и `ClusterHostType`)
+разрешено ТОЛЬКО внутри `infrastructure/db/`. Там живут две двери к базе:
+`TenantContext`, который открывается только с арендатором, и `UnscopedAccess`,
+названный так, чтобы обход было видно на ревью. Всё остальное берёт область
+арендатора параметром и про пул не знает — тогда «взять соединение и забыть
+объявить арендатора» просто нечем написать.
+
 Там же запрещено прямое обращение к системному времени: <ctime>, <time.h>,
 system_clock::now() и подобное. Часы приходят портом application::ports::Clock,
 иначе тест расписания зависит от секунды, в которую его запустили.
@@ -54,6 +62,10 @@ PQ_ROOTS = frozenset({"pqxx", "libpq"})
 PQ_HEADERS = frozenset({"libpq-fe.h", "libpq-events.h", "postgres_fe.h"})
 
 TIME_HEADERS = frozenset({"ctime", "time.h", "sys/time.h", "sys/times.h"})
+
+POOL_INCLUDE = "userver/storages/postgres/cluster.hpp"
+POOL_SYMBOLS = ("ClusterPtr", "ClusterHostType")
+POOL_HOME = ("infrastructure", "db")
 
 CLOCK_CALLS = (
     "system_clock::now",
@@ -224,6 +236,22 @@ def clock_calls(text: str) -> Iterator[tuple[int, str]]:
                 break
 
 
+def pool_uses(text: str) -> Iterator[tuple[int, str]]:
+    """(номер строки, имя) для каждого упоминания пула соединений."""
+    without_literals = strip_comments(text, strip_literals=True)
+    for number, line in enumerate(without_literals.splitlines(), start=1):
+        for symbol in POOL_SYMBOLS:
+            if symbol in line:
+                yield number, symbol
+                break
+
+
+def near_the_pool(path: Path) -> bool:
+    """Файл лежит в infrastructure/db — единственном месте, где пул уместен."""
+    parts = path.parts
+    return any(parts[index : index + 2] == POOL_HOME for index in range(len(parts)))
+
+
 def layer_of(path: Path) -> str | None:
     for part in reversed(path.parts[:-1]):
         if part in LAYERS:
@@ -317,6 +345,21 @@ def check_file(path: Path, display: Path, root: Path, modules: dict[str, Path]) 
                 f"контрактом \"{context}/{CONTRACT_HEADER}\", а не внутренностями: {directive}"
             )
 
+    if not near_the_pool(path):
+        for number, include, directive in includes(text):
+            if include == POOL_INCLUDE:
+                violations.append(
+                    f"{display}:{number}: пул соединений упоминается вне infrastructure/db: "
+                    f"{directive}. Доменные данные читает область арендатора "
+                    f"(db::TenantContext), работы без арендатора — db::UnscopedAccess"
+                )
+        for number, symbol in pool_uses(text):
+            violations.append(
+                f"{display}:{number}: пул соединений упоминается вне infrastructure/db "
+                f"({symbol}): взять соединение и забыть объявить арендатора должно быть "
+                f"нечем. Область берётся параметром — db::ScopedTenantContext"
+            )
+
     if layer in CLOCK_FORBIDDEN_IN:
         for number, call in clock_calls(text):
             violations.append(
@@ -391,11 +434,17 @@ SELFTEST_FILES = {
         'auto Broken() { return std::chrono::system_clock::now(); }\n'
         'auto AlsoBroken() { return std::time(nullptr); }\n'
     ),
-    "src/infrastructure/good.cpp": (
+    "src/infrastructure/db/good.cpp": (
         '#include <userver/storages/postgres/cluster.hpp>\n'
         '#include <ctime>\n'
         '#include "application/ports/tariff_repository.hpp"\n'
         'auto Now() { return std::chrono::system_clock::now(); }\n'
+        'using Pool = userver::storages::postgres::ClusterPtr;\n'
+    ),
+    "libs/pdr-alpha/src/alpha/infrastructure/direct_pool.cpp": (
+        '#include <userver/storages/postgres/cluster.hpp>\n'
+        '#include "alpha/core/thing.hpp"\n'
+        'void Read(userver::storages::postgres::ClusterPtr cluster) { (void)cluster; }\n'
     ),
     "libs/pdr-alpha/contract/alpha/contract.hpp": "#pragma once\n",
     "libs/pdr-alpha/src/alpha/application/allowed.cpp": '#include "beta/contract.hpp"\n',
@@ -420,6 +469,8 @@ SELFTEST_EXPECTED = {
     ("src/core/clock.cpp", 7),
     ("libs/pdr-alpha/src/alpha/application/forbidden.cpp", 2),
     ("libs/pdr-core/src/core/platform.cpp", 1),
+    ("libs/pdr-alpha/src/alpha/infrastructure/direct_pool.cpp", 1),
+    ("libs/pdr-alpha/src/alpha/infrastructure/direct_pool.cpp", 3),
 }
 
 SELFTEST_EXPECTED_WITHOUT_LINE = {"libs/pdr-beta/contract/beta/extra.hpp"}

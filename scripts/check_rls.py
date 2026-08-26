@@ -43,7 +43,7 @@ PARAMETER = "pdr.tenant_id"
 
 TENANT_COLUMN = "tenant_id"
 
-ADAPTER = Path("libs/pdr-core/src/infrastructure/postgres_tenant_aware_repository.cpp")
+ADAPTER = Path("libs/pdr-core/src/infrastructure/db/tenant_context.cpp")
 
 SET_CONFIG = re.compile(r"set_config\(\s*'([^']*)'\s*,\s*\$1\s*,\s*(true|false)\s*\)")
 

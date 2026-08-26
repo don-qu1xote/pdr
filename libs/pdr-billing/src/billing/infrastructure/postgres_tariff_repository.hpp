@@ -2,10 +2,9 @@
 
 #include <optional>
 
-#include <userver/storages/postgres/cluster.hpp>
-
 #include "billing/application/ports/tariff_repository.hpp"
 #include "billing/core/tariff.hpp"
+#include "infrastructure/db/tenant_context.hpp"
 
 namespace pdr::billing {
 
@@ -16,14 +15,19 @@ namespace pdr::billing {
 /// поднятого сервиса: тогда любой тест сценария превращается в интеграционный,
 /// с реальным бинарником и реальной базой. Компонент — это способ создать
 /// адаптер, а не сам адаптер; он лежит рядом и умеет ровно это.
+///
+/// Строится ОТ ОБЛАСТИ АРЕНДАТОРА, а не от пула соединений: тарифы — доменные
+/// данные, и запрос к ним без объявленного арендатора не должен быть выразим.
+/// Пул в этом заголовке не упоминается вовсе, и это проверяется машиной
+/// (`scripts/check_layers.py`).
 class PostgresTariffRepository final : public ports::TariffRepository {
 public:
-    explicit PostgresTariffRepository(userver::storages::postgres::ClusterPtr cluster);
+    explicit PostgresTariffRepository(infrastructure::db::ScopedTenantContext& scope) noexcept;
 
     std::optional<Tariff> FindByCode(const TariffCode& code) const override;
 
 private:
-    userver::storages::postgres::ClusterPtr cluster_;
+    infrastructure::db::ScopedTenantContext& scope_;
 };
 
 }  // namespace pdr::billing

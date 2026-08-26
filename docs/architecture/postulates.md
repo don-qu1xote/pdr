@@ -18,7 +18,10 @@ ctest, либо пометка «намерение».
 | Постулат | Где обеспечен | Каким тестом |
 | --- | --- | --- |
 | Изоляция арендаторов структурная: RLS, а не аккуратный запрос | `db/migrations/V002__init.sql` | `scripts/check_rls.py`, `scripts/check_isolation.py` |
-| Забытый арендатор даёт пустой ответ, а не чужие строки | `libs/pdr-core/src/infrastructure/postgres_tenant_aware_repository.cpp` | `scripts/check_isolation.py`, `libs/pdr-testing/include/pdr/testing/repository_contract.hpp` |
+| Забытый арендатор даёт пустой ответ, а не чужие строки | `libs/pdr-core/src/infrastructure/db/tenant_context.cpp` | `scripts/check_isolation.py`, `libs/pdr-testing/include/pdr/testing/repository_contract.hpp` |
+| Соединение берётся только с объявленным арендатором | `libs/pdr-core/src/infrastructure/db/tenant_context.hpp` | `scripts/check_layers.py`, `tenant_scope_without_tenant`, `tenant_scope_stashed` |
+| Объявление арендатора не переживает транзакцию | `libs/pdr-core/src/infrastructure/db/tenant_context.cpp` | `scripts/check_rls.py`, `scripts/check_isolation.py` |
+| Кто смотрел чужое — видно в журнале, и строку из него не убрать | `db/migrations/V005__access_log.sql` | `libs/pdr-identity/tests/access_log_test.cpp`, `scripts/check_isolation.py` |
 | Сессию хранилища не получить мимо области арендатора | `libs/pdr-core/src/application/ports/tenant_aware_repository.hpp` | `tenant_session_outside_scope` |
 | Время — `timestamptz` в UTC плюс отдельная зона IANA | `libs/pdr-core/src/core/types/time.cpp` | `scripts/check_migrations.py`, `libs/pdr-core/tests/time_test.cpp` |
 | Деньги — целые минорные единицы и код валюты | `libs/pdr-core/src/core/money.cpp` | `scripts/check_migrations.py`, `libs/pdr-billing/tests/quote_test.cpp` |

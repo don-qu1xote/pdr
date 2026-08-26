@@ -4,7 +4,7 @@
      правка переживёт ровно до следующей пересборки. Изменить схему — значит
      написать новую миграцию. -->
 
-Собрано из миграций: 4. Таблиц: 9.
+Собрано из миграций: 5. Таблиц: 10.
 
 Правила, которым подчиняется каждая колонка, — в
 [migrations.md](migrations.md). Как устроена изоляция арендаторов и почему у
@@ -12,6 +12,39 @@
 отсутствие политики роняет сборку (`scripts/check_rls.py`).
 
 ## Таблицы
+
+### identity_access_log
+
+Кто и когда смотрел запись занятия, транскрипт или переписку. Право смотреть не то же самое, что право смотреть незаметно.
+
+Заведена миграцией `V005__access_log.sql`.
+
+| Колонка | Тип | Определение |
+| --- | --- | --- |
+| `tenant_id` | `uuid` | uuid not null references identity_tenant (tenant_id) |
+| `id` | `uuid` | uuid not null |
+| `actor_id` | `uuid` | uuid not null |
+| `subject_id` | `uuid` | uuid not null |
+| `resource_kind` | `text` | text not null |
+| `at` | `timestamptz` | timestamptz not null default now() |
+
+Ограничения:
+
+* `constraint identity_access_log_pk primary key (tenant_id, id)`
+* `constraint identity_access_log_actor_fk foreign key (tenant_id, actor_id) references identity_person (tenant_id, id)`
+* `constraint identity_access_log_subject_fk foreign key (tenant_id, subject_id) references identity_person (tenant_id, id)`
+* `constraint identity_access_log_not_self check (actor_id <> subject_id)`
+* `constraint identity_access_log_kind_known check (resource_kind in ( , , ))`
+
+Индексы:
+
+* `identity_access_log_by_subject` — обычный, `(tenant_id, subject_id, at desc)`
+
+Построчная защита включена и форсирована.
+
+Политики:
+
+* `identity_access_log_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
 
 ### identity_guardianship
 
@@ -274,3 +307,4 @@
 1. `V002__init.sql` — identity_tenant, identity_person, identity_role_assignment, identity_guardianship
 1. `V003__jobs.sql` — jobs_lock, jobs_run, jobs_effect
 1. `V004__observability.sql` — observability_product_event
+1. `V005__access_log.sql` — identity_access_log

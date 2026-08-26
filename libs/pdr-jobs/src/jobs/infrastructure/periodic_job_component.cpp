@@ -77,18 +77,25 @@ PeriodicJobComponentBase::PeriodicJobComponentBase(
       work_{work},
       job_{NameOf(config)},
       settings_{context.FindComponent<userver::components::DynamicConfig>().GetSource()},
-      cluster_{
+      unscoped_{
+          context.FindComponent<userver::components::Postgres>(config["cluster"].As<std::string>())
+              .GetCluster(),
+          infrastructure::db::UnscopedReason::kClusterWideJobLock},
+      tenants_{
           context.FindComponent<userver::components::Postgres>(config["cluster"].As<std::string>())
               .GetCluster()},
-      storage_{cluster_},
+      storage_{tenants_},
       ledger_{storage_},
-      journal_{cluster_},
+      journal_{unscoped_},
       runner_{ledger_, journal_, clock_} {
     const auto settings = SettingsOf(settings_, job_);
     const auto lock_settings = AsLockSettings(settings);
 
     auto strategy = std::make_shared<userver::storages::postgres::DistLockStrategy>(
-        cluster_, config["table"].As<std::string>(), settings.Lock().Value(), lock_settings);
+        unscoped_.Pool(),
+        config["table"].As<std::string>(),
+        settings.Lock().Value(),
+        lock_settings);
 
     const auto task_processor = config["task-processor"].As<std::optional<std::string>>();
     worker_ = std::make_unique<userver::dist_lock::DistLockedWorker>(

@@ -46,10 +46,12 @@ LINK_A = "0a0a0a0a-0000-4000-8000-00000000c001"
 LINK_B = "0b0b0b0b-0000-4000-8000-00000000c002"
 ROLE_A = "0a0a0a0a-0000-4000-8000-00000000d001"
 ROLE_B = "0b0b0b0b-0000-4000-8000-00000000d002"
+LOG_A = "0a0a0a0a-0000-4000-8000-00000000f001"
+LOG_B = "0b0b0b0b-0000-4000-8000-00000000f002"
 NEW_ROW = "0c0c0c0c-0000-4000-8000-00000000e001"
 
 TABLES = ("identity_tenant", "identity_person", "identity_role_assignment",
-          "identity_guardianship")
+          "identity_guardianship", "identity_access_log")
 
 SQLSTATE = re.compile(r"\bERROR:\s+([0-9A-Z]{5}):")
 
@@ -136,12 +138,16 @@ insert into identity_role_assignment (tenant_id, id, person_id, role) values
 insert into identity_guardianship (tenant_id, id, guardian_id, student_id) values
     ('{TENANT_A}', '{LINK_A}', '{GUARDIAN_A}', '{STUDENT_A}'),
     ('{TENANT_B}', '{LINK_B}', '{GUARDIAN_B}', '{STUDENT_B}');
+insert into identity_access_log (tenant_id, id, actor_id, subject_id, resource_kind, at) values
+    ('{TENANT_A}', '{LOG_A}', '{GUARDIAN_A}', '{STUDENT_A}', 'recording',   now()),
+    ('{TENANT_B}', '{LOG_B}', '{GUARDIAN_B}', '{STUDENT_B}', 'transcript', now());
 """)
 
 
 def teardown(database: Database) -> None:
     tenants = f"('{TENANT_A}', '{TENANT_B}')"
     database.owner(f"""
+delete from identity_access_log where tenant_id in {tenants};
 delete from identity_guardianship where tenant_id in {tenants};
 delete from identity_role_assignment where tenant_id in {tenants};
 delete from identity_person where tenant_id in {tenants};
@@ -267,6 +273,71 @@ def nothing_is_visible_without_the_parameter(database: Database) -> list[str]:
     return problems
 
 
+def the_declaration_does_not_outlive_the_transaction(database: Database) -> list[str]:
+    """ОБЯЗАТЕЛЬНЫЙ СЛУЧАЙ: соединение не уносит арендатора следующему.
+
+    Главная утечка приложения выглядит не как дыра в политике, а как забытое
+    объявление: соединение вернулось в пул с чужим `pdr.tenant_id`, и запрос
+    СЛЕДУЮЩЕГО человека прошёл под предыдущим арендатором. Ни один запрос при
+    этом не «сломан» — каждый честно спросил своё, а ответ пришёл чужой.
+
+    Решает здесь не наш код, а третий аргумент `set_config`: `true` привязывает
+    объявление к транзакции, `false` — к соединению. По исходнику это уже
+    сверено (scripts/check_rls.py), но что `true` значит именно то, о чём мы
+    думаем, показывает только настоящая база.
+
+    Всё идёт в ОДНОЙ сессии psql: между транзакциями соединение то же самое —
+    ровно как в пуле. Второй арендатор берёт его сразу после первого.
+    """
+    rows = database.app(f"""
+begin;
+select set_config('{PARAMETER}', '{TENANT_A}', true);
+select 'первый', count(*) filter (where tenant_id = '{TENANT_A}'), count(*) from identity_person;
+commit;
+select 'между', coalesce(nullif(current_setting('{PARAMETER}', true), ''), 'пусто'),
+       (select count(*) from identity_person);
+begin;
+select set_config('{PARAMETER}', '{TENANT_B}', true);
+select 'второй', count(*) filter (where tenant_id = '{TENANT_B}'), count(*) from identity_person;
+rollback;
+select 'после отката', coalesce(nullif(current_setting('{PARAMETER}', true), ''), 'пусто'),
+       (select count(*) from identity_person);
+""")
+    said = {row[0]: row[1:] for row in rows if len(row) >= 3}
+    missing = [label for label in ("первый", "между", "второй", "после отката")
+               if label not in said]
+    if missing:
+        return [f"база не ответила на шаги {', '.join(missing)}: проверять нечего"]
+
+    problems = []
+    for label, tenant in (("первый", "А"), ("второй", "Б")):
+        own, total = (int(value) for value in said[label])
+        if total != own:
+            problems.append(
+                f"{label} арендатор ({tenant}) видит {total - own} чужих строк: "
+                f"объявление не работает вовсе"
+            )
+        if own != 2:
+            problems.append(
+                f"{label} арендатор ({tenant}) видит {own} своих строк вместо 2: "
+                f"засев не тот, случай ничего не доказывает"
+            )
+
+    for label, ended in (("между", "фиксации"), ("после отката", "отката")):
+        parameter, visible = said[label][0], int(said[label][1])
+        if parameter != "пусто":
+            problems.append(
+                f"после {ended} на соединении остался арендатор «{parameter}»: "
+                f"следующий запрос пойдёт от чужого имени"
+            )
+        if visible:
+            problems.append(
+                f"после {ended} без объявления видно {visible} строк: соединение "
+                f"вернулось в пул с чужими правами"
+            )
+    return problems
+
+
 def garbage_in_the_parameter_is_refused(database: Database) -> list[str]:
     """Мусор в параметре — отказ, а не чужие строки."""
     code = database.app_refusal("select count(*) from identity_person;", "не-uuid")
@@ -344,6 +415,33 @@ rollback;
     return []
 
 
+def the_journal_is_append_only(database: Database) -> list[str]:
+    """Строку журнала доступа не поправить и не стереть из-под приложения.
+
+    Права роли — только `select` и `insert` (V005__access_log.sql). Журнал, из
+    которого можно убрать строку, отвечает на вопрос «кто смотрел в марте» не
+    сам, а голосом того, у кого была причина его подчистить. Проверяется здесь,
+    потому что решают это ГРАНТЫ в живом кластере, а не наша аккуратность.
+    """
+    problems = []
+    attempts = (
+        ("правка", f"update identity_access_log set resource_kind = 'chat' "
+                   f"where id = '{LOG_A}';"),
+        ("удаление", f"delete from identity_access_log where id = '{LOG_A}';"),
+    )
+    for what, sql in attempts:
+        code = database.app_refusal(sql, TENANT_A)
+        if code != "42501":
+            problems.append(
+                f"{what} строки журнала доступа дало «{code or 'успех'}» вместо отказа 42501"
+            )
+
+    rows = database.app(f"select count(*) from identity_access_log where id = '{LOG_A}';", TENANT_A)
+    if int(rows[0][0]) != 1:
+        problems.append("после отказов строка журнала всё же изменилась или исчезла")
+    return problems
+
+
 def protection_cannot_be_switched_off(database: Database) -> list[str]:
     """Роль приложения не может ни снять защиту, ни заглянуть в реестр миграций."""
     problems = []
@@ -368,11 +466,14 @@ CASES = (
     ("чужая строка не находится и по прямому id", foreign_row_is_not_found_by_id),
     ("джойн и произведение не проносят чужого", joins_do_not_leak),
     ("без параметра сессии не видно ничего", nothing_is_visible_without_the_parameter),
+    ("ОБЯЗАТЕЛЬНЫЙ: объявление арендатора не переживает транзакцию",
+     the_declaration_does_not_outlive_the_transaction),
     ("мусор в параметре — отказ", garbage_in_the_parameter_is_refused),
     ("вставка с чужим арендатором отвергается", foreign_insert_is_refused),
     ("вставка без арендатора отвергается", insert_without_tenant_is_refused),
     ("своя вставка проходит и остаётся своей", own_insert_passes_and_stays_own),
     ("delete без where трогает только своё", bare_delete_touches_only_own_rows),
+    ("журнал доступа не правится и не исчезает", the_journal_is_append_only),
     ("защиту не выключить из-под приложения", protection_cannot_be_switched_off),
 )
 

@@ -69,33 +69,28 @@ const userver::storages::postgres::Query kLast{
 
 }  // namespace
 
-PostgresJobJournal::PostgresJobJournal(userver::storages::postgres::ClusterPtr cluster)
-    : cluster_{std::move(cluster)} {}
+PostgresJobJournal::PostgresJobJournal(const infrastructure::db::UnscopedAccess& access) noexcept
+    : access_{access} {}
 
 void PostgresJobJournal::Started(const JobName& job, core::Instant at) {
-    cluster_->Execute(userver::storages::postgres::ClusterHostType::kMaster,
-                      kStarted,
-                      job.Value(),
-                      AsTimestamptz(at));
+    access_.Execute(kStarted, job.Value(), AsTimestamptz(at));
 }
 
 void PostgresJobJournal::Finished(const JobName& job, const RunRecord& record) {
     const auto took_ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(record.Took()).count();
-    cluster_->Execute(userver::storages::postgres::ClusterHostType::kMaster,
-                      kFinished,
-                      job.Value(),
-                      AsTimestamptz(record.StartedAt()),
-                      AsTimestamptz(record.FinishedAt()),
-                      static_cast<std::int64_t>(took_ms),
-                      std::string{Name(record.Result())},
-                      record.Produced(),
-                      record.Repeated());
+    access_.Execute(kFinished,
+                    job.Value(),
+                    AsTimestamptz(record.StartedAt()),
+                    AsTimestamptz(record.FinishedAt()),
+                    static_cast<std::int64_t>(took_ms),
+                    std::string{Name(record.Result())},
+                    record.Produced(),
+                    record.Repeated());
 }
 
 std::optional<RunRecord> PostgresJobJournal::Last(const JobName& job) const {
-    const auto result = cluster_->Execute(
-        userver::storages::postgres::ClusterHostType::kMaster, kLast, job.Value());
+    const auto result = access_.Execute(kLast, job.Value());
     if (result.IsEmpty()) {
         return std::nullopt;
     }

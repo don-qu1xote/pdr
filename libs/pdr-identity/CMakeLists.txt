@@ -7,7 +7,9 @@
 
 add_library(pdr_identity STATIC
     src/identity/application/contract_service.cpp
+    src/identity/application/note_sensitive_access.cpp
     src/identity/application/revoke_guardianship.cpp
+    src/identity/core/access_record.cpp
     src/identity/core/age_status.cpp
     src/identity/core/birth_date.cpp
     src/identity/core/email.cpp
@@ -21,8 +23,20 @@ target_include_directories(pdr_identity
 )
 target_link_libraries(pdr_identity PUBLIC pdr_core pdr_events PRIVATE pdr_application)
 
-# Слоя infrastructure здесь пока нет: адаптер к Postgres появится вместе с
-# первой миграцией (область DB). Пустой каталог с .gitkeep этого не приблизит.
+# Адаптеры к Postgres собираются только там, где есть userver. Без него
+# контекст остаётся собираемым и проверяемым целиком, кроме этого слоя.
+if(userver_FOUND)
+    # Журнал доступа пишется отсюда, и больше ниоткуда: таблицей
+    # identity_access_log владеет этот контекст
+    # (docs/architecture/context-map.md).
+    add_library(pdr_identity_infrastructure STATIC
+        src/identity/infrastructure/audit/postgres_access_log.cpp
+    )
+    target_include_directories(pdr_identity_infrastructure
+                               PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_link_libraries(pdr_identity_infrastructure
+                          PUBLIC pdr_identity pdr_postgres userver::postgresql)
+endif()
 
 if(PDR_BUILD_TESTS)
     # УРОВЕНЬ UNIT: домен и сценарии на фейках, всё в общей цели pdr_unit_tests.
@@ -30,6 +44,7 @@ if(PDR_BUILD_TESTS)
     # живут рядом со своим контекстом — платформенная оснастка зависеть от него
     # не имеет права.
     pdr_unit_test_sources(
+        tests/access_log_test.cpp
         tests/age_status_test.cpp
         tests/guardianship_test.cpp
         tests/participants_test.cpp

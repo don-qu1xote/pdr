@@ -69,6 +69,16 @@ select id, role
  where person_id = '{person}'
    and revoked_at is null;
 
+-- запрос: identity_access_log_by_subject
+-- откуда: «кто смотрел мои данные» — единственный вопрос к журналу доступа,
+--         ради него и заведён identity_access_log_by_subject
+-- индекс: identity_access_log_by_subject
+select actor_id, resource_kind, at
+  from identity_access_log
+ where subject_id = '{person}'
+ order by at desc
+ limit 50;
+
 -- запрос: jobs_effect_cleanup
 -- откуда: уборка старых следов, ради которой заведён jobs_effect_by_age
 --         (db/migrations/V003__jobs.sql). Уборка идёт под арендатором, как и
