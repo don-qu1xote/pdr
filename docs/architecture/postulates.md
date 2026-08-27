@@ -40,6 +40,12 @@ ctest, либо пометка «намерение».
 | Отзыв доступа — строка с датой, а не удаление | `db/migrations/V007__guardian_access.sql` | `libs/pdr-identity/tests/guardian_access_test.cpp`, `scripts/check_isolation.py` |
 | Совершеннолетие даёт срок на решение, а не мгновенный обрыв | `libs/pdr-identity/src/identity/core/guardian_access.cpp` | `libs/pdr-identity/tests/guardian_access_test.cpp` |
 | Отказ опекуну попадает в журнал наравне с просмотром | `libs/pdr-identity/src/identity/application/contract_service.cpp` | `libs/pdr-identity/tests/guardian_access_test.cpp` |
+| Развилки при регистрации нет: подбор выключен у всех по умолчанию | `libs/pdr-identity/src/identity/core/practice.hpp` | `libs/pdr-identity/tests/onboarding_test.cpp` |
+| Один человек на площадке, сколько угодно практик | `libs/pdr-identity/src/identity/core/account.hpp` | `libs/pdr-identity/tests/onboarding_test.cpp`, `scripts/check_isolation.py` |
+| Репетитор не видит ничего о занятиях ученика у других | `db/migrations/V008__practice_and_accounts.sql` | `scripts/check_isolation.py`, `libs/pdr-identity/tests/onboarding_test.cpp` |
+| Учебное число не пересекает границу практики | `scripts/migration_model.py` | `scripts/check_rls.py` |
+| Повтор приглашения не шлёт второго письма | `libs/pdr-identity/src/identity/application/invite_participant.hpp` | `libs/pdr-identity/tests/onboarding_test.cpp` |
+| Практику можно выгрузить целиком и удалить целиком | `db/account/delete.sql` | `scripts/check_openness.py`, `make account-export` |
 | Права по возрасту вычисляются, а не выдаются по заявке | `libs/pdr-identity/src/identity/core/capabilities.hpp` | `libs/pdr-identity/tests/capabilities_test.cpp` |
 | Возрастные пороги — значения конфига, а не константы | `configs/dynamic/registry.yaml` | `scripts/check_dynamic_configs.py`, `libs/pdr-identity/tests/capabilities_test.cpp` |
 | Опекун узнаёт о самостоятельном поступке подопечного всегда | `libs/pdr-identity/src/identity/application/notify_guardian_of_act.cpp` | `scripts/check_guardian_notice.py`, `libs/pdr-notifications/tests/deliver_domain_events_test.cpp` |

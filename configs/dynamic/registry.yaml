@@ -588,6 +588,37 @@ PDR_LOGIN_THROTTLE:
         minimum: 1
         maximum: 10000
 
+PDR_SIGNUP_THROTTLE:
+  description: >-
+    Сколько самостоятельных заведений с одного адреса и за какое окно считается
+    перебором. Стоит только на самостоятельной регистрации: приглашение выдаёт
+    репетитор в своей практике, и ограничивать его там незачем.
+  kind: техническая
+  owner: тот, кто держит сервис
+  jurisdiction: нет
+  breaks: >-
+    Порог слишком низкий — семья с одного домашнего адреса не может завести
+    вторую учётную запись, и родитель после ребёнка упирается в отказ. Слишком
+    высокий — заведение тысячи пустых записей ничего не стоит, а разбирать их
+    придётся руками. Ноль запрещает регистрацию вовсе, и это отвергает домен
+    (identity::SignupLimits::Compose).
+  default: {"window_minutes": 60, "per_address": 5}
+  schema:
+    type: object
+    additionalProperties: false
+    required: [window_minutes, per_address]
+    properties:
+      window_minutes:
+        description: за сколько минут считаются заведения
+        type: integer
+        minimum: 1
+        maximum: 1440
+      per_address:
+        description: сколько заведений с одного адреса запирают регистрацию
+        type: integer
+        minimum: 1
+        maximum: 100
+
 PDR_AUTH_LIFETIMES:
   description: >-
     Сколько живут сессия, приглашение и ссылка сброса пароля. Три разных срока,

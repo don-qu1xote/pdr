@@ -59,6 +59,7 @@ core::Result<OneTimeToken> OneTimeToken::Invitation(TokenId id,
                                                     core::TenantId tenant,
                                                     Digest secret,
                                                     Role role,
+                                                    std::optional<Digest> invited,
                                                     core::Instant at,
                                                     core::Instant::Duration lifetime) {
     if (lifetime <= core::Instant::Duration::zero()) {
@@ -71,6 +72,7 @@ core::Result<OneTimeToken> OneTimeToken::Invitation(TokenId id,
                         TokenPurpose::kInvitation,
                         role,
                         std::nullopt,
+                        std::move(invited),
                         at,
                         at + lifetime,
                         std::nullopt};
@@ -92,6 +94,7 @@ core::Result<OneTimeToken> OneTimeToken::PasswordReset(TokenId id,
                         TokenPurpose::kPasswordReset,
                         std::nullopt,
                         std::move(person),
+                        std::nullopt,
                         at,
                         at + lifetime,
                         std::nullopt};
@@ -103,6 +106,7 @@ OneTimeToken OneTimeToken::Restore(TokenId id,
                                    TokenPurpose purpose,
                                    std::optional<Role> role,
                                    std::optional<core::PersonId> person,
+                                   std::optional<Digest> invited,
                                    core::Instant created_at,
                                    core::Instant expires_at,
                                    std::optional<core::Instant> used_at) {
@@ -112,6 +116,7 @@ OneTimeToken OneTimeToken::Restore(TokenId id,
                         purpose,
                         role,
                         std::move(person),
+                        std::move(invited),
                         created_at,
                         expires_at,
                         used_at};
@@ -134,7 +139,7 @@ core::Result<OneTimeToken> OneTimeToken::Used(core::Instant at) const {
     }
 
     return OneTimeToken{
-        id_, tenant_, secret_, purpose_, role_, person_, created_at_, expires_at_, at};
+        id_, tenant_, secret_, purpose_, role_, person_, invited_, created_at_, expires_at_, at};
 }
 
 }  // namespace pdr::identity

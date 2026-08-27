@@ -70,7 +70,7 @@ TEST(Person, KeepsDateOfBirthAndNotAge) {
     const auto student = SomeStudent();
 
     EXPECT_EQ(student.BornOn().ToString(), "2011-03-04");
-    EXPECT_EQ(student.Mail().Value(), "student@example.test");
+    EXPECT_EQ(student.Mail()->Value(), "student@example.test");
 }
 
 TEST(Person, MailIsChangedByANewValueAndNotBySetter) {
@@ -78,9 +78,9 @@ TEST(Person, MailIsChangedByANewValueAndNotBySetter) {
 
     const auto moved = student.WithMail(Email::Parse("new@example.test").Value());
 
-    EXPECT_EQ(moved.Mail().Value(), "new@example.test");
+    EXPECT_EQ(moved.Mail()->Value(), "new@example.test");
     EXPECT_TRUE(moved.Id() == student.Id());
-    EXPECT_EQ(student.Mail().Value(), "student@example.test") << "прежнее значение не тронуто";
+    EXPECT_EQ(student.Mail()->Value(), "student@example.test") << "прежнее значение не тронуто";
 }
 
 TEST(TenantMembership, RoleCodesAreTheOnesTheSchemaKnows) {

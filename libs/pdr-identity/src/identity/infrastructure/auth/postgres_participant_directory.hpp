@@ -19,6 +19,8 @@ public:
     core::Result<void> Enrol(const core::TenantId& tenant,
                              const ports::Enrolment& enrolment) override;
 
+    bool Knows(const core::TenantId& tenant, const Email& mail) const override;
+
 private:
     infrastructure::db::ScopedTenantContext& scope_;
     const application::ports::IdGenerator& ids_;

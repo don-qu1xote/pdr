@@ -11,6 +11,7 @@ PolicySet::PolicySet(const ports::ConfigurationFaults& faults) noexcept : faults
     Cover(journal_, JournalPolicy::Actions());
     Cover(consents_, ConsentPolicy::Actions());
     Cover(reviews_, ReviewPolicy::Actions());
+    Cover(practice_, PracticePolicy::Actions());
 }
 
 void PolicySet::Cover(const Policy& policy, std::span<const Action> actions) noexcept {

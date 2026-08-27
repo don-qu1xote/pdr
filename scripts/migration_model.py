@@ -65,7 +65,43 @@ META_TABLES = {
     "schema_version": "реестр применённых миграций",
     "jobs_lock": "распределённая блокировка периодических заданий, одна на кластер",
     "jobs_run": "журнал последнего прогона задания, один на кластер",
+    "identity_account": "один человек на всю площадку: отпечаток почты и идентификатор (ADR-0019)",
+    "identity_signup_attempt": "счётчик самостоятельных заведений с одного адреса, до всякого арендатора",
 }
+
+META_TABLE_COLUMNS = {
+    "schema_version": {"version", "applied_at", "checksum"},
+    "jobs_lock": {"key", "owner", "expiration_time"},
+    "jobs_run": {
+        "job",
+        "attempt_at",
+        "started_at",
+        "finished_at",
+        "duration_ms",
+        "outcome",
+        "produced",
+        "repeated",
+        "runs",
+    },
+    "identity_account": {
+        "id",
+        "email_digest",
+        "confirmed_at",
+        "confirmation_digest",
+        "confirmation_expires_at",
+        "created_at",
+    },
+    "identity_signup_attempt": {"address_hash", "window_started_at", "attempts"},
+}
+
+
+"""META_TABLE_COLUMNS — что мета-таблице разрешено хранить.
+
+Список закрыт, и он же проверяет правило «общего числа готовности вообще не
+существует нигде»: учебные данные пересекают границу арендатора только через
+новую колонку в таблице без построчной защиты, а новая колонка там не заводится
+молча — её ловит scripts/check_rls.py.
+"""
 
 
 class MigrationError(Exception):

@@ -4,7 +4,7 @@
      правка переживёт ровно до следующей пересборки. Изменить схему — значит
      написать новую миграцию. -->
 
-Собрано из миграций: 7. Таблиц: 15.
+Собрано из миграций: 8. Таблиц: 17.
 
 Правила, которым подчиняется каждая колонка, — в
 [migrations.md](migrations.md). Как устроена изоляция арендаторов и почему у
@@ -47,6 +47,31 @@
 Политики:
 
 * `identity_access_log_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
+
+### identity_account
+
+Один человек на всю площадку: отпечаток почты и идентификатор. Единственная таблица без tenant_id — ADR-0019.
+
+Заведена миграцией `V008__practice_and_accounts.sql`.
+
+| Колонка | Тип | Определение |
+| --- | --- | --- |
+| `id` | `uuid` | uuid not null |
+| `email_digest` | `char(64)` | char(64) not null |
+| `confirmed_at` | `timestamptz` | timestamptz |
+| `confirmation_digest` | `char(64)` | char(64) |
+| `confirmation_expires_at` | `timestamptz` | timestamptz |
+| `created_at` | `timestamptz` | timestamptz not null default now() |
+
+Ограничения:
+
+* `constraint identity_account_pk primary key (id)`
+* `constraint identity_account_mail_unique unique (email_digest)`
+* `constraint identity_account_digest_lowercase check (email_digest = lower(email_digest))`
+* `constraint identity_account_confirmation_cleared check (confirmed_at is null or confirmation_digest is null)`
+* `constraint identity_account_confirmation_whole check ((confirmation_digest is null) = (confirmation_expires_at is null))`
+
+Не доменная таблица: один человек на всю площадку: отпечаток почты и идентификатор (ADR-0019). Арендатора и политики у неё нет.
 
 ### identity_credential
 
@@ -197,6 +222,7 @@
 | `created_at` | `timestamptz` | timestamptz not null default now() |
 | `expires_at` | `timestamptz` | timestamptz not null |
 | `used_at` | `timestamptz` | timestamptz |
+| `invited_digest` | `char(64)` | char(64) |
 
 Ограничения:
 
@@ -209,6 +235,11 @@
 * `constraint identity_one_time_token_points_at_one_thing check ( (purpose = and role is not null and person_id is null) or (purpose = and role is null and person_id is not null))`
 * `constraint identity_one_time_token_expires_after_created check (expires_at > created_at)`
 * `constraint identity_one_time_token_used_after_created check (used_at is null or used_at >= created_at)`
+* `constraint identity_one_time_token_invited_lowercase check (invited_digest is null or invited_digest = lower(invited_digest))`
+
+Индексы:
+
+* `identity_one_time_token_invited` — обычный, `(tenant_id, invited_digest) where invited_digest is not null and used_at is null`
 
 Построчная защита включена и форсирована.
 
@@ -319,6 +350,30 @@
 
 * `identity_session_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
 
+### identity_signup_attempt
+
+Сколько раз с этого адреса заводились сами. Ни почты, ни адреса в открытом виде — только отпечаток.
+
+Заведена миграцией `V008__practice_and_accounts.sql`.
+
+| Колонка | Тип | Определение |
+| --- | --- | --- |
+| `address_hash` | `char(64)` | char(64) not null |
+| `window_started_at` | `timestamptz` | timestamptz not null |
+| `attempts` | `integer` | integer not null |
+
+Ограничения:
+
+* `constraint identity_signup_attempt_pk primary key (address_hash)`
+* `constraint identity_signup_attempt_positive check (attempts > 0)`
+* `constraint identity_signup_attempt_hash_lowercase check (address_hash = lower(address_hash))`
+
+Индексы:
+
+* `identity_signup_attempt_by_age` — обычный, `(window_started_at)`
+
+Не доменная таблица: счётчик самостоятельных заведений с одного адреса, до всякого арендатора. Арендатора и политики у неё нет.
+
 ### identity_tenant
 
 Арендатор: репетитор-одиночка или школа. Его собственный идентификатор и есть tenant_id, поэтому политика изоляции на этой таблице такая же, как на остальных.
@@ -331,12 +386,23 @@
 | `name` | `text` | text not null |
 | `tz` | `text` | text not null |
 | `created_at` | `timestamptz` | timestamptz not null default now() |
+| `visibility` | `text` | text not null default |
+| `visibility_asked_at` | `timestamptz` | timestamptz |
+| `visibility_decided_at` | `timestamptz` | timestamptz |
+| `visibility_refusal` | `text` | text |
 
 Ограничения:
 
 * `constraint identity_tenant_pk primary key (tenant_id)`
 * `constraint identity_tenant_name_not_blank check (length(btrim(name)) > 0)`
 * `constraint identity_tenant_tz_not_blank check (length(btrim(tz)) > 0)`
+* `constraint identity_tenant_visibility_known check (visibility in ( , , , ))`
+* `constraint identity_tenant_refusal_known check (visibility_refusal is null or visibility_refusal in ( , , ))`
+* `constraint identity_tenant_refusal_only_when_refused check (visibility_refusal is null or visibility = )`
+
+Индексы:
+
+* `identity_tenant_awaiting_review` — обычный, `(visibility_asked_at) where visibility = 'pending'`
 
 Построчная защита включена и форсирована.
 
@@ -483,3 +549,4 @@
 1. `V005__access_log.sql` — identity_access_log
 1. `V006__auth.sql` — identity_credential, identity_session, identity_one_time_token, identity_login_attempt
 1. `V007__guardian_access.sql` — identity_guardian_consent
+1. `V008__practice_and_accounts.sql` — identity_account, identity_signup_attempt

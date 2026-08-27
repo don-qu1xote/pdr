@@ -1,5 +1,7 @@
 #include "identity/application/accept_invitation.hpp"
 
+#include "identity/core/account.hpp"
+#include "identity/core/membership.hpp"
 #include "identity/core/person.hpp"
 
 namespace pdr::identity {
@@ -8,6 +10,7 @@ AcceptInvitation::AcceptInvitation(const ports::AuthSettings& settings,
                                    const ports::Digests& digests,
                                    const ports::PasswordHasher& hasher,
                                    ports::OneTimeTokens& tokens,
+                                   ports::Accounts& accounts,
                                    ports::ParticipantDirectory& directory,
                                    ports::CredentialStore& credentials,
                                    ports::SessionStore& sessions,
@@ -18,6 +21,7 @@ AcceptInvitation::AcceptInvitation(const ports::AuthSettings& settings,
       digests_{digests},
       hasher_{hasher},
       tokens_{tokens},
+      accounts_{accounts},
       directory_{directory},
       credentials_{credentials},
       sessions_{sessions},
@@ -56,9 +60,16 @@ core::Result<Session> AcceptInvitation::Execute(const AcceptInvitationRequest& r
         return hash.Failure();
     }
 
-    const Person person{ids_.Next<core::PersonId>(), request.mail, request.born_on};
+    const auto mail = digests_.Of(request.mail.Value());
+    auto account = accounts_.FindByMail(mail);
+    if (!account.has_value()) {
+        account = Account::Invited(ids_.Next<core::PersonId>(), mail, now);
+        accounts_.Save(*account);
+    }
+
+    const Person person{account->Id(), request.mail, request.born_on};
     const ports::Enrolment enrolment{
-        person, *found->InvitedAs(), request.display_name, request.zone};
+        person, RoleSet::Of({*found->InvitedAs()}), request.display_name, request.zone};
 
     const auto enrolled = directory_.Enrol(request.tenant, enrolment);
     if (!enrolled) {

@@ -8,6 +8,7 @@
 #include "core/errors.hpp"
 #include "core/types/ids.hpp"
 #include "core/types/time.hpp"
+#include "identity/application/ports/accounts.hpp"
 #include "identity/application/ports/auth_settings.hpp"
 #include "identity/application/ports/credential_store.hpp"
 #include "identity/application/ports/digests.hpp"
@@ -42,12 +43,23 @@ struct AcceptInvitationRequest final {
 ///
 /// Ссылка гасится в ту же операцию: пересланная в общий чат ссылка не должна
 /// пускать второго.
+///
+/// ЧЕЛОВЕК ОДИН НА ВСЮ ПЛОЩАДКУ. Если по этому адресу учётная запись уже есть —
+/// ученик занимается у другого репетитора или сам родитель где-то ведёт
+/// практику, — заводится не второй человек, а вторая СВЯЗЬ: тот же
+/// идентификатор появляется ещё в одном арендаторе. Математику ведёт один
+/// репетитор, английский другой, и это обычное дело, а не краевой случай.
+///
+/// О второй практике ни один из репетиторов при этом не узнаёт: строки чужого
+/// арендатора ему не видны (docs/architecture/tenancy.md), а реестр учётных
+/// записей знает только отпечаток почты и не отвечает на вопрос «где ещё».
 class AcceptInvitation final {
 public:
     AcceptInvitation(const ports::AuthSettings& settings,
                      const ports::Digests& digests,
                      const ports::PasswordHasher& hasher,
                      ports::OneTimeTokens& tokens,
+                     ports::Accounts& accounts,
                      ports::ParticipantDirectory& directory,
                      ports::CredentialStore& credentials,
                      ports::SessionStore& sessions,
@@ -62,6 +74,7 @@ private:
     const ports::Digests& digests_;
     const ports::PasswordHasher& hasher_;
     ports::OneTimeTokens& tokens_;
+    ports::Accounts& accounts_;
     ports::ParticipantDirectory& directory_;
     ports::CredentialStore& credentials_;
     ports::SessionStore& sessions_;

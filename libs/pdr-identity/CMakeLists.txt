@@ -8,14 +8,20 @@
 add_library(pdr_identity STATIC
     src/identity/application/accept_invitation.cpp
     src/identity/application/announce_coming_of_age.cpp
+    src/identity/application/attach_account.cpp
     src/identity/application/announce_guardian_handover.cpp
     src/identity/application/authenticate_session.cpp
     src/identity/application/change_password.cpp
+    src/identity/application/confirm_email.cpp
     src/identity/application/contract_service.cpp
+    src/identity/application/enrol_child.cpp
     src/identity/application/grant_guardian_scope.cpp
+    src/identity/application/invite_many.cpp
     src/identity/application/invite_participant.cpp
+    src/identity/application/manage_publication.cpp
     src/identity/application/note_sensitive_access.cpp
     src/identity/application/notify_guardian_of_act.cpp
+    src/identity/application/open_practice.cpp
     src/identity/application/policies/billing_policy.cpp
     src/identity/application/policies/capability_policy.cpp
     src/identity/application/policies/content_policy.cpp
@@ -24,11 +30,13 @@ add_library(pdr_identity STATIC
     src/identity/application/policies/matrix.cpp
     src/identity/application/policies/media_policy.cpp
     src/identity/application/policies/policy_set.cpp
+    src/identity/application/policies/practice_policy.cpp
     src/identity/application/policies/progress_policy.cpp
     src/identity/application/policies/review_policy.cpp
     src/identity/application/policies/scheduling_policy.cpp
     src/identity/application/policies/subject.cpp
     src/identity/application/policies/subject_builder.cpp
+    src/identity/application/register_on_my_own.cpp
     src/identity/application/reset_password.cpp
     src/identity/application/revoke_guardian_scope.cpp
     src/identity/application/revoke_guardianship.cpp
@@ -36,10 +44,12 @@ add_library(pdr_identity STATIC
     src/identity/application/show_access_journal.cpp
     src/identity/application/sign_out.cpp
     src/identity/core/access_record.cpp
+    src/identity/core/account.cpp
     src/identity/core/action.cpp
     src/identity/core/age_status.cpp
     src/identity/core/auth_lifetimes.cpp
     src/identity/core/birth_date.cpp
+    src/identity/core/contact_list.cpp
     src/identity/core/capabilities.cpp
     src/identity/core/digest.cpp
     src/identity/core/email.cpp
@@ -52,6 +62,7 @@ add_library(pdr_identity STATIC
     src/identity/core/membership.cpp
     src/identity/core/one_time_token.cpp
     src/identity/core/password.cpp
+    src/identity/core/practice.cpp
     src/identity/core/session.cpp
     src/identity/core/tenant.cpp
 )
@@ -74,6 +85,9 @@ if(userver_FOUND)
         src/identity/infrastructure/access/postgres_guardian_consents.cpp
         src/identity/infrastructure/access/postgres_role_repository.cpp
         src/identity/infrastructure/audit/postgres_access_log.cpp
+        src/identity/infrastructure/onboarding/postgres_accounts.cpp
+        src/identity/infrastructure/onboarding/postgres_practices.cpp
+        src/identity/infrastructure/onboarding/postgres_signup_attempts.cpp
         src/identity/infrastructure/auth/dynamic_config_auth_settings.cpp
         src/identity/infrastructure/auth/postgres_credential_store.cpp
         src/identity/infrastructure/auth/postgres_login_attempts.cpp
@@ -127,6 +141,7 @@ if(PDR_BUILD_TESTS)
         tests/guardianship_test.cpp
         tests/invitation_test.cpp
         tests/login_throttle_test.cpp
+        tests/onboarding_test.cpp
         tests/one_time_token_test.cpp
         tests/participants_test.cpp
         tests/password_test.cpp

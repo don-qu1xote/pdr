@@ -10,6 +10,8 @@ std::string_view Name(UnscopedReason reason) noexcept {
             return "cluster_wide_job_journal";
         case UnscopedReason::kSchemaMigration:
             return "schema_migration";
+        case UnscopedReason::kPlatformWideIdentity:
+            return "platform_wide_identity";
         case UnscopedReason::kOperatorExport:
             return "operator_export";
     }

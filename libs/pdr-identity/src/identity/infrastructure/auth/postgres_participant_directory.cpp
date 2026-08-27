@@ -1,5 +1,6 @@
 #include "identity/infrastructure/auth/postgres_participant_directory.hpp"
 
+#include <optional>
 #include <string>
 
 #include <userver/storages/postgres/io/date.hpp>
@@ -31,6 +32,11 @@ const userver::storages::postgres::Query kGrantRole{
     userver::storages::postgres::Query::Name{"identity_role_assignment_grant"},
 };
 
+const userver::storages::postgres::Query kKnowsMail{
+    "SELECT 1 FROM identity_person WHERE email = $1 LIMIT 1",
+    userver::storages::postgres::Query::Name{"identity_person_knows_mail"},
+};
+
 }  // namespace
 
 PostgresParticipantDirectory::PostgresParticipantDirectory(
@@ -47,7 +53,8 @@ core::Result<void> PostgresParticipantDirectory::Enrol(const core::TenantId& ten
         tenant.ToString(),
         person.Id().ToString(),
         enrolment.display_name,
-        person.Mail().Value(),
+        person.Mail().has_value() ? std::optional<std::string>{person.Mail()->Value()}
+                                  : std::nullopt,
         enrolment.zone.Name(),
         userver::storages::postgres::Date{person.BornOn().Year(),
                                           static_cast<int>(person.BornOn().Month()),
@@ -58,12 +65,21 @@ core::Result<void> PostgresParticipantDirectory::Enrol(const core::TenantId& ten
                            "эта почта в кабинете уже занята"};
     }
 
-    scope_.Session().Execute(kGrantRole,
-                             tenant.ToString(),
-                             ids_.Next<RoleAssignmentId>().ToString(),
-                             person.Id().ToString(),
-                             std::string{Name(enrolment.role)});
+    for (const auto role : kEveryRole) {
+        if (!enrolment.roles.Has(role)) {
+            continue;
+        }
+        scope_.Session().Execute(kGrantRole,
+                                 tenant.ToString(),
+                                 ids_.Next<RoleAssignmentId>().ToString(),
+                                 person.Id().ToString(),
+                                 std::string{Name(role)});
+    }
     return {};
+}
+
+bool PostgresParticipantDirectory::Knows(const core::TenantId&, const Email& mail) const {
+    return !scope_.Session().Execute(kKnowsMail, mail.Value()).IsEmpty();
 }
 
 }  // namespace pdr::identity

@@ -116,6 +116,20 @@ const std::vector<Grant> kGranted{
     {Action::kWriteReview, Role::kStudent, Tie::kAboutMe},
 
     {Action::kManageAutoPayment, Role::kGuardian, Tie::kMyWard},
+
+    {Action::kInvitePeople, Role::kOwner, Tie::kMine},
+    {Action::kInvitePeople, Role::kOwner, Tie::kAboutMe},
+    {Action::kInvitePeople, Role::kOwner, Tie::kMyWard},
+    {Action::kInvitePeople, Role::kOwner, Tie::kNone},
+    {Action::kInvitePeople, Role::kTutor, Tie::kMine},
+    {Action::kInvitePeople, Role::kTutor, Tie::kAboutMe},
+    {Action::kInvitePeople, Role::kTutor, Tie::kMyWard},
+    {Action::kInvitePeople, Role::kTutor, Tie::kNone},
+
+    {Action::kManagePractice, Role::kOwner, Tie::kMine},
+    {Action::kManagePractice, Role::kOwner, Tie::kAboutMe},
+    {Action::kManagePractice, Role::kOwner, Tie::kMyWard},
+    {Action::kManagePractice, Role::kOwner, Tie::kNone},
 };
 
 /// ЧТО ОТКРЫВАЕТ КАЖДЫЙ УРОВЕНЬ. Тоже написано заново: уровень, поехавший на

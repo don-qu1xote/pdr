@@ -23,7 +23,7 @@ PG_ENV = set -a; . ./$(ENV_FILE); set +a; \
 .PHONY: help up down test test-unit test-isolation test-jobs test-plans fmt fmt-check \
         comments comments-fix hooks logs migrate migrate-verify migrate-status schema-doc \
         product-events-lock product-events-export product-events-prune \
-        account-export ps check-env permissions-lock
+        account-export account-delete practice-queue ps check-env permissions-lock
 
 help:
 	@echo "Цели:"
@@ -48,6 +48,8 @@ help:
 	@echo "  make product-events-export OUT=<файл>   выгрузить продуктовый поток в CSV"
 	@echo "  make product-events-prune DAYS=<дней>   убрать записи старше срока"
 	@echo "  make account-export TENANT=<uuid> OUT=<файл>   полная выгрузка аккаунта"
+	@echo "  make account-delete TENANT=<uuid>              удалить практику целиком"
+	@echo "  make practice-queue                            кто ждёт разбора публикации"
 	@echo "  make ps          что сейчас запущено"
 	@echo
 	@echo "Уровни тестов и куда писать новый — docs/testing.md"
@@ -162,6 +164,26 @@ account-export: check-env
 	@$(PG_ENV) psql --no-psqlrc -v ON_ERROR_STOP=1 -qtA -v tenant=$(TENANT) \
 		-f db/account/export.sql > $(OUT)
 	@echo "выгружено: $(OUT), частей: $$(grep -c '": \[' $(OUT))"
+
+# Удаление практики целиком. Переезжать к нам будут ровно настолько охотно,
+# насколько легко уехать обратно, поэтому удаление есть с первого дня и делается
+# одной командой. Идёт под ролью миграций: удалять приходится и то, что роли
+# приложения не отдаётся (сессии, отпечатки ссылок, счётчики попыток).
+#
+# Выгрузку делают ДО этого: make account-export TENANT=... OUT=...
+account-delete: check-env
+	@test -n "$(TENANT)" || { \
+		echo "какую практику: make account-delete TENANT=<uuid>"; \
+		echo "сначала выгрузите: make account-export TENANT=<uuid> OUT=account.json"; \
+		exit 1; \
+	}
+	@$(PG_ENV) psql --no-psqlrc -v ON_ERROR_STOP=1 -qtA -v tenant=$(TENANT) \
+		-f db/account/delete.sql
+
+# Очередь на разбор публикации: кто попросил показывать себя в подборе. Общая
+# поверх всех практик, поэтому под ролью миграций, а не под ролью приложения.
+practice-queue: check-env
+	@$(PG_ENV) psql --no-psqlrc -v ON_ERROR_STOP=1 -qtA -f db/practice/queue.sql
 
 # Уборка по сроку жизни. Числа по умолчанию у цели нет намеренно: срок живёт в
 # PDR_PRODUCT_EVENTS.retention_days, и второго источника правды не заводится.

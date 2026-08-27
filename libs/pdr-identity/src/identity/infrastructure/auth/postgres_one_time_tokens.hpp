@@ -20,6 +20,10 @@ public:
     std::optional<OneTimeToken> Find(const core::TenantId& tenant,
                                      const Digest& secret) const override;
 
+    std::optional<OneTimeToken> LiveInvitationTo(const core::TenantId& tenant,
+                                                 const Digest& invited,
+                                                 core::Instant now) const override;
+
     void MarkUsed(const OneTimeToken& token) override;
 
 private:

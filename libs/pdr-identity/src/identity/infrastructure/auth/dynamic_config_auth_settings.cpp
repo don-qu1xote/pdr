@@ -25,6 +25,11 @@ const userver::dynamic_config::Key<LifetimesConfig> kAuthLifetimes{
         R"({"session_hours": 720, "invitation_hours": 168, "password_reset_minutes": 30})"},
 };
 
+const userver::dynamic_config::Key<SignupConfig> kSignupThrottle{
+    DynamicConfigAuthSettings::kSignupVariable,
+    userver::dynamic_config::DefaultAsJsonString{R"({"window_minutes": 60, "per_address": 5})"},
+};
+
 namespace {
 
 std::string Describe(const PasswordRulesConfig& value) {
@@ -37,6 +42,11 @@ std::string Describe(const PasswordRulesConfig& value) {
 std::string Describe(const ThrottleConfig& value) {
     return "window_minutes=" + std::to_string(value.window_minutes) +
            " per_account=" + std::to_string(value.per_account) +
+           " per_address=" + std::to_string(value.per_address);
+}
+
+std::string Describe(const SignupConfig& value) {
+    return "window_minutes=" + std::to_string(value.window_minutes) +
            " per_address=" + std::to_string(value.per_address);
 }
 
@@ -87,6 +97,12 @@ LifetimesConfig Parse(const userver::formats::json::Value& value,
                            value["password_reset_minutes"].As<std::uint32_t>()};
 }
 
+SignupConfig Parse(const userver::formats::json::Value& value,
+                   userver::formats::parse::To<SignupConfig>) {
+    return SignupConfig{value["window_minutes"].As<std::uint32_t>(),
+                        value["per_address"].As<std::uint32_t>()};
+}
+
 DynamicConfigAuthSettings::DynamicConfigAuthSettings(userver::dynamic_config::Source source)
     : source_{source},
       journal_{source_.UpdateAndListen(
@@ -100,6 +116,7 @@ void DynamicConfigAuthSettings::OnConfigUpdate(const userver::dynamic_config::Di
     Journal(kPasswordVariable, diff, kPasswordRules);
     Journal(kThrottleVariable, diff, kLoginThrottle);
     Journal(kLifetimesVariable, diff, kAuthLifetimes);
+    Journal(kSignupVariable, diff, kSignupThrottle);
 }
 
 core::Result<PasswordRules> DynamicConfigAuthSettings::Passwords() const {
@@ -116,6 +133,14 @@ core::Result<ThrottleLimits> DynamicConfigAuthSettings::Throttle() const {
                                        std::chrono::minutes{value.window_minutes}),
                                    value.per_account,
                                    value.per_address);
+}
+
+core::Result<SignupLimits> DynamicConfigAuthSettings::Signups() const {
+    const auto snapshot = source_.GetSnapshot();
+    const auto& value = snapshot[kSignupThrottle];
+    return SignupLimits::Compose(std::chrono::duration_cast<core::Instant::Duration>(
+                                     std::chrono::minutes{value.window_minutes}),
+                                 value.per_address);
 }
 
 core::Result<AuthLifetimes> DynamicConfigAuthSettings::Lifetimes() const {

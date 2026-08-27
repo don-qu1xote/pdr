@@ -48,6 +48,10 @@ std::string_view Name(Action action) noexcept {
             return "write_review";
         case Action::kManageAutoPayment:
             return "manage_auto_payment";
+        case Action::kInvitePeople:
+            return "invite_people";
+        case Action::kManagePractice:
+            return "manage_practice";
         case Action::kBoundary:
             return "boundary";
     }

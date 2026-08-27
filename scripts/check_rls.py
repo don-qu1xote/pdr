@@ -50,6 +50,34 @@ SET_CONFIG = re.compile(r"set_config\(\s*'([^']*)'\s*,\s*\$1\s*,\s*(true|false)\
 DISABLING = {"disable", "no force"}
 
 
+def _meta_columns_are_locked(table: str, place: str, definition) -> list[str]:
+    """Состав колонок мета-таблицы заперт списком.
+
+    Мета-таблица — единственное место, где строка пересекает границу
+    арендатора. Пока в ней лежат отпечаток и идентификатор, пересекать нечему;
+    новая колонка — это данные, которые видны всем практикам сразу, и заводить
+    её молча нельзя. Отсюда же берётся проверка «общего числа готовности вообще
+    не существует нигде»: такому числу пришлось бы завестись здесь.
+    """
+    allowed = model.META_TABLE_COLUMNS.get(table)
+    if allowed is None:
+        return [
+            f"{place}: таблица {table} объявлена мета-таблицей, а состав её колонок нигде "
+            f"не заперт. Допишите его в model.META_TABLE_COLUMNS — иначе в таблицу без "
+            f"построчной защиты однажды добавят колонку, видную всем арендаторам сразу"
+        ]
+
+    found = {column.name for column in definition.columns}
+    extra = sorted(found - allowed)
+    if extra:
+        return [
+            f"{place}: в мета-таблице {table} завелись колонки {', '.join(extra)}, которых "
+            f"нет в разрешённом составе. Эта таблица без построчной защиты: всё, что в ней "
+            f"лежит, видно всем практикам сразу"
+        ]
+    return []
+
+
 def _place(source: str, line: int) -> str:
     return f"{source}:{line}"
 
@@ -109,6 +137,7 @@ def check_migrations(migrations: Sequence[tuple[str, model.Migration]]) -> tuple
     checked = 0
     for table, (place, definition) in sorted(created.items()):
         if table in model.META_TABLES and not _has_tenant(definition):
+            violations.extend(_meta_columns_are_locked(table, place, definition))
             continue
         checked += 1
 
@@ -301,6 +330,13 @@ create table jobs_run (
     started_at timestamptz not null
 );
 """,
+    "V010__meta_grew.sql": """
+create table identity_account (
+    id           uuid     not null,
+    email_digest char(64) not null,
+    readiness    integer  not null
+);
+""",
 }
 
 SELFTEST_EXPECTED = {
@@ -311,6 +347,7 @@ SELFTEST_EXPECTED = {
     ("V006__disabled.sql", "выключают построчную защиту"),
     ("V007__typo.sql", "не заводит ни одна миграция"),
     ("V008__meta_with_tenant.sql", "без построчной защиты"),
+    ("V010__meta_grew.sql", "которых нет в разрешённом составе"),
 }
 
 

@@ -1,5 +1,6 @@
 #pragma once
 
+#include <optional>
 #include <utility>
 
 #include "core/errors.hpp"
@@ -22,16 +23,21 @@ namespace pdr::identity {
 /// человек взрослеет, и число, посчитанное при создании, врёт со следующего дня
 /// рождения. Спрашивают у момента: `person.AgeAt(clock.Now())`.
 ///
+/// ПОЧТЫ МОЖЕТ НЕ БЫТЬ, и это не краевой случай. Семилетнего ученика заводит
+/// родитель, и требовать для него отдельный почтовый ящик — значит заставить
+/// человека придумать ребёнку почту, которой ребёнок не пользуется. Учётная
+/// запись добавляется потом, когда понадобится, и это отдельное действие.
+///
 /// Сеттеров общего назначения нет: значение меняется целиком, новым значением.
 class Person final {
 public:
-    Person(core::PersonId id, Email mail, BirthDate born_on) noexcept
+    Person(core::PersonId id, std::optional<Email> mail, BirthDate born_on) noexcept
         : id_{std::move(id)}, mail_{std::move(mail)}, born_on_{born_on} {}
 
     const core::PersonId& Id() const noexcept {
         return id_;
     }
-    const Email& Mail() const noexcept {
+    const std::optional<Email>& Mail() const noexcept {
         return mail_;
     }
     const BirthDate& BornOn() const noexcept {
@@ -53,7 +59,7 @@ public:
 
 private:
     core::PersonId id_;
-    Email mail_;
+    std::optional<Email> mail_;
     BirthDate born_on_;
 };
 

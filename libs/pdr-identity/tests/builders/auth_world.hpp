@@ -13,6 +13,7 @@
 #include <utility>
 #include <vector>
 
+#include "identity/application/ports/accounts.hpp"
 #include "identity/application/ports/auth_settings.hpp"
 #include "identity/application/ports/credential_store.hpp"
 #include "identity/application/ports/digests.hpp"
@@ -20,7 +21,9 @@
 #include "identity/application/ports/one_time_tokens.hpp"
 #include "identity/application/ports/participant_directory.hpp"
 #include "identity/application/ports/password_hasher.hpp"
+#include "identity/application/ports/practices.hpp"
 #include "identity/application/ports/session_store.hpp"
+#include "identity/application/ports/signup_attempts.hpp"
 
 namespace pdr::identity::testing {
 
@@ -198,6 +201,21 @@ public:
         return *found;
     }
 
+    std::optional<OneTimeToken> LiveInvitationTo(const core::TenantId& tenant,
+                                                 const Digest& invited,
+                                                 core::Instant now) const override {
+        const auto found =
+            std::find_if(rows_.begin(), rows_.end(), [&](const OneTimeToken& stored) {
+                return stored.Tenant() == tenant && stored.Purpose() == TokenPurpose::kInvitation &&
+                       stored.Invited().has_value() && *stored.Invited() == invited &&
+                       stored.IsUsableAt(now);
+            });
+        if (found == rows_.end()) {
+            return std::nullopt;
+        }
+        return *found;
+    }
+
     void MarkUsed(const OneTimeToken& token) override {
         const auto found =
             std::find_if(rows_.begin(), rows_.end(), [&](const OneTimeToken& stored) {
@@ -208,8 +226,113 @@ public:
         }
     }
 
+    const std::vector<OneTimeToken>& Rows() const noexcept {
+        return rows_;
+    }
+
 private:
     std::vector<OneTimeToken> rows_;
+};
+
+/// Учётные записи в памяти. Одна на отпечаток почты — как в реестре.
+class FakeAccounts final : public ports::Accounts {
+public:
+    std::optional<Account> FindByMail(const Digest& mail) const override {
+        for (const auto& row : rows_) {
+            if (row.Mail() == mail) {
+                return row;
+            }
+        }
+        return std::nullopt;
+    }
+
+    std::optional<Account> FindById(const core::PersonId& id) const override {
+        for (const auto& row : rows_) {
+            if (row.Id() == id) {
+                return row;
+            }
+        }
+        return std::nullopt;
+    }
+
+    void Save(const Account& account) override {
+        for (auto& row : rows_) {
+            if (row.Id() == account.Id()) {
+                row = account;
+                return;
+            }
+        }
+        rows_.push_back(account);
+    }
+
+    const std::vector<Account>& Rows() const noexcept {
+        return rows_;
+    }
+
+private:
+    std::vector<Account> rows_;
+};
+
+/// Практики в памяти вместе со своей видимостью.
+class FakePractices final : public ports::Practices {
+public:
+    core::Result<void> Open(const Tenant& tenant,
+                            const core::TimeZone&,
+                            const Practice& practice) override {
+        for (const auto& row : rows_) {
+            if (row.Tenant() == tenant.Id()) {
+                return core::Error{core::ErrorKind::kConflict,
+                                   "practice_already_open",
+                                   "практика с таким идентификатором уже есть"};
+            }
+        }
+        names_.emplace(tenant.Id().ToString(), tenant.Name());
+        rows_.push_back(practice);
+        return {};
+    }
+
+    std::optional<Practice> Find(const core::TenantId& tenant) const override {
+        for (const auto& row : rows_) {
+            if (row.Tenant() == tenant) {
+                return row;
+            }
+        }
+        return std::nullopt;
+    }
+
+    void Save(const Practice& practice) override {
+        for (auto& row : rows_) {
+            if (row.Tenant() == practice.Tenant()) {
+                row = practice;
+                return;
+            }
+        }
+        rows_.push_back(practice);
+    }
+
+    const std::unordered_map<std::string, std::string>& Names() const noexcept {
+        return names_;
+    }
+
+private:
+    std::vector<Practice> rows_;
+    std::unordered_map<std::string, std::string> names_;
+};
+
+/// Счётчик заведений с одного адреса.
+class FakeSignups final : public ports::SignupAttempts {
+public:
+    std::optional<AttemptWindow> Window(const Digest& address) const override {
+        const auto found = rows_.find(address.Value());
+        return found == rows_.end() ? std::optional<AttemptWindow>{} : found->second;
+    }
+
+    void Save(const Digest& address, const AttemptWindow& window) override {
+        rows_.insert_or_assign(address.Value(), window);
+    }
+
+private:
+    std::unordered_map<std::string, AttemptWindow> rows_;
 };
 
 class FakeAttempts final : public ports::LoginAttempts {
@@ -257,16 +380,24 @@ public:
 
     core::Result<void> Enrol(const core::TenantId& tenant,
                              const ports::Enrolment& enrolment) override {
-        const auto key = tenant.ToString() + "|" + enrolment.person.Mail().Value();
-        if (!taken_.insert(key).second) {
-            return core::Error{core::ErrorKind::kConflict,
-                               "participant_email_taken",
-                               "эта почта в кабинете уже занята"};
+        if (enrolment.person.Mail().has_value()) {
+            const auto key = tenant.ToString() + "|" + enrolment.person.Mail()->Value();
+            if (!taken_.insert(key).second) {
+                return core::Error{core::ErrorKind::kConflict,
+                                   "participant_email_taken",
+                                   "эта почта в кабинете уже занята"};
+            }
+            people_.Register(tenant, enrolment.person.Id(), *enrolment.person.Mail());
         }
 
-        people_.Register(tenant, enrolment.person.Id(), enrolment.person.Mail());
         enrolled_.push_back(enrolment);
         return {};
+    }
+
+    /// Ребёнок без почты в списке есть, а найти его по адресу нельзя: адреса у
+    /// него нет вовсе.
+    bool Knows(const core::TenantId& tenant, const Email& mail) const override {
+        return taken_.count(tenant.ToString() + "|" + mail.Value()) != 0;
     }
 
     const std::vector<ports::Enrolment>& Enrolled() const noexcept {
@@ -294,6 +425,10 @@ public:
                   std::chrono::duration_cast<core::Instant::Duration>(std::chrono::hours{24}),
                   std::chrono::duration_cast<core::Instant::Duration>(std::chrono::hours{48}),
                   std::chrono::duration_cast<core::Instant::Duration>(std::chrono::minutes{30}))
+                  .Value()},
+          signups_{
+              SignupLimits::Compose(
+                  std::chrono::duration_cast<core::Instant::Duration>(std::chrono::hours{1}), 3)
                   .Value()} {}
 
     core::Result<PasswordRules> Passwords() const override {
@@ -305,6 +440,9 @@ public:
     core::Result<AuthLifetimes> Lifetimes() const override {
         return lifetimes_;
     }
+    core::Result<SignupLimits> Signups() const override {
+        return signups_;
+    }
 
     void SetThrottle(ThrottleLimits limits) {
         throttle_ = limits;
@@ -312,11 +450,15 @@ public:
     void SetLifetimes(AuthLifetimes lifetimes) {
         lifetimes_ = lifetimes;
     }
+    void SetSignups(SignupLimits limits) {
+        signups_ = limits;
+    }
 
 private:
     PasswordRules passwords_;
     ThrottleLimits throttle_;
     AuthLifetimes lifetimes_;
+    SignupLimits signups_;
 };
 
 }  // namespace pdr::identity::testing

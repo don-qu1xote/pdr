@@ -241,6 +241,10 @@ std::string_view Title(Action action) noexcept {
             return "Написать отзыв о репетиторе";
         case Action::kManageAutoPayment:
             return "Подключить списание с карты";
+        case Action::kInvitePeople:
+            return "Позвать людей в практику";
+        case Action::kManagePractice:
+            return "Распоряжаться практикой";
         case Action::kBoundary:
             return "";
     }

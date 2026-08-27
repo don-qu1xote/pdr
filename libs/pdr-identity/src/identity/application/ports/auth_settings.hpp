@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/errors.hpp"
+#include "identity/core/account.hpp"
 #include "identity/core/auth_lifetimes.hpp"
 #include "identity/core/login_throttle.hpp"
 #include "identity/core/password.hpp"
@@ -30,6 +31,9 @@ public:
     virtual core::Result<ThrottleLimits> Throttle() const = 0;
 
     virtual core::Result<AuthLifetimes> Lifetimes() const = 0;
+
+    /// Порог самостоятельных заведений с одного адреса.
+    virtual core::Result<SignupLimits> Signups() const = 0;
 
 protected:
     AuthSettings() = default;

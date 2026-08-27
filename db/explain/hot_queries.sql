@@ -45,6 +45,26 @@ select id, display_name
   from identity_person
  where email = '{email}';
 
+-- запрос: identity_account_by_mail
+-- откуда: identity::ports::Accounts::FindByMail — «этот человек уже есть на
+--         площадке?». Задаётся при каждом заведении практики, при каждом приходе
+--         по приглашению и при каждой самостоятельной регистрации. Реестр общий
+--         на всю площадку, и перебор здесь означает чтение всех записей системы
+-- индекс: identity_account_mail_unique
+select id, confirmed_at
+  from identity_account
+ where email_digest = '{digest}';
+
+-- запрос: identity_one_time_token_invited
+-- откуда: identity::ports::OneTimeTokens::LiveInvitationTo — «этому уже писали?».
+--         Задаётся по разу на каждую строку вставленного списка: двадцать
+--         вопросов на одну вставку, и без индекса это двадцать переборов
+-- индекс: identity_one_time_token_invited
+select id, expires_at
+  from identity_one_time_token
+ where invited_digest = '{invited}'
+   and used_at is null;
+
 -- запрос: identity_guardianship_active_pair
 -- откуда: identity::ports::GuardianshipRepository::FindActive
 -- индекс: identity_guardianship_by_student

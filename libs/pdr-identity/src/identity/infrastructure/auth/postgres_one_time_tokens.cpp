@@ -17,15 +17,25 @@ using infrastructure::db::Timestamptz;
 
 const userver::storages::postgres::Query kIssue{
     "INSERT INTO identity_one_time_token (tenant_id, id, purpose, token_hash, role, person_id, "
-    "created_at, expires_at) "
-    "VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::uuid, $7, $8)",
+    "invited_digest, created_at, expires_at) "
+    "VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::uuid, $7, $8, $9)",
     userver::storages::postgres::Query::Name{"identity_one_time_token_issue"},
 };
 
 const userver::storages::postgres::Query kFind{
-    "SELECT id, purpose, role, person_id, created_at, expires_at, used_at "
+    "SELECT id, purpose, role, person_id, invited_digest, created_at, expires_at, used_at "
     "FROM identity_one_time_token WHERE token_hash = $1",
     userver::storages::postgres::Query::Name{"identity_one_time_token_find"},
+};
+
+/// Кого уже позвали. Условия по арендатору в запросе нет: его добавляет
+/// построчная защита, и чужого приглашения этот вопрос не покажет.
+const userver::storages::postgres::Query kLiveInvitation{
+    "SELECT id, token_hash, role, created_at, expires_at "
+    "FROM identity_one_time_token "
+    "WHERE purpose = 'invitation' AND invited_digest = $1 AND used_at IS NULL "
+    "AND expires_at > $2 LIMIT 1",
+    userver::storages::postgres::Query::Name{"identity_one_time_token_live_invitation"},
 };
 
 /// Условие `used_at IS NULL` стоит в самом запросе, а не только в домене: две
@@ -54,6 +64,11 @@ void PostgresOneTimeTokens::Issue(const OneTimeToken& token) {
         person = token.Person()->ToString();
     }
 
+    std::optional<std::string> invited;
+    if (token.Invited().has_value()) {
+        invited = token.Invited()->Value();
+    }
+
     scope_.Session().Execute(kIssue,
                              token.Tenant().ToString(),
                              token.Id().ToString(),
@@ -61,6 +76,7 @@ void PostgresOneTimeTokens::Issue(const OneTimeToken& token) {
                              token.Secret().Value(),
                              role,
                              person,
+                             invited,
                              AsTimestamptz(token.CreatedAt()),
                              AsTimestamptz(token.ExpiresAt()));
 }
@@ -103,15 +119,55 @@ std::optional<OneTimeToken> PostgresOneTimeTokens::Find(const core::TenantId& te
         used = AsInstant(*stored_used);
     }
 
+    std::optional<Digest> invited;
+    const auto stored_invited = row["invited_digest"].As<std::optional<std::string>>();
+    if (stored_invited.has_value()) {
+        const auto parsed = Digest::Parse(*stored_invited);
+        if (!parsed) {
+            throw std::runtime_error{"identity_one_time_token.invited_digest не отпечаток"};
+        }
+        invited = parsed.Value();
+    }
+
     return OneTimeToken::Restore(*id,
                                  tenant,
                                  secret,
                                  *purpose,
                                  role,
                                  person,
+                                 invited,
                                  AsInstant(row["created_at"].As<Timestamptz>()),
                                  AsInstant(row["expires_at"].As<Timestamptz>()),
                                  used);
+}
+
+std::optional<OneTimeToken> PostgresOneTimeTokens::LiveInvitationTo(const core::TenantId& tenant,
+                                                                    const Digest& invited,
+                                                                    core::Instant now) const {
+    const auto result =
+        scope_.Session().Execute(kLiveInvitation, invited.Value(), AsTimestamptz(now));
+    if (result.IsEmpty()) {
+        return std::nullopt;
+    }
+
+    const auto row = result.Front();
+    const auto id = TokenId::Parse(row["id"].As<std::string>());
+    const auto secret = Digest::Parse(row["token_hash"].As<std::string>());
+    const auto role = ParseRole(row["role"].As<std::string>());
+    if (!id.has_value() || !secret || !role.has_value()) {
+        throw std::runtime_error{"identity_one_time_token: строка приглашения не разбирается"};
+    }
+
+    return OneTimeToken::Restore(*id,
+                                 tenant,
+                                 secret.Value(),
+                                 TokenPurpose::kInvitation,
+                                 role,
+                                 std::nullopt,
+                                 invited,
+                                 AsInstant(row["created_at"].As<Timestamptz>()),
+                                 AsInstant(row["expires_at"].As<Timestamptz>()),
+                                 std::nullopt);
 }
 
 void PostgresOneTimeTokens::MarkUsed(const OneTimeToken& token) {

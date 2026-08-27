@@ -42,6 +42,7 @@ protected:
                                 digests_,
                                 hasher_,
                                 tokens_,
+                                accounts_,
                                 directory_,
                                 credentials_,
                                 sessions_,
@@ -55,6 +56,7 @@ protected:
             kTenant, secret, "Ученик Петров", mail_, born_, zone_, std::string{kPassword}, seen_};
     }
 
+    testing::FakeAccounts accounts_;
     testing::FakeDigests digests_;
     testing::FakeHasher hasher_;
     testing::FakeCredentials credentials_;
@@ -73,7 +75,7 @@ protected:
 };
 
 TEST_F(InvitationTest, TutorInvitesAndTheStudentComesIn) {
-    const auto issued = Inviting().Execute(kTenant, Role::kStudent);
+    const auto issued = Inviting().Execute(kTenant, Role::kStudent, std::nullopt);
     ASSERT_TRUE(issued.HasValue()) << issued.Failure().Code();
     EXPECT_EQ(issued.Value().token.InvitedAs(), Role::kStudent);
 
@@ -81,7 +83,7 @@ TEST_F(InvitationTest, TutorInvitesAndTheStudentComesIn) {
     ASSERT_TRUE(opened.HasValue()) << opened.Failure().Code();
 
     ASSERT_EQ(directory_.Enrolled().size(), 1U);
-    EXPECT_EQ(directory_.Enrolled().front().role, Role::kStudent);
+    EXPECT_TRUE(directory_.Enrolled().front().roles.Has(Role::kStudent));
     EXPECT_EQ(directory_.Enrolled().front().person.Mail(), mail_);
     EXPECT_EQ(directory_.Enrolled().front().display_name, "Ученик Петров");
 
@@ -91,7 +93,7 @@ TEST_F(InvitationTest, TutorInvitesAndTheStudentComesIn) {
 }
 
 TEST_F(InvitationTest, TheStudentCanThenSignInWithThatPassword) {
-    const auto issued = Inviting().Execute(kTenant, Role::kStudent);
+    const auto issued = Inviting().Execute(kTenant, Role::kStudent, std::nullopt);
     ASSERT_TRUE(Accepting().Execute(Coming(issued.Value().secret)).HasValue());
 
     const SignIn entering{
@@ -103,7 +105,7 @@ TEST_F(InvitationTest, TheStudentCanThenSignInWithThatPassword) {
 }
 
 TEST_F(InvitationTest, ForwardedLinkDoesNotLetTheSecondIn) {
-    const auto issued = Inviting().Execute(kTenant, Role::kStudent);
+    const auto issued = Inviting().Execute(kTenant, Role::kStudent, std::nullopt);
     ASSERT_TRUE(Accepting().Execute(Coming(issued.Value().secret)).HasValue());
 
     const auto second = Accepting().Execute(Coming(issued.Value().secret));
@@ -114,7 +116,7 @@ TEST_F(InvitationTest, ForwardedLinkDoesNotLetTheSecondIn) {
 }
 
 TEST_F(InvitationTest, AnInvitationThatSatTooLongIsRefused) {
-    const auto issued = Inviting().Execute(kTenant, Role::kStudent);
+    const auto issued = Inviting().Execute(kTenant, Role::kStudent, std::nullopt);
     ASSERT_TRUE(issued.HasValue());
 
     clock_.Advance(settings_.Lifetimes().Value().Invitation());
@@ -136,10 +138,10 @@ TEST_F(InvitationTest, ALinkNobodyIssuedIsUnknown) {
 }
 
 TEST_F(InvitationTest, ATakenMailStopsTheEnrolmentAndKeepsTheLinkAlive) {
-    const auto first = Inviting().Execute(kTenant, Role::kStudent);
+    const auto first = Inviting().Execute(kTenant, Role::kStudent, std::nullopt);
     ASSERT_TRUE(Accepting().Execute(Coming(first.Value().secret)).HasValue());
 
-    const auto second = Inviting().Execute(kTenant, Role::kStudent);
+    const auto second = Inviting().Execute(kTenant, Role::kStudent, std::nullopt);
     const auto refused = Accepting().Execute(Coming(second.Value().secret));
 
     ASSERT_FALSE(refused.HasValue());
@@ -161,7 +163,7 @@ TEST_F(InvitationTest, ResetLinkGoesOnlyToSomeoneWhoExists) {
 }
 
 TEST_F(InvitationTest, ResettingThePasswordRevokesEverySession) {
-    const auto issued = Inviting().Execute(kTenant, Role::kStudent);
+    const auto issued = Inviting().Execute(kTenant, Role::kStudent, std::nullopt);
     const auto first = Accepting().Execute(Coming(issued.Value().secret));
     ASSERT_TRUE(first.HasValue());
 
@@ -185,7 +187,7 @@ TEST_F(InvitationTest, ResettingThePasswordRevokesEverySession) {
 }
 
 TEST_F(InvitationTest, ResetLinkDiesQuickly) {
-    const auto issued = Inviting().Execute(kTenant, Role::kStudent);
+    const auto issued = Inviting().Execute(kTenant, Role::kStudent, std::nullopt);
     ASSERT_TRUE(Accepting().Execute(Coming(issued.Value().secret)).HasValue());
 
     const RequestPasswordReset asking{
@@ -207,7 +209,7 @@ TEST_F(InvitationTest, ResetLinkDiesQuickly) {
 /// Приглашение и сброс — один механизм, но не одна ссылка: приглашением нельзя
 /// сбросить пароль, а ссылкой сброса — завести человека.
 TEST_F(InvitationTest, OneKindOfLinkDoesNotOpenTheOtherDoor) {
-    const auto invitation = Inviting().Execute(kTenant, Role::kStudent);
+    const auto invitation = Inviting().Execute(kTenant, Role::kStudent, std::nullopt);
     ASSERT_TRUE(invitation.HasValue());
 
     const ResetPassword resetting{

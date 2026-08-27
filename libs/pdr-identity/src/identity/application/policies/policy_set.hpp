@@ -10,6 +10,7 @@
 #include "identity/application/policies/journal_policy.hpp"
 #include "identity/application/policies/media_policy.hpp"
 #include "identity/application/policies/policy.hpp"
+#include "identity/application/policies/practice_policy.hpp"
 #include "identity/application/policies/progress_policy.hpp"
 #include "identity/application/policies/review_policy.hpp"
 #include "identity/application/policies/scheduling_policy.hpp"
@@ -56,6 +57,7 @@ private:
     JournalPolicy journal_;
     ConsentPolicy consents_;
     ReviewPolicy reviews_;
+    PracticePolicy practice_;
 
     std::array<const Policy*, static_cast<std::size_t>(Action::kBoundary)> table_{};
     const ports::ConfigurationFaults& faults_;

@@ -46,6 +46,8 @@ SUBSTITUTIONS = {
     "person": "0e0e0e0e-0001-4000-8000-000000007042",
     "guardian": "0e0e0e0e-0001-4000-8000-000000007041",
     "email": "person-7-42@example.test",
+    "digest": "1cf26a8a42129f6ff07b6b8f4c1526bab83a886a5c437ccd9ac15473fd6f1788",
+    "invited": "a2496a6e01ffdd1acb84e6b15ee2afc8b83a886a5c437ccd9ac15473fd6f1788",
     "session": "0e0e0e0e-0006-4000-8000-000000007042",
     "token": "e8c38699bcf7891a10c3c3ad1a56673b94a08da1fecbb6e8b46990538c7b50b2",
     "job": "pdr-plans-reminders",

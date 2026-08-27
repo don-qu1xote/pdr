@@ -6,6 +6,7 @@
 #include "core/errors.hpp"
 #include "core/types/ids.hpp"
 #include "core/types/time.hpp"
+#include "identity/core/email.hpp"
 #include "identity/core/membership.hpp"
 #include "identity/core/person.hpp"
 
@@ -20,7 +21,11 @@ namespace pdr::identity::ports {
 /// рядом, и видно, что это данные строки, а не правила предметной области.
 struct Enrolment final {
     Person person;
-    Role role;
+    /// Ролей может быть несколько сразу: репетитор-одиночка заводит практику и
+    /// оказывается в ней и владельцем, и репетитором. Двумя вызовами это
+    /// означало бы состояние «наполовину заведён» ровно в тот момент, когда
+    /// сеть моргнула.
+    RoleSet roles;
     std::string display_name;
     core::TimeZone zone;
 };
@@ -41,6 +46,14 @@ public:
     /// арендаторе. Проверять её заранее отдельным вопросом незачем — ответ на
     /// такой вопрос сообщает постороннему, кто у нас учится.
     virtual core::Result<void> Enrol(const core::TenantId& tenant, const Enrolment& enrolment) = 0;
+
+    /// Есть ли уже в этой практике человек с таким адресом.
+    ///
+    /// Спрашивается ТОЛЬКО предпросмотром списка приглашений, где отвечать
+    /// нужно заранее и про свою же практику. Открытого «а есть ли у вас
+    /// такой-то» из этого не получается: вопрос задаётся внутри арендатора,
+    /// и чужого он не покажет.
+    virtual bool Knows(const core::TenantId& tenant, const Email& mail) const = 0;
 
 protected:
     ParticipantDirectory() = default;

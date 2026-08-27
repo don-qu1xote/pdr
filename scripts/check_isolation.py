@@ -18,6 +18,16 @@ scripts/check_rls.py читает миграции и отвечает на во
 
     make test-isolation
     make test-isolation ENV_PROFILE=ci
+
+PEOPLE_PER_TENANT — сколько человек засев заводит в каждом арендаторе: опекун,
+ученик и Маша, которая учится в обоих. Число названо, а не вписано в каждый
+случай: иначе засев с новым человеком роняет половину проверок числом вместо
+смысла.
+
+SHARED_STUDENT — один и тот же идентификатор в двух арендаторах. Так и бывает:
+математику ученик учит у одного репетитора, английский у другого, и человек это
+один (ADR-0019). Отсюда самый узкий случай изоляции — запрос «по человеку» без
+границы арендатора нашёл бы обе практики сразу.
 """
 
 from __future__ import annotations
@@ -32,6 +42,8 @@ from typing import Sequence
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import migration_model as model  # noqa: E402  (после правки sys.path)
+
+PEOPLE_PER_TENANT = 3
 
 APP_ROLE = "pdr_app"
 PARAMETER = "pdr.tenant_id"
@@ -50,6 +62,9 @@ LOG_A = "0a0a0a0a-0000-4000-8000-00000000f001"
 LOG_B = "0b0b0b0b-0000-4000-8000-00000000f002"
 CONSENT_A = "0a0a0a0a-0000-4000-8000-000000007001"
 CONSENT_B = "0b0b0b0b-0000-4000-8000-000000007002"
+
+SHARED_STUDENT = "0c0c0c0c-0000-4000-8000-000000008001"
+SHARED_ACCOUNT_DIGEST = "c" * 64
 SESSION_A = "0a0a0a0a-0000-4000-8000-000000005001"
 SESSION_B = "0b0b0b0b-0000-4000-8000-000000005002"
 TOKEN_A = "0a0a0a0a-0000-4000-8000-000000006001"
@@ -150,6 +165,11 @@ insert into identity_role_assignment (tenant_id, id, person_id, role) values
 insert into identity_guardianship (tenant_id, id, guardian_id, student_id) values
     ('{TENANT_A}', '{LINK_A}', '{GUARDIAN_A}', '{STUDENT_A}'),
     ('{TENANT_B}', '{LINK_B}', '{GUARDIAN_B}', '{STUDENT_B}');
+insert into identity_person (tenant_id, id, display_name, email, tz) values
+    ('{TENANT_A}', '{SHARED_STUDENT}', 'Маша', 'masha-a@example.test', 'Europe/Moscow'),
+    ('{TENANT_B}', '{SHARED_STUDENT}', 'Маша', 'masha-b@example.test', 'Asia/Tbilisi');
+insert into identity_account (id, email_digest, confirmed_at) values
+    ('{SHARED_STUDENT}', '{SHARED_ACCOUNT_DIGEST}', now());
 insert into identity_guardian_consent
     (tenant_id, id, guardian_id, student_id, scope, granted_by) values
     ('{TENANT_A}', '{CONSENT_A}', '{GUARDIAN_A}', '{STUDENT_A}', 'recordings', '{STUDENT_A}'),
@@ -192,6 +212,7 @@ delete from identity_guardianship where tenant_id in {tenants};
 delete from identity_role_assignment where tenant_id in {tenants};
 delete from identity_person where tenant_id in {tenants};
 delete from identity_tenant where tenant_id in {tenants};
+delete from identity_account where id = '{SHARED_STUDENT}';
 """)
 
 
@@ -295,9 +316,10 @@ select (select count(*) from identity_person p
     problems = []
     if joined != 1:
         problems.append(f"джойн под арендатором А вернул {joined} строк вместо 1")
-    if product != 2:
+    if product != PEOPLE_PER_TENANT:
         problems.append(
-            f"произведение person × tenant под арендатором А вернуло {product} строк вместо 2"
+            f"произведение person × tenant под арендатором А вернуло {product} строк вместо "
+            f"{PEOPLE_PER_TENANT}"
         )
     return problems
 
@@ -357,10 +379,10 @@ select 'после отката', coalesce(nullif(current_setting('{PARAMETER}',
                 f"{label} арендатор ({tenant}) видит {total - own} чужих строк: "
                 f"объявление не работает вовсе"
             )
-        if own != 2:
+        if own != PEOPLE_PER_TENANT:
             problems.append(
-                f"{label} арендатор ({tenant}) видит {own} своих строк вместо 2: "
-                f"засев не тот, случай ничего не доказывает"
+                f"{label} арендатор ({tenant}) видит {own} своих строк вместо "
+                f"{PEOPLE_PER_TENANT}: засев не тот, случай ничего не доказывает"
             )
 
     for label, ended in (("между", "фиксации"), ("после отката", "отката")):
@@ -580,6 +602,59 @@ select count(*) from identity_guardian_consent
     return problems
 
 
+def one_person_in_two_practices_stays_two_rows(database: Database) -> list[str]:
+    """САМЫЙ УЗКИЙ СЛУЧАЙ: один и тот же человек у двух репетиторов.
+
+    Идентификатор у него один — иначе «тот же самый ученик» не выразить, — и
+    ровно поэтому запрос «по человеку» без границы арендатора нашёл бы обе
+    практики. Здесь проверяется, что не находит: репетитор по математике не
+    видит ни строки ученицы из другой практики, ни того, что вторая практика
+    вообще есть.
+
+    Реестр учётных записей при этом виден обоим и должен быть виден: он и
+    отвечает на вопрос «этот человек уже есть?». Отвечает он ровно отпечатком
+    почты и идентификатором — ни имени, ни адреса, ни того, чей он ученик.
+    """
+    problems = []
+
+    both = database.owner(f"select count(*) from identity_person where id = '{SHARED_STUDENT}';")
+    if int(both[0][0]) != 2:
+        problems.append("засев не завёл одного человека в двух практиках: проверять нечего")
+
+    mine = database.app(
+        f"select count(*) from identity_person where id = '{SHARED_STUDENT}';", TENANT_A
+    )
+    if int(mine[0][0]) != 1:
+        problems.append(
+            f"под арендатором А по идентификатору ученицы видно {mine[0][0]} строк вместо одной: "
+            f"репетитор узнал о занятиях у другого"
+        )
+
+    theirs = database.app(
+        f"select count(*) from identity_person "
+        f"where id = '{SHARED_STUDENT}' and email = 'masha-b@example.test';",
+        TENANT_A,
+    )
+    if int(theirs[0][0]) != 0:
+        problems.append("почта ученицы из чужой практики видна по её идентификатору")
+
+    named = database.app(
+        f"select count(*) from identity_tenant where tenant_id = '{TENANT_B}';", TENANT_A
+    )
+    if int(named[0][0]) != 0:
+        problems.append("чужая практика видна по прямому обращению: имя коллеги узнаётся так")
+
+    registry = database.app(
+        f"select count(*) from identity_account where id = '{SHARED_STUDENT}';", TENANT_A
+    )
+    if int(registry[0][0]) != 1:
+        problems.append(
+            "реестр учётных записей не отвечает под арендатором: «этот человек уже есть?» "
+            "спросить будет нечем, и у ученицы заведётся второй идентификатор"
+        )
+    return problems
+
+
 def protection_cannot_be_switched_off(database: Database) -> list[str]:
     """Роль приложения не может ни снять защиту, ни заглянуть в реестр миграций."""
     problems = []
@@ -615,6 +690,8 @@ CASES = (
     ("чужая сессия не находится по идентификатору", a_foreign_session_is_not_found_by_its_identifier),
     ("отозванный доступ оставляет след", a_revoked_access_leaves_a_trace),
     ("отозванное согласие остаётся строкой", a_revoked_consent_cannot_be_deleted),
+    ("ГЛАВНЫЙ ДЛЯ ДВУХ РЕПЕТИТОРОВ: один человек — две практики, и они не видят друг друга",
+     one_person_in_two_practices_stays_two_rows),
     ("защиту не выключить из-под приложения", protection_cannot_be_switched_off),
 )
 

@@ -30,6 +30,7 @@ OneTimeToken Invitation(core::Instant at, std::chrono::hours lifetime = 48h) {
                                     Numbered<core::TenantId>(1),
                                     SomeSecret(),
                                     Role::kStudent,
+                                    std::nullopt,
                                     at,
                                     Of(lifetime))
         .Value();
@@ -98,6 +99,7 @@ TEST(OneTimeToken, LifetimeThatIsAlreadyOverIsRefused) {
                                                   Numbered<core::TenantId>(1),
                                                   SomeSecret(),
                                                   Role::kStudent,
+                                                  std::nullopt,
                                                   testing::FakeClock::DefaultStart(),
                                                   core::Instant::Duration::zero());
 

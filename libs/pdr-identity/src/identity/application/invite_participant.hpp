@@ -1,5 +1,7 @@
 #pragma once
 
+#include <optional>
+
 #include "application/ports/clock.hpp"
 #include "application/ports/id_generator.hpp"
 #include "application/ports/secret_generator.hpp"
@@ -8,6 +10,7 @@
 #include "identity/application/ports/auth_settings.hpp"
 #include "identity/application/ports/digests.hpp"
 #include "identity/application/ports/one_time_tokens.hpp"
+#include "identity/core/email.hpp"
 #include "identity/core/membership.hpp"
 #include "identity/core/one_time_token.hpp"
 
@@ -30,6 +33,11 @@ struct IssuedInvitation final {
 /// КТО ВПРАВЕ ПРИГЛАШАТЬ — здесь не решается. Это вопрос прав, и отвечает на
 /// него PDR-IDENT-03; смешивать «кто это» и «что ему позволено» в одном
 /// сценарии — верный способ получить проверку прав в половине мест.
+///
+/// ВТОРОГО ПИСЬМА НА ТОТ ЖЕ АДРЕС НЕ БУДЕТ. Пока прежнее приглашение живо,
+/// повторная попытка — отказ, а не молчаливая выдача новой ссылки: человек,
+/// получивший два приглашения от одного репетитора, решает, что первое не
+/// сработало, открывает оба, и второе гасит первое.
 class InviteParticipant final {
 public:
     InviteParticipant(const ports::AuthSettings& settings,
@@ -39,7 +47,11 @@ public:
                       const application::ports::SecretGenerator& secrets,
                       const application::ports::Clock& clock) noexcept;
 
-    core::Result<IssuedInvitation> Execute(const core::TenantId& tenant, Role role) const;
+    /// Позвать по адресу. Адреса может не быть — тогда получается ссылка
+    /// «для кого угодно», и повторов по ней не считают: считать нечего.
+    core::Result<IssuedInvitation> Execute(const core::TenantId& tenant,
+                                           Role role,
+                                           const std::optional<Email>& to) const;
 
 private:
     const ports::AuthSettings& settings_;

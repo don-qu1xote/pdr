@@ -49,6 +49,9 @@ enum class Action : std::uint8_t {
     kWriteReview,
     kManageAutoPayment,
 
+    kInvitePeople,
+    kManagePractice,
+
     /// ГРАНИЦА СПИСКА, а не действие.
     ///
     /// Она здесь ради одной проверки: `kEveryAction` обязан содержать ровно
@@ -64,7 +67,7 @@ std::string_view Name(Action action) noexcept;
 std::optional<Action> ParseAction(std::string_view text);
 
 /// Все действия подряд. Единственный способ обойти реестр целиком.
-inline constexpr std::array<Action, 22> kEveryAction{
+inline constexpr std::array<Action, 24> kEveryAction{
     Action::kBookLesson,          Action::kCancelLesson,
     Action::kRescheduleLesson,    Action::kViewSchedule,
     Action::kViewInvoice,         Action::kPayInvoice,
@@ -76,6 +79,7 @@ inline constexpr std::array<Action, 22> kEveryAction{
     Action::kViewLessonRecording, Action::kViewLessonTranscript,
     Action::kViewAccessJournal,   Action::kManageGuardianAccess,
     Action::kWriteReview,         Action::kManageAutoPayment,
+    Action::kInvitePeople,        Action::kManagePractice,
 };
 
 static_assert(kEveryAction.size() == static_cast<std::size_t>(Action::kBoundary),

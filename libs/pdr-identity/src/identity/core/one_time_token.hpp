@@ -67,6 +67,7 @@ public:
                                                  core::TenantId tenant,
                                                  Digest secret,
                                                  Role role,
+                                                 std::optional<Digest> invited,
                                                  core::Instant at,
                                                  core::Instant::Duration lifetime);
 
@@ -84,6 +85,7 @@ public:
                                 TokenPurpose purpose,
                                 std::optional<Role> role,
                                 std::optional<core::PersonId> person,
+                                std::optional<Digest> invited,
                                 core::Instant created_at,
                                 core::Instant expires_at,
                                 std::optional<core::Instant> used_at);
@@ -107,6 +109,18 @@ public:
     /// Кому меняют пароль. Есть только у сброса.
     const std::optional<core::PersonId>& Person() const noexcept {
         return person_;
+    }
+    /// Отпечаток адреса, на который выдано приглашение.
+    ///
+    /// Отпечаток, а не адрес: строка приглашения живёт неделю и всё это время
+    /// хранит, кого позвали. Отпечатка хватает, чтобы не послать второго
+    /// письма тому же человеку, и не хватает, чтобы прочитать список учеников
+    /// из дампа.
+    ///
+    /// Пусто у приглашений, выданных ссылкой «позвать кого угодно», и у
+    /// сбросов пароля.
+    const std::optional<Digest>& Invited() const noexcept {
+        return invited_;
     }
     core::Instant CreatedAt() const noexcept {
         return created_at_;
@@ -133,6 +147,7 @@ private:
                  TokenPurpose purpose,
                  std::optional<Role> role,
                  std::optional<core::PersonId> person,
+                 std::optional<Digest> invited,
                  core::Instant created_at,
                  core::Instant expires_at,
                  std::optional<core::Instant> used_at) noexcept
@@ -142,6 +157,7 @@ private:
           purpose_{purpose},
           role_{role},
           person_{std::move(person)},
+          invited_{std::move(invited)},
           created_at_{created_at},
           expires_at_{expires_at},
           used_at_{used_at} {}
@@ -152,6 +168,7 @@ private:
     TokenPurpose purpose_;
     std::optional<Role> role_;
     std::optional<core::PersonId> person_;
+    std::optional<Digest> invited_;
     core::Instant created_at_;
     core::Instant expires_at_;
     std::optional<core::Instant> used_at_;

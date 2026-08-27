@@ -33,6 +33,11 @@ struct ThrottleConfig final {
     std::uint32_t per_address{};
 };
 
+struct SignupConfig final {
+    std::uint32_t window_minutes{};
+    std::uint32_t per_address{};
+};
+
 struct LifetimesConfig final {
     std::uint32_t session_hours{};
     std::uint32_t invitation_hours{};
@@ -46,6 +51,7 @@ struct LifetimesConfig final {
 extern const userver::dynamic_config::Key<PasswordRulesConfig> kPasswordRules;
 extern const userver::dynamic_config::Key<ThrottleConfig> kLoginThrottle;
 extern const userver::dynamic_config::Key<LifetimesConfig> kAuthLifetimes;
+extern const userver::dynamic_config::Key<SignupConfig> kSignupThrottle;
 
 /// Найдены по ADL из `pdr::identity`, как того требует userver.
 PasswordRulesConfig Parse(const userver::formats::json::Value& value,
@@ -54,6 +60,8 @@ ThrottleConfig Parse(const userver::formats::json::Value& value,
                      userver::formats::parse::To<ThrottleConfig>);
 LifetimesConfig Parse(const userver::formats::json::Value& value,
                       userver::formats::parse::To<LifetimesConfig>);
+SignupConfig Parse(const userver::formats::json::Value& value,
+                   userver::formats::parse::To<SignupConfig>);
 
 /// Настройки входа из динамического конфига.
 ///
@@ -66,6 +74,7 @@ public:
     static constexpr std::string_view kPasswordVariable = "PDR_SIGN_IN_RULES";
     static constexpr std::string_view kThrottleVariable = "PDR_LOGIN_THROTTLE";
     static constexpr std::string_view kLifetimesVariable = "PDR_AUTH_LIFETIMES";
+    static constexpr std::string_view kSignupVariable = "PDR_SIGNUP_THROTTLE";
 
     explicit DynamicConfigAuthSettings(userver::dynamic_config::Source source);
 
@@ -76,6 +85,8 @@ public:
     core::Result<ThrottleLimits> Throttle() const override;
 
     core::Result<AuthLifetimes> Lifetimes() const override;
+
+    core::Result<SignupLimits> Signups() const override;
 
 private:
     /// Журнал «было → стало». Значения самих паролей в нём нет и не будет —

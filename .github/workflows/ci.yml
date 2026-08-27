@@ -435,7 +435,7 @@ jobs:
       - name: Полная выгрузка аккаунта
         run: |
           set -eu
-          tenant=0e0e0e0e-0000-4000-8000-000000000007
+          tenant=0d0d0d0d-0000-4000-8000-000000000007
           make account-export ENV_PROFILE=ci TENANT="$tenant" OUT=/tmp/account.json
           python3 - "$tenant" <<'PY'
           import json
