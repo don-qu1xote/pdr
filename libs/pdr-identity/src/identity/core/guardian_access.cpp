@@ -3,31 +3,16 @@
 #include "identity/core/age_status.hpp"
 
 namespace pdr::identity {
-namespace {
 
-/// Возрастной порог ниже шести лет означает, что «взрослым» становится
-/// первоклассник; выше двадцати одного — что взрослый самостоятельный ученик
-/// годами не может решать за себя. Те же пределы стоят в схеме реестра, здесь
-/// они на случай, когда значение пришло мимо неё.
-constexpr int kLeastThreshold = 6;
-constexpr int kMostThreshold = 21;
-
-}  // namespace
-
-core::Result<MaturityRule> MaturityRule::Compose(int threshold_years,
+core::Result<MaturityRule> MaturityRule::Compose(AgeThresholds thresholds,
                                                  core::Instant::Duration grace) {
-    if (threshold_years < kLeastThreshold || threshold_years > kMostThreshold) {
-        return core::Error{core::ErrorKind::kValidation,
-                           "maturity_threshold_out_of_range",
-                           "порог самостоятельности вне разумного возраста"};
-    }
     if (grace <= core::Instant::Duration::zero()) {
         return core::Error{core::ErrorKind::kValidation,
                            "maturity_grace_not_positive",
                            "окно нулевой длины — это мгновенный обрыв доступа"};
     }
 
-    return MaturityRule{threshold_years, grace};
+    return MaturityRule{thresholds, grace};
 }
 
 GuardianAccess WeighConsents(std::span<const GuardianConsent> consents,
@@ -44,14 +29,12 @@ GuardianAccess WeighConsents(std::span<const GuardianConsent> consents,
         }
 
         const auto scope = consent.Scope();
-        const bool student_already_spoke = consent.GrantedByStudent();
-        if (!NeedsStudentWordWhenGrown(scope) || student_already_spoke ||
-            !student_born_on.has_value()) {
+        if (consent.GrantedByStudent() || !student_born_on.has_value()) {
             open = open.With(scope);
             continue;
         }
 
-        const auto grown_at = AgeStatus::TurnsAt(*student_born_on, rule.ThresholdYears());
+        const auto grown_at = AgeStatus::TurnsAt(*student_born_on, rule.ThresholdYears(scope));
         if (now < grown_at) {
             open = open.With(scope);
             continue;

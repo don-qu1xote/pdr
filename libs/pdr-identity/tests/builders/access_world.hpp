@@ -127,8 +127,9 @@ private:
 /// Правило совершеннолетия, которое можно двигать прямо в тесте.
 class FakeMaturity final : public ports::MaturitySettings {
 public:
+    /// Умолчания реестра: 14, 16, 18 и месяц на решение.
     FakeMaturity()
-        : rule_{MaturityRule::Compose(14,
+        : rule_{MaturityRule::Compose(AgeThresholds::Compose(14, 16, 18).Value(),
                                       std::chrono::duration_cast<core::Instant::Duration>(
                                           std::chrono::hours{24 * 30}))
                     .Value()} {}
@@ -196,6 +197,17 @@ public:
             }
         }
         return std::nullopt;
+    }
+
+    std::vector<core::PersonId> GuardiansOf(const core::TenantId& tenant,
+                                            const core::PersonId& student) const override {
+        std::vector<core::PersonId> found;
+        for (const auto& row : rows_) {
+            if (row.Tenant() == tenant && row.Student() == student && row.IsActive()) {
+                found.push_back(row.Guardian());
+            }
+        }
+        return found;
     }
 
     void Save(const Guardianship& guardianship) override {

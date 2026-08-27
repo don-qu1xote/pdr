@@ -6,6 +6,7 @@
 
 #include "core/types/ids.hpp"
 #include "identity/contract.hpp"
+#include "identity/core/capabilities.hpp"
 #include "identity/core/guardian_access.hpp"
 #include "identity/core/membership.hpp"
 
@@ -48,14 +49,24 @@ public:
             core::PersonId person,
             RoleSet roles,
             Tie tie,
-            GuardianAccess access) noexcept
+            GuardianAccess access,
+            Capabilities able) noexcept
         : tenant_{std::move(tenant)},
           person_{std::move(person)},
           roles_{roles},
           tie_{tie},
-          access_{access} {}
+          access_{access},
+          able_{able} {}
 
-    /// Без опекунских уровней — то есть без единого.
+    /// Без собственных возможностей — то есть с возможностями младенца.
+    Subject(core::TenantId tenant,
+            core::PersonId person,
+            RoleSet roles,
+            Tie tie,
+            GuardianAccess access) noexcept
+        : Subject{std::move(tenant), std::move(person), roles, tie, access, Capabilities{}} {}
+
+    /// Без опекунских уровней и без своих возможностей — то есть без единого.
     ///
     /// Умолчание здесь ЗАПРЕТ, а не «всё открыто»: субъект, собранный
     /// невнимательно, обязан получать отказ, а не чужую запись занятия.
@@ -86,12 +97,22 @@ public:
         return access_;
     }
 
+    /// Что он может САМ — по возрасту, а не по выданному праву.
+    ///
+    /// Считается до политики из даты рождения и порогов конфига
+    /// (`identity::Compute`). Хранимого поля за этим нет и быть не может: оно
+    /// устарело бы в полночь дня рождения, а права приходят сами.
+    const Capabilities& Able() const noexcept {
+        return able_;
+    }
+
 private:
     core::TenantId tenant_;
     core::PersonId person_;
     RoleSet roles_;
     Tie tie_;
     GuardianAccess access_;
+    Capabilities able_;
 };
 
 /// Кем человек приходится ресурсу. ЕДИНСТВЕННОЕ МЕСТО, где это считается.

@@ -32,6 +32,14 @@ public:
         return active_;
     }
 
+    std::vector<core::PersonId> GuardiansOf(const core::TenantId&,
+                                            const core::PersonId&) const override {
+        if (!active_.has_value()) {
+            return {};
+        }
+        return {active_->Guardian()};
+    }
+
     void Save(const Guardianship& guardianship) override {
         saved_.push_back(guardianship);
         if (!guardianship.IsActive()) {

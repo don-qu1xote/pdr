@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "identity/application/policies/subject.hpp"
+#include "identity/core/guardian_access.hpp"
 #include "identity/core/guardian_scope.hpp"
 
 namespace pdr::identity::policies {
@@ -40,20 +41,90 @@ core::PersonId Someone() {
     return core::PersonId::FromBytes(bytes);
 }
 
-/// Что разрешено этой роли на это действие. Отношения перебираются все подряд:
-/// клетка обязана говорить не «да», а «да, но только своё».
-/// Субъект для опроса: одна роль, одно отношение, названные уровни опекуна.
-Subject Asking(Role role, Tie tie, GuardianScopeSet scopes) {
+/// Субъект для опроса: одна роль, одно отношение, названные уровни опекуна и
+/// названные собственные возможности.
+Subject Asking(Role role, Tie tie, GuardianScopeSet scopes, Capabilities able) {
     const auto tenant = Somewhere();
     return Subject{tenant,
                    Someone(),
                    RoleSet{}.With(role),
                    tie,
-                   GuardianAccess{scopes, GuardianScopeSet{}, GuardianScopeSet{}}};
+                   GuardianAccess{scopes, GuardianScopeSet{}, GuardianScopeSet{}},
+                   able};
 }
 
-/// Клетка роли. Уровни опекуна открыты все: столбец говорит про роль и
-/// отношение, а какой уровень для этого нужен — отдельный столбец рядом.
+/// Тот же опрос, когда возраст в вопросе не участвует: возможности открыты все,
+/// про них спрашивает отдельная таблица.
+Subject Asking(Role role, Tie tie, GuardianScopeSet scopes) {
+    return Asking(role, tie, scopes, Capabilities::Everything());
+}
+
+/// Что человек может сам в этом возрасте.
+Capabilities AbleAt(int years, const AgeThresholds& thresholds) {
+    Capabilities able;
+    for (const auto capability : kEveryCapability) {
+        if (years >= thresholds.Years(ArrivesWith(capability))) {
+            able = able.With(capability);
+        }
+    }
+    return able;
+}
+
+/// Какие уровни ещё остаются опекуну, когда подопечному столько лет.
+///
+/// Считается из того же правила, по которому взвешиваются согласия: уровень
+/// держится, пока ученик не дорос до порога, с которого решает сам.
+GuardianScopeSet OpenToGuardianAt(int years, const AgeThresholds& thresholds) {
+    GuardianScopeSet open;
+    for (const auto scope : kEveryGuardianScope) {
+        if (years < thresholds.Years(WhenStudentDecides(scope))) {
+            open = open.With(scope);
+        }
+    }
+    return open;
+}
+
+/// Кто может это в таком возрасте: ученик, опекун, оба или никто.
+std::string_view WhoAt(const PolicySet& permissions,
+                       Action action,
+                       int years,
+                       const AgeThresholds& thresholds) {
+    const Resource resource{Somewhere(), std::nullopt, std::nullopt};
+
+    const bool student =
+        permissions
+            .Decide(
+                Asking(
+                    Role::kStudent, Tie::kAboutMe, GuardianScopeSet{}, AbleAt(years, thresholds)),
+                action,
+                resource)
+            .allowed;
+    const bool guardian = permissions
+                              .Decide(Asking(Role::kGuardian,
+                                             Tie::kMyWard,
+                                             OpenToGuardianAt(years, thresholds),
+                                             Capabilities::Everything()),
+                                      action,
+                                      resource)
+                              .allowed;
+
+    if (student && guardian) {
+        return "оба";
+    }
+    if (student) {
+        return "ученик";
+    }
+    if (guardian) {
+        return "опекун";
+    }
+    return "—";
+}
+
+/// Что разрешено этой роли на это действие. Отношения перебираются все подряд:
+/// клетка обязана говорить не «да», а «да, но только своё».
+///
+/// Уровни опекуна и возможности по возрасту открыты все: столбец говорит про
+/// роль и отношение, а про уровень и про возраст спрашивают соседние таблицы.
 std::string Cell(const PolicySet& permissions, Role role, Action action) {
     const auto tenant = Somewhere();
     const Resource resource{tenant, std::nullopt, std::nullopt};
@@ -166,7 +237,25 @@ std::string_view Title(Action action) noexcept {
             return "Смотреть, кто заходил в мои данные";
         case Action::kManageGuardianAccess:
             return "Открывать и отзывать доступ опекуну";
+        case Action::kWriteReview:
+            return "Написать отзыв о репетиторе";
+        case Action::kManageAutoPayment:
+            return "Подключить списание с карты";
         case Action::kBoundary:
+            return "";
+    }
+    return "";
+}
+
+std::string_view Title(AgeThreshold threshold) noexcept {
+    switch (threshold) {
+        case AgeThreshold::kSlotsAndReviews:
+            return "Двигает занятия, пишет отзывы";
+        case AgeThreshold::kOwnPayments:
+            return "Платит сам, выбирает репетитора";
+        case AgeThreshold::kMajority:
+            return "Совершеннолетие";
+        case AgeThreshold::kBoundary:
             return "";
     }
     return "";
@@ -218,28 +307,89 @@ std::string RenderMatrix(const PolicySet& permissions) {
     return out;
 }
 
-}  // namespace pdr::identity::policies
+std::string RenderAgeMatrix(const PolicySet& permissions, const AgeThresholds& thresholds) {
+    std::vector<int> bands{thresholds.Years(kEveryAgeThreshold.front()) - 1};
+    for (const auto threshold : kEveryAgeThreshold) {
+        bands.push_back(thresholds.Years(threshold));
+    }
 
-namespace pdr::identity::policies {
+    std::string out = "| Действие | Код | младше " + std::to_string(bands.front() + 1) + " |";
+    for (const auto threshold : kEveryAgeThreshold) {
+        out += " с " + std::to_string(thresholds.Years(threshold)) + " |";
+    }
+    out += "\n| --- | --- |";
+    for (std::size_t column = 0; column < bands.size(); ++column) {
+        out += " --- |";
+    }
+    out += "\n";
 
-core::Result<std::string> WithMatrix(std::string_view document, const PolicySet& permissions) {
-    const auto opening = document.find(kMatrixOpening);
-    const auto closing = document.find(kMatrixClosing);
+    for (const auto action : kEveryAction) {
+        std::vector<std::string_view> cells;
+        bool anyone = false;
+        for (const auto years : bands) {
+            cells.push_back(WhoAt(permissions, action, years, thresholds));
+            anyone = anyone || cells.back() != "—";
+        }
+        if (!anyone) {
+            continue;
+        }
+
+        out += "| ";
+        out += Title(action);
+        out += " | `";
+        out += Name(action);
+        out += "` |";
+        for (const auto& cell : cells) {
+            out += " ";
+            out += cell;
+            out += " |";
+        }
+        out += "\n";
+    }
+
+    return out;
+}
+
+namespace {
+
+/// Заменить область между метками собранной таблицей.
+core::Result<std::string> Splice(std::string_view document,
+                                 std::string_view opening_mark,
+                                 std::string_view closing_mark,
+                                 const std::string& table) {
+    const auto opening = document.find(opening_mark);
+    const auto closing = document.find(closing_mark);
     if (opening == std::string_view::npos || closing == std::string_view::npos ||
         closing < opening) {
         return core::Error{core::ErrorKind::kValidation,
                            "permissions_matrix_markers_missing",
-                           "в документе нет меток области матрицы прав"};
+                           "в документе нет меток области матрицы"};
     }
 
-    const auto from = opening + kMatrixOpening.size();
+    const auto from = opening + opening_mark.size();
 
     std::string out{document.substr(0, from)};
     out += "\n\n";
-    out += RenderMatrix(permissions);
+    out += table;
     out += "\n";
     out += document.substr(closing);
     return out;
+}
+
+}  // namespace
+
+core::Result<std::string> WithMatrix(std::string_view document,
+                                     const PolicySet& permissions,
+                                     const AgeThresholds& thresholds) {
+    auto roles = Splice(document, kMatrixOpening, kMatrixClosing, RenderMatrix(permissions));
+    if (!roles) {
+        return roles.Failure();
+    }
+
+    return Splice(roles.Value(),
+                  kAgeMatrixOpening,
+                  kAgeMatrixClosing,
+                  RenderAgeMatrix(permissions, thresholds));
 }
 
 }  // namespace pdr::identity::policies

@@ -8,9 +8,16 @@
 
 #include "builders/access_world.hpp"
 #include "identity/application/policies/matrix.hpp"
+#include "identity/core/capabilities.hpp"
 
 namespace pdr::identity::policies {
 namespace {
+
+/// Пороги для сборки документа — те же умолчания, что в реестре значений.
+/// Матрица возраста собирается из них, а не из констант в разметке.
+AgeThresholds Thresholds() {
+    return AgeThresholds::Compose(14, 16, 18).Value();
+}
 
 std::string InDocs() {
     return std::string{PDR_SOURCE_DIR} + "/docs/architecture/permissions.md";
@@ -53,13 +60,32 @@ TEST(PermissionsMatrix, TitlesAreDistinctAndNotEmpty) {
     }
 
     EXPECT_EQ(titles.size(), kEveryAction.size()) << "два действия названы одинаково";
+
+    for (const auto threshold : kEveryAgeThreshold) {
+        EXPECT_FALSE(Title(threshold).empty()) << Name(threshold);
+    }
+}
+
+/// Матрица возраста собирается тем же опросом и говорит то, чего не видно в
+/// матрице ролей: у одного и того же действия ответ меняется со временем.
+TEST(PermissionsMatrix, TheAgeTableShowsTheHandover) {
+    const testing::FakeFaults faults;
+    const PolicySet permissions{faults};
+
+    const auto table = RenderAgeMatrix(permissions, Thresholds());
+
+    EXPECT_NE(table.find("младше 14"), std::string::npos);
+    EXPECT_NE(table.find("с 18"), std::string::npos);
+    EXPECT_NE(table.find("`pay_invoice`"), std::string::npos);
+    EXPECT_EQ(table.find("`set_tariff`"), std::string::npos)
+        << "в таблицу возраста попало действие, которого ни ученику, ни опекуну не дают";
 }
 
 TEST(PermissionsMatrix, ADocumentWithoutMarkersIsRefused) {
     const testing::FakeFaults faults;
     const PolicySet permissions{faults};
 
-    const auto refused = WithMatrix("# Просто текст\n", permissions);
+    const auto refused = WithMatrix("# Просто текст\n", permissions, Thresholds());
 
     ASSERT_FALSE(refused.HasValue());
     EXPECT_EQ(refused.Failure().Code(), "permissions_matrix_markers_missing");
@@ -80,7 +106,7 @@ TEST(PermissionsMatrix, TheFileInDocsSaysWhatTheCodeDoes) {
     const auto document = Read(InDocs());
     ASSERT_FALSE(document.empty()) << "не читается " << InDocs();
 
-    const auto fresh = WithMatrix(document, permissions);
+    const auto fresh = WithMatrix(document, permissions, Thresholds());
     ASSERT_TRUE(fresh.HasValue()) << fresh.Failure().Detail();
 
     std::ofstream{InBuild()} << fresh.Value();

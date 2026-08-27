@@ -2,6 +2,8 @@
 
 #include <array>
 
+#include "identity/application/policies/capability_policy.hpp"
+
 namespace pdr::identity::policies {
 namespace {
 
@@ -10,7 +12,7 @@ GuardianRule Within(GuardianScope scope) noexcept {
 }
 
 const AnyOf kMayDecideForWhom{AllOf{HasRole{Role::kTutor}, Tied{Tie::kMine}},
-                              AllOf{HasRole{Role::kStudent}, Tied{Tie::kAboutMe}}};
+                              StudentDecidingGuardianAccess()};
 
 constexpr std::array kConsentActions{Action::kManageGuardianAccess};
 

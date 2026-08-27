@@ -25,14 +25,16 @@ constexpr std::uint8_t Rank(DenyReason reason) noexcept {
             return 2;
         case DenyReason::kScopeMissing:
             return 3;
-        case DenyReason::kStudentGrewUp:
+        case DenyReason::kTooYoung:
             return 4;
-        case DenyReason::kForeignTenant:
+        case DenyReason::kStudentGrewUp:
             return 5;
-        case DenyReason::kNoPolicy:
+        case DenyReason::kForeignTenant:
             return 6;
+        case DenyReason::kNoPolicy:
+            return 7;
     }
-    return 6;
+    return 7;
 }
 
 /// Есть ли у человека такая роль.

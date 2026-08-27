@@ -40,6 +40,11 @@ ctest, либо пометка «намерение».
 | Отзыв доступа — строка с датой, а не удаление | `db/migrations/V007__guardian_access.sql` | `libs/pdr-identity/tests/guardian_access_test.cpp`, `scripts/check_isolation.py` |
 | Совершеннолетие даёт срок на решение, а не мгновенный обрыв | `libs/pdr-identity/src/identity/core/guardian_access.cpp` | `libs/pdr-identity/tests/guardian_access_test.cpp` |
 | Отказ опекуну попадает в журнал наравне с просмотром | `libs/pdr-identity/src/identity/application/contract_service.cpp` | `libs/pdr-identity/tests/guardian_access_test.cpp` |
+| Права по возрасту вычисляются, а не выдаются по заявке | `libs/pdr-identity/src/identity/core/capabilities.hpp` | `libs/pdr-identity/tests/capabilities_test.cpp` |
+| Возрастные пороги — значения конфига, а не константы | `configs/dynamic/registry.yaml` | `scripts/check_dynamic_configs.py`, `libs/pdr-identity/tests/capabilities_test.cpp` |
+| Опекун узнаёт о самостоятельном поступке подопечного всегда | `libs/pdr-identity/src/identity/application/notify_guardian_of_act.cpp` | `scripts/check_guardian_notice.py`, `libs/pdr-notifications/tests/deliver_domain_events_test.cpp` |
+| Текст отзыва опекуну не показывают: в событии для него нет места | `libs/pdr-events/include/events/identity/ward_acted_alone.hpp` | `scripts/check_guardian_notice.py` |
+| Автоплатёж с чужой карты ученику не даётся ни в каком возрасте | `libs/pdr-identity/src/identity/application/policies/billing_policy.cpp` | `libs/pdr-identity/tests/capabilities_test.cpp` |
 | Ученик читает журнал доступов к себе, опекун — нет ни при каком уровне | `libs/pdr-identity/src/identity/application/show_access_journal.hpp` | `libs/pdr-identity/tests/guardian_access_test.cpp` |
 | Сессию хранилища не получить мимо области арендатора | `libs/pdr-core/src/application/ports/tenant_aware_repository.hpp` | `tenant_session_outside_scope` |
 | Время — `timestamptz` в UTC плюс отдельная зона IANA | `libs/pdr-core/src/core/types/time.cpp` | `scripts/check_migrations.py`, `libs/pdr-core/tests/time_test.cpp` |

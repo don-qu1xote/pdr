@@ -2,11 +2,18 @@
 
 #include <array>
 
+#include "identity/application/policies/capability_policy.hpp"
 #include "identity/application/policies/combinators.hpp"
 #include "identity/application/policies/guardian_policy.hpp"
 
 namespace pdr::identity::policies {
 namespace {
+
+const AnyOf kMayBook{
+    AllOf{HasRole{Role::kTutor}, Tied{Tie::kMine}}, StudentChoosingTutor(), GuardianInSchedule()};
+
+const AnyOf kMayMove{
+    AllOf{HasRole{Role::kTutor}, Tied{Tie::kMine}}, StudentMovingOwnSlots(), GuardianInSchedule()};
 
 const AnyOf kOwnAffairs{AllOf{HasRole{Role::kTutor}, Tied{Tie::kMine}},
                         AllOf{HasRole{Role::kStudent}, Tied{Tie::kAboutMe}},
@@ -32,9 +39,10 @@ PolicyDecision SchedulingPolicy::Decide(const Subject& subject,
                                         const Resource& resource) const {
     switch (action) {
         case Action::kBookLesson:
+            return kMayBook.Decide(subject, action, resource);
         case Action::kCancelLesson:
         case Action::kRescheduleLesson:
-            return kOwnAffairs.Decide(subject, action, resource);
+            return kMayMove.Decide(subject, action, resource);
         case Action::kViewSchedule:
             return kMayLook.Decide(subject, action, resource);
         default:

@@ -2,6 +2,8 @@
 
 #include <optional>
 
+#include "identity/core/age_status.hpp"
+
 namespace pdr::identity::policies {
 
 SubjectBuilder::SubjectBuilder(const ports::GuardianshipRepository& guardianships,
@@ -44,6 +46,22 @@ GuardianAccess SubjectBuilder::AccessOf(const core::TenantId& tenant,
     return WeighConsents(consents, birth_dates_.Of(tenant, student), rule.Value(), clock_.Now());
 }
 
+Capabilities SubjectBuilder::AbilityOf(const core::TenantId& tenant,
+                                       const core::PersonId& person) const {
+    const auto rule = maturity_.Rule();
+    const auto born_on = birth_dates_.Of(tenant, person);
+    if (!rule || !born_on.has_value()) {
+        return Capabilities{};
+    }
+
+    const auto age = AgeStatus::At(*born_on, clock_.Now());
+    if (!age) {
+        return Capabilities{};
+    }
+
+    return Compute(age.Value(), rule.Value().Thresholds());
+}
+
 Subject SubjectBuilder::For(const core::TenantId& tenant,
                             const core::PersonId& actor,
                             const Resource& resource) const {
@@ -54,7 +72,8 @@ Subject SubjectBuilder::For(const core::TenantId& tenant,
         access = AccessOf(tenant, actor, *resource.subject);
     }
 
-    return Subject{tenant, actor, roles_.RolesOf(tenant, actor), tie, access};
+    return Subject{
+        tenant, actor, roles_.RolesOf(tenant, actor), tie, access, AbilityOf(tenant, actor)};
 }
 
 }  // namespace pdr::identity::policies

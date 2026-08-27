@@ -46,6 +46,9 @@ enum class Action : std::uint8_t {
     kViewAccessJournal,
     kManageGuardianAccess,
 
+    kWriteReview,
+    kManageAutoPayment,
+
     /// ГРАНИЦА СПИСКА, а не действие.
     ///
     /// Она здесь ради одной проверки: `kEveryAction` обязан содержать ровно
@@ -61,7 +64,7 @@ std::string_view Name(Action action) noexcept;
 std::optional<Action> ParseAction(std::string_view text);
 
 /// Все действия подряд. Единственный способ обойти реестр целиком.
-inline constexpr std::array<Action, 20> kEveryAction{
+inline constexpr std::array<Action, 22> kEveryAction{
     Action::kBookLesson,          Action::kCancelLesson,
     Action::kRescheduleLesson,    Action::kViewSchedule,
     Action::kViewInvoice,         Action::kPayInvoice,
@@ -72,6 +75,7 @@ inline constexpr std::array<Action, 20> kEveryAction{
     Action::kExportProgress,      Action::kViewTenantProgress,
     Action::kViewLessonRecording, Action::kViewLessonTranscript,
     Action::kViewAccessJournal,   Action::kManageGuardianAccess,
+    Action::kWriteReview,         Action::kManageAutoPayment,
 };
 
 static_assert(kEveryAction.size() == static_cast<std::size_t>(Action::kBoundary),
@@ -111,6 +115,12 @@ enum class DenyReason : std::uint8_t {
     /// что идти надо не к репетитору, а к самому ученику: это единственный
     /// человек, который может открыть доступ обратно.
     kStudentGrewUp,
+
+    /// ЕЩЁ НЕ ДОРОС. Не «нельзя» и не «не ваше»: право придёт САМО, в день
+    /// рождения, и выдавать его никто не будет. Отдельная причина затем, что
+    /// человеку надо сказать не «обратитесь», а «пока это делает за вас
+    /// опекун», — единственный отказ в списке, который проходит сам собой.
+    kTooYoung,
 
     /// ДЕЙСТВИЕ БЕЗ ПОЛИТИКИ. Это не отказ человеку, а ошибка настройки: кто-то
     /// завёл действие и не связал его с политикой. Значение по умолчанию —

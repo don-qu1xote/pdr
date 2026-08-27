@@ -1,5 +1,7 @@
 #include "identity/application/announce_guardian_handover.hpp"
 
+#include <optional>
+
 #include "events/identity/guardian_handover_started.hpp"
 #include "identity/core/age_status.hpp"
 #include "identity/core/guardian_access.hpp"
@@ -37,14 +39,23 @@ core::Result<bool> AnnounceGuardianHandover::Execute(const core::TenantId& tenan
         return false;
     }
 
-    const auto decide_by =
-        AgeStatus::TurnsAt(*born_on, rule.Value().ThresholdYears()) + rule.Value().Grace();
+    std::optional<core::Instant> decide_by;
+    for (const auto scope : kEveryGuardianScope) {
+        if (!access.Deciding().Has(scope)) {
+            continue;
+        }
+        const auto closes_at =
+            AgeStatus::TurnsAt(*born_on, rule.Value().ThresholdYears(scope)) + rule.Value().Grace();
+        if (!decide_by.has_value() || closes_at < *decide_by) {
+            decide_by = closes_at;
+        }
+    }
 
     bus_.Publish(pdr::events::identity::GuardianHandoverStarted{
         pdr::events::Envelope{tenant, now},
         guardian,
         student,
-        decide_by,
+        *decide_by,
     });
 
     return true;

@@ -10,6 +10,7 @@
 #include "identity/application/policies/combinators.hpp"
 #include "identity/application/policies/policy_set.hpp"
 #include "identity/application/policies/subject.hpp"
+#include "identity/core/capabilities.hpp"
 #include "identity/core/guardian_scope.hpp"
 
 namespace pdr::identity::policies {
@@ -111,6 +112,10 @@ const std::vector<Grant> kGranted{
 
     {Action::kManageGuardianAccess, Role::kStudent, Tie::kAboutMe},
     {Action::kManageGuardianAccess, Role::kTutor, Tie::kMine},
+
+    {Action::kWriteReview, Role::kStudent, Tie::kAboutMe},
+
+    {Action::kManageAutoPayment, Role::kGuardian, Tie::kMyWard},
 };
 
 /// ЧТО ОТКРЫВАЕТ КАЖДЫЙ УРОВЕНЬ. Тоже написано заново: уровень, поехавший на
@@ -126,7 +131,8 @@ const std::vector<Level> kLevels{
       Action::kCancelLesson,
       Action::kRescheduleLesson,
       Action::kViewSchedule}},
-    {GuardianScope::kPayments, {Action::kViewInvoice, Action::kPayInvoice}},
+    {GuardianScope::kPayments,
+     {Action::kViewInvoice, Action::kPayInvoice, Action::kManageAutoPayment}},
     {GuardianScope::kNotesAndHomework,
      {Action::kViewMaterial, Action::kViewProgress, Action::kExportProgress}},
     {GuardianScope::kRecordings, {Action::kViewLessonRecording, Action::kViewLessonTranscript}},
@@ -153,8 +159,9 @@ bool RoleInvolved(Action action, Role role) {
 
 class PoliciesTest : public ::testing::Test {
 protected:
-    /// Уровни опекуна открыты все: этот набор проверяет РОЛЬ И ОТНОШЕНИЕ, а
-    /// про уровни есть отдельный набор ниже.
+    /// Уровни опекуна и возможности по возрасту открыты все: этот набор
+    /// проверяет РОЛЬ И ОТНОШЕНИЕ, а про уровни и про возраст есть свои наборы —
+    /// ниже и в capabilities_test.cpp.
     PolicyDecision Ask(Role role, Action action, Tie tie) const {
         return Ask(role, action, tie, GuardianScopeSet::Everything());
     }
@@ -164,7 +171,8 @@ protected:
                               person_,
                               RoleSet{}.With(role),
                               tie,
-                              GuardianAccess{scopes, GuardianScopeSet{}, GuardianScopeSet{}}};
+                              GuardianAccess{scopes, GuardianScopeSet{}, GuardianScopeSet{}},
+                              Capabilities::Everything()};
         return permissions_.Decide(subject, action, Resource{tenant_, std::nullopt, std::nullopt});
     }
 

@@ -54,16 +54,6 @@ constexpr bool OpensWithGuardianship(GuardianScope scope) noexcept {
     return scope != GuardianScope::kRecordings;
 }
 
-/// Уровни, которые после совершеннолетия требуют слова САМОГО ученика.
-///
-/// Расписание и деньги остаются: за занятия чаще всего продолжает платить
-/// родитель, и обрывать это в день рождения — значит ломать оплату посреди
-/// учебного года. Конспекты и записи — про содержание учёбы и про голос
-/// человека, и с восемнадцати решает он.
-constexpr bool NeedsStudentWordWhenGrown(GuardianScope scope) noexcept {
-    return scope == GuardianScope::kNotesAndHomework || scope == GuardianScope::kRecordings;
-}
-
 /// Набор уровней. Отдельный тип, а не `std::set`: значений четыре, и хранить
 /// ради них дерево — способ сделать проверку прав самой дорогой операцией
 /// запроса.

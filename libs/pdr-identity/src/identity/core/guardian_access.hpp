@@ -6,12 +6,37 @@
 #include "core/errors.hpp"
 #include "core/types/time.hpp"
 #include "identity/core/birth_date.hpp"
+#include "identity/core/capabilities.hpp"
 #include "identity/core/guardian_consent.hpp"
 #include "identity/core/guardian_scope.hpp"
 
 namespace pdr::identity {
 
-/// Правило совершеннолетия: с какого возраста ученик решает сам и сколько
+/// С какого порога этот уровень требует слова САМОГО ученика.
+///
+/// Конспекты и записи — про содержание учёбы и про голос человека: там слово
+/// ученика нужно уже с первого порога, и приватность подростка начинается
+/// раньше его самостоятельности в деньгах.
+///
+/// Расписание и деньги держатся до совершеннолетия: за занятия чаще всего
+/// платит родитель, и обрывать это в день четырнадцатилетия значило бы ломать
+/// оплату посреди учебного года. Но и они не навсегда — с совершеннолетием
+/// опекуна не остаётся ни в одном уровне, иначе «взрослый» не означало бы
+/// ничего.
+constexpr AgeThreshold WhenStudentDecides(GuardianScope scope) noexcept {
+    switch (scope) {
+        case GuardianScope::kNotesAndHomework:
+        case GuardianScope::kRecordings:
+            return AgeThreshold::kSlotsAndReviews;
+        case GuardianScope::kSchedule:
+        case GuardianScope::kPayments:
+        case GuardianScope::kBoundary:
+            return AgeThreshold::kMajority;
+    }
+    return AgeThreshold::kMajority;
+}
+
+/// Правило совершеннолетия: с каких возрастов ученик решает сам и сколько
 /// времени даётся на это решение.
 ///
 /// ОКНО, А НЕ ОБРЫВ. В день рождения доступ родителя не гаснет: уведомляются
@@ -19,16 +44,24 @@ namespace pdr::identity {
 /// семьи в середине учебного года — родитель перестаёт видеть занятия, за
 /// которые платит, и виноватой оказывается платформа.
 ///
-/// Оба числа приходят из динамического конфига (`PDR_SELF_ACCOUNT_AGE`,
-/// `PDR_GUARDIAN_HANDOVER`), а не из этого файла: возрастной порог — вопрос
-/// права и страны, а длина окна — вопрос того, как быстро люди читают почту.
+/// Числа приходят из динамического конфига (`PDR_SELF_ACCOUNT_AGE`,
+/// `PDR_OWN_PAYMENTS_AGE`, `PDR_MAJORITY_AGE`, `PDR_GUARDIAN_HANDOVER_DAYS`), а
+/// не из этого файла: возрастные пороги — вопрос права и страны, а длина окна —
+/// вопрос того, как быстро люди читают почту.
 class MaturityRule final {
 public:
-    static core::Result<MaturityRule> Compose(int threshold_years, core::Instant::Duration grace);
+    static core::Result<MaturityRule> Compose(AgeThresholds thresholds,
+                                              core::Instant::Duration grace);
 
-    int ThresholdYears() const noexcept {
-        return threshold_years_;
+    const AgeThresholds& Thresholds() const noexcept {
+        return thresholds_;
     }
+
+    /// Возраст, с которого этот уровень переходит к ученику.
+    int ThresholdYears(GuardianScope scope) const noexcept {
+        return thresholds_.Years(WhenStudentDecides(scope));
+    }
+
     core::Instant::Duration Grace() const noexcept {
         return grace_;
     }
@@ -36,10 +69,10 @@ public:
     friend bool operator==(const MaturityRule&, const MaturityRule&) = default;
 
 private:
-    MaturityRule(int threshold_years, core::Instant::Duration grace) noexcept
-        : threshold_years_{threshold_years}, grace_{grace} {}
+    MaturityRule(AgeThresholds thresholds, core::Instant::Duration grace) noexcept
+        : thresholds_{thresholds}, grace_{grace} {}
 
-    int threshold_years_;
+    AgeThresholds thresholds_;
     core::Instant::Duration grace_;
 };
 

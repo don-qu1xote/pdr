@@ -7,6 +7,7 @@
 
 add_library(pdr_identity STATIC
     src/identity/application/accept_invitation.cpp
+    src/identity/application/announce_coming_of_age.cpp
     src/identity/application/announce_guardian_handover.cpp
     src/identity/application/authenticate_session.cpp
     src/identity/application/change_password.cpp
@@ -14,7 +15,9 @@ add_library(pdr_identity STATIC
     src/identity/application/grant_guardian_scope.cpp
     src/identity/application/invite_participant.cpp
     src/identity/application/note_sensitive_access.cpp
+    src/identity/application/notify_guardian_of_act.cpp
     src/identity/application/policies/billing_policy.cpp
+    src/identity/application/policies/capability_policy.cpp
     src/identity/application/policies/content_policy.cpp
     src/identity/application/policies/guardian_policy.cpp
     src/identity/application/policies/journal_policy.cpp
@@ -22,6 +25,7 @@ add_library(pdr_identity STATIC
     src/identity/application/policies/media_policy.cpp
     src/identity/application/policies/policy_set.cpp
     src/identity/application/policies/progress_policy.cpp
+    src/identity/application/policies/review_policy.cpp
     src/identity/application/policies/scheduling_policy.cpp
     src/identity/application/policies/subject.cpp
     src/identity/application/policies/subject_builder.cpp
@@ -36,12 +40,14 @@ add_library(pdr_identity STATIC
     src/identity/core/age_status.cpp
     src/identity/core/auth_lifetimes.cpp
     src/identity/core/birth_date.cpp
+    src/identity/core/capabilities.cpp
     src/identity/core/digest.cpp
     src/identity/core/email.cpp
     src/identity/core/guardian_access.cpp
     src/identity/core/guardian_consent.cpp
     src/identity/core/guardian_scope.cpp
     src/identity/core/guardianship.cpp
+    src/identity/core/independent_act.cpp
     src/identity/core/login_throttle.cpp
     src/identity/core/membership.cpp
     src/identity/core/one_time_token.cpp
@@ -116,6 +122,7 @@ if(PDR_BUILD_TESTS)
     pdr_unit_test_sources(
         tests/access_log_test.cpp
         tests/age_status_test.cpp
+        tests/capabilities_test.cpp
         tests/guardian_access_test.cpp
         tests/guardianship_test.cpp
         tests/invitation_test.cpp
@@ -136,7 +143,8 @@ if(PDR_BUILD_TESTS)
     # УРОВЕНЬ CONTRACT/ADAPTER: адаптеры против штатных заглушек userver и
     # против настоящей libargon2. Ни сервиса, ни базы им не нужно.
     if(userver_FOUND)
-        pdr_adapter_test_sources(tests/dynamic_config_auth_settings_test.cpp)
+        pdr_adapter_test_sources(tests/dynamic_config_auth_settings_test.cpp
+                                 tests/dynamic_config_maturity_settings_test.cpp)
         pdr_adapter_test_libraries(pdr_identity_infrastructure)
 
         if(TARGET pdr_identity_passwords)

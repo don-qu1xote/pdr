@@ -34,8 +34,9 @@ const auto kTutor = Numbered<core::PersonId>(10);
 const auto kStudent = Numbered<core::PersonId>(20);
 const auto kGuardian = Numbered<core::PersonId>(30);
 
-MaturityRule Rule(int years = 14, int grace_days = 30) {
-    return MaturityRule::Compose(years, Days(grace_days)).Value();
+MaturityRule Rule(int grace_days = 30) {
+    return MaturityRule::Compose(AgeThresholds::Compose(14, 16, 18).Value(), Days(grace_days))
+        .Value();
 }
 
 GuardianConsent Consent(GuardianScope scope,
@@ -61,12 +62,14 @@ TEST(GuardianScopes, RecordingsDoNotOpenWithGuardianship) {
     EXPECT_TRUE(OpensWithGuardianship(GuardianScope::kNotesAndHomework));
 }
 
-TEST(GuardianScopes, ContentNeedsTheStudentWordWhenGrown) {
-    EXPECT_TRUE(NeedsStudentWordWhenGrown(GuardianScope::kRecordings));
-    EXPECT_TRUE(NeedsStudentWordWhenGrown(GuardianScope::kNotesAndHomework));
-    EXPECT_FALSE(NeedsStudentWordWhenGrown(GuardianScope::kSchedule))
-        << "оплата и расписание обрываются в день рождения посреди учебного года";
-    EXPECT_FALSE(NeedsStudentWordWhenGrown(GuardianScope::kPayments));
+/// ОБЯЗАТЕЛЬНОЕ ПРАВИЛО ЗАДАЧИ: опекун сохраняет расписание при любом возрасте
+/// ДО совершеннолетия — и не после него.
+TEST(GuardianScopes, ContentGoesToTheStudentEarlyAndTheRestAtMajority) {
+    EXPECT_EQ(WhenStudentDecides(GuardianScope::kRecordings), AgeThreshold::kSlotsAndReviews);
+    EXPECT_EQ(WhenStudentDecides(GuardianScope::kNotesAndHomework), AgeThreshold::kSlotsAndReviews);
+    EXPECT_EQ(WhenStudentDecides(GuardianScope::kSchedule), AgeThreshold::kMajority)
+        << "расписание оборвалось раньше совершеннолетия, посреди учебного года";
+    EXPECT_EQ(WhenStudentDecides(GuardianScope::kPayments), AgeThreshold::kMajority);
 }
 
 TEST(GuardianScopes, CodesAreTheWordsTheDatabaseKnows) {
@@ -81,16 +84,11 @@ TEST(GuardianScopes, CodesAreTheWordsTheDatabaseKnows) {
 }
 
 TEST(MaturityRuleTest, ZeroWindowIsAnInstantCutOff) {
-    const auto refused = MaturityRule::Compose(14, core::Instant::Duration::zero());
+    const auto refused = MaturityRule::Compose(AgeThresholds::Compose(14, 16, 18).Value(),
+                                               core::Instant::Duration::zero());
 
     ASSERT_FALSE(refused.HasValue());
     EXPECT_EQ(refused.Failure().Code(), "maturity_grace_not_positive");
-}
-
-TEST(MaturityRuleTest, AbsurdThresholdIsRefused) {
-    EXPECT_FALSE(MaturityRule::Compose(3, Days(30)).HasValue());
-    EXPECT_FALSE(MaturityRule::Compose(40, Days(30)).HasValue());
-    EXPECT_TRUE(MaturityRule::Compose(14, Days(30)).HasValue());
 }
 
 TEST(Maturity, TurningYearsLandsOnTheBirthday) {
@@ -161,7 +159,20 @@ TEST_F(WeighingTest, TheDoorClosesAfterTheWindow) {
     EXPECT_TRUE(after.AwaitsStudent().Has(GuardianScope::kRecordings));
 
     EXPECT_TRUE(after.Open().Has(GuardianScope::kSchedule))
-        << "расписание и деньги обрываться не должны: за занятия платит родитель";
+        << "расписание оборвалось на первом пороге: за занятия платит родитель";
+}
+
+/// А вот на совершеннолетии кончается и расписание: «до 18» означает и «не
+/// после».
+TEST_F(WeighingTest, AtMajorityEvenTheScheduleGoesToTheStudent) {
+    const auto granted = GrownAt() - Days(400);
+    const std::vector<GuardianConsent> consents{Consent(GuardianScope::kSchedule, kTutor, granted)};
+    const auto adult = AgeStatus::TurnsAt(born_, 18);
+
+    EXPECT_TRUE(Weigh(consents, adult - Days(1)).Open().Has(GuardianScope::kSchedule));
+    EXPECT_TRUE(Weigh(consents, adult + Days(1)).Deciding().Has(GuardianScope::kSchedule));
+    EXPECT_TRUE(Weigh(consents, adult + Days(31)).AwaitsStudent().Has(GuardianScope::kSchedule))
+        << "у восемнадцатилетнего расписанием по-прежнему распоряжается родитель";
 }
 
 /// Слово самого ученика снимает вопрос навсегда: подтверждённое им согласие

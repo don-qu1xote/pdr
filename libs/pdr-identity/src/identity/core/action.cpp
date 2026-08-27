@@ -44,6 +44,10 @@ std::string_view Name(Action action) noexcept {
             return "view_access_journal";
         case Action::kManageGuardianAccess:
             return "manage_guardian_access";
+        case Action::kWriteReview:
+            return "write_review";
+        case Action::kManageAutoPayment:
+            return "manage_auto_payment";
         case Action::kBoundary:
             return "boundary";
     }
@@ -73,6 +77,8 @@ std::string_view Name(DenyReason reason) noexcept {
             return "scope_missing";
         case DenyReason::kStudentGrewUp:
             return "student_grew_up";
+        case DenyReason::kTooYoung:
+            return "too_young";
         case DenyReason::kNoPolicy:
             return "no_policy";
     }

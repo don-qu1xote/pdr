@@ -11,6 +11,7 @@
 #include "identity/application/policies/media_policy.hpp"
 #include "identity/application/policies/policy.hpp"
 #include "identity/application/policies/progress_policy.hpp"
+#include "identity/application/policies/review_policy.hpp"
 #include "identity/application/policies/scheduling_policy.hpp"
 #include "identity/application/ports/configuration_faults.hpp"
 
@@ -54,6 +55,7 @@ private:
     MediaPolicy media_;
     JournalPolicy journal_;
     ConsentPolicy consents_;
+    ReviewPolicy reviews_;
 
     std::array<const Policy*, static_cast<std::size_t>(Action::kBoundary)> table_{};
     const ports::ConfigurationFaults& faults_;

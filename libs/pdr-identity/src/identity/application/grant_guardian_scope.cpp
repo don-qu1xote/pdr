@@ -39,8 +39,9 @@ core::Result<GuardianConsent> GrantGuardianScope::Execute(
 
     const auto now = clock_.Now();
     const auto born_on = birth_dates_.Of(request.tenant, request.student);
-    const bool student_decides = NeedsStudentWordWhenGrown(request.scope) && born_on.has_value() &&
-                                 now >= AgeStatus::TurnsAt(*born_on, rule.Value().ThresholdYears());
+    const bool student_decides =
+        born_on.has_value() &&
+        now >= AgeStatus::TurnsAt(*born_on, rule.Value().ThresholdYears(request.scope));
 
     if (student_decides && request.granted_by != request.student) {
         return core::Error{core::ErrorKind::kForbidden,

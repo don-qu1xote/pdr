@@ -18,17 +18,25 @@ namespace pdr::identity {
 /// значения в тесте тогда не доходит до адаптера, а выглядит это как «конфиг не
 /// применился».
 extern const userver::dynamic_config::Key<std::int32_t> kSelfAccountAge;
+extern const userver::dynamic_config::Key<std::int32_t> kOwnPaymentsAge;
+extern const userver::dynamic_config::Key<std::int32_t> kMajorityAge;
 extern const userver::dynamic_config::Key<std::int32_t> kGuardianHandoverDays;
 
-/// Правило совершеннолетия из динамического конфига.
+/// Возрастные пороги и окно на решение из динамического конфига.
 ///
-/// ДВЕ ВЕЛИЧИНЫ ИЗ РАЗНЫХ МЕСТ, и это не случайность: возрастной порог — вопрос
-/// права и страны, а длина окна на решение — вопрос того, как быстро люди
-/// читают почту. Их правят разные люди по разным поводам, и держать их одной
-/// записью значило бы менять обе разом.
+/// ЧЕТЫРЕ ВЕЛИЧИНЫ ИЗ РАЗНЫХ МЕСТ, и это не случайность: возрастные пороги —
+/// вопрос права и страны, а длина окна на решение — вопрос того, как быстро
+/// люди читают почту. Их правят разные люди по разным поводам, и держать их
+/// одной записью значило бы менять все разом.
+///
+/// Связь между порогами схема реестра не выражает: «платит раньше, чем двигает
+/// занятия» — правило домена (`AgeThresholds::Compose`), и негодный набор
+/// отвергается целиком, а прежний продолжает действовать.
 class DynamicConfigMaturitySettings final : public ports::MaturitySettings {
 public:
     static constexpr std::string_view kAgeVariable = "PDR_SELF_ACCOUNT_AGE";
+    static constexpr std::string_view kPaymentsAgeVariable = "PDR_OWN_PAYMENTS_AGE";
+    static constexpr std::string_view kMajorityAgeVariable = "PDR_MAJORITY_AGE";
     static constexpr std::string_view kHandoverVariable = "PDR_GUARDIAN_HANDOVER_DAYS";
 
     explicit DynamicConfigMaturitySettings(userver::dynamic_config::Source source);
