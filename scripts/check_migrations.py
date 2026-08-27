@@ -81,42 +81,7 @@ def check_table(table: model.Table, source: str) -> list[str]:
                 )
 
     for column in table.columns:
-        where = f"{source}:{column.line}"
-
-        if column.type in TIME_WITHOUT_ZONE:
-            violations.append(
-                f"{where}: {table.name}.{column.name} — {column.type}. Время хранится "
-                f"как timestamptz в UTC; зона задумывания события живёт отдельной "
-                f"колонкой tz text"
-            )
-
-        if (column.name == "tz" or column.name.endswith("_tz")) and column.type != "text":
-            violations.append(
-                f"{where}: {table.name}.{column.name} — зона IANA, это text, а не {column.type}"
-            )
-
-        if column.name.endswith("_minor") and column.type != "bigint":
-            violations.append(
-                f"{where}: {table.name}.{column.name} — минорные единицы, это bigint, "
-                f"а не {column.type}"
-            )
-
-        if _has_word(column.name, SOFT_MONEY) and _is_fractional(column.type):
-            violations.append(
-                f"{where}: {table.name}.{column.name} — {column.type} рядом с суммой. "
-                f"Деньги: amount_minor bigint плюс currency char(3), ни одного дробного типа"
-            )
-
-        if _has_word(column.name, STRICT_MONEY) and not column.name.endswith("_minor"):
-            violations.append(
-                f"{where}: {table.name}.{column.name} — сумма должна называться "
-                f"*_minor и храниться целыми минорными единицами"
-            )
-
-        if column.name == "currency" and column.type != "char(3)":
-            violations.append(
-                f"{where}: {table.name}.currency — код валюты, это char(3), а не {column.type}"
-            )
+        violations.extend(check_column(table.name, column, source))
 
     if any(column.name.endswith("_minor") for column in table.columns) and "currency" not in names:
         violations.append(
@@ -127,7 +92,61 @@ def check_table(table: model.Table, source: str) -> list[str]:
     return violations
 
 
+def check_column(table_name: str, column: model.Column, source: str) -> list[str]:
+    """Правила одной колонки.
+
+    Отдельной функцией затем, что колонку заводят не только `create table`:
+    `alter table ... add column` третьей миграцией добавляет её на тех же
+    правах, и проверять её надо теми же правилами.
+    """
+    violations: list[str] = []
+    where = f"{source}:{column.line}"
+
+    if column.type in TIME_WITHOUT_ZONE:
+        violations.append(
+            f"{where}: {table_name}.{column.name} — {column.type}. Время хранится "
+            f"как timestamptz в UTC; зона задумывания события живёт отдельной "
+            f"колонкой tz text"
+        )
+
+    if (column.name == "tz" or column.name.endswith("_tz")) and column.type != "text":
+        violations.append(
+            f"{where}: {table_name}.{column.name} — зона IANA, это text, а не {column.type}"
+        )
+
+    if column.name.endswith("_minor") and column.type != "bigint":
+        violations.append(
+            f"{where}: {table_name}.{column.name} — минорные единицы, это bigint, "
+            f"а не {column.type}"
+        )
+
+    if _has_word(column.name, SOFT_MONEY) and _is_fractional(column.type):
+        violations.append(
+            f"{where}: {table_name}.{column.name} — {column.type} рядом с суммой. "
+            f"Деньги: amount_minor bigint плюс currency char(3), ни одного дробного типа"
+        )
+
+    if _has_word(column.name, STRICT_MONEY) and not column.name.endswith("_minor"):
+        violations.append(
+            f"{where}: {table_name}.{column.name} — сумма должна называться "
+            f"*_minor и храниться целыми минорными единицами"
+        )
+
+    if column.name == "currency" and column.type != "char(3)":
+        violations.append(
+            f"{where}: {table_name}.currency — код валюты, это char(3), а не {column.type}"
+        )
+
+    return violations
+
+
 def check(directory: Path, root: Path) -> tuple[list[str], int]:
+    """Пройти по миграциям каталога: нарушения и число проверенных таблиц.
+
+    Колонка, добавленная поздней миграцией, проверяется теми же правилами, что
+    и заведённая сразу. Иначе `alter table add column` стал бы дверью в обход
+    всех правил колонок — и первая же правка уехала бы в неё.
+    """
     try:
         migrations = model.load(directory)
     except model.MigrationError as error:
@@ -144,6 +163,10 @@ def check(directory: Path, root: Path) -> tuple[list[str], int]:
         for table in migration.tables:
             tables += 1
             violations.extend(check_table(table, source))
+
+        for change in migration.alterations:
+            if change.column is not None:
+                violations.extend(check_column(change.table, change.column, source))
 
     return violations, tables
 
@@ -230,13 +253,25 @@ def selftest() -> int:
             return 1
 
         (migrations / "V006__alters.sql").write_text(
-            "alter table billing_invoice add column note text;\n", encoding="utf-8"
+            "alter table billing_invoice drop column note;\n", encoding="utf-8"
         )
         blind, _ = check(migrations, root)
         if not any("V006__alters.sql" in line and "разбор миграций" in line for line in blind):
             print("самопроверка: непонятый DDL прошёл мимо линтера", file=sys.stderr)
             return 1
         (migrations / "V006__alters.sql").unlink()
+
+        (migrations / "V006__late.sql").write_text(
+            "alter table billing_invoice add column noted_at timestamp;\n", encoding="utf-8"
+        )
+        late, _ = check(migrations, root)
+        if not any("noted_at" in line and "timestamptz" in line for line in late):
+            print("самопроверка: время без зоны прошло поздней правкой", file=sys.stderr)
+            return 1
+        if any("разбор миграций" in line for line in late):
+            print("самопроверка: понятная поздняя правка объявлена непонятой", file=sys.stderr)
+            return 1
+        (migrations / "V006__late.sql").unlink()
 
         (migrations / "V006-wrong-name.sql").write_text("select 1;\n", encoding="utf-8")
         broken, _ = check(migrations, root)

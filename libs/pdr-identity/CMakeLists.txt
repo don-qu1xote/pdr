@@ -7,21 +7,29 @@
 
 add_library(pdr_identity STATIC
     src/identity/application/accept_invitation.cpp
+    src/identity/application/announce_guardian_handover.cpp
     src/identity/application/authenticate_session.cpp
     src/identity/application/change_password.cpp
     src/identity/application/contract_service.cpp
+    src/identity/application/grant_guardian_scope.cpp
     src/identity/application/invite_participant.cpp
     src/identity/application/note_sensitive_access.cpp
     src/identity/application/policies/billing_policy.cpp
     src/identity/application/policies/content_policy.cpp
+    src/identity/application/policies/guardian_policy.cpp
+    src/identity/application/policies/journal_policy.cpp
     src/identity/application/policies/matrix.cpp
+    src/identity/application/policies/media_policy.cpp
     src/identity/application/policies/policy_set.cpp
     src/identity/application/policies/progress_policy.cpp
     src/identity/application/policies/scheduling_policy.cpp
     src/identity/application/policies/subject.cpp
+    src/identity/application/policies/subject_builder.cpp
     src/identity/application/reset_password.cpp
+    src/identity/application/revoke_guardian_scope.cpp
     src/identity/application/revoke_guardianship.cpp
     src/identity/application/sign_in.cpp
+    src/identity/application/show_access_journal.cpp
     src/identity/application/sign_out.cpp
     src/identity/core/access_record.cpp
     src/identity/core/action.cpp
@@ -30,6 +38,9 @@ add_library(pdr_identity STATIC
     src/identity/core/birth_date.cpp
     src/identity/core/digest.cpp
     src/identity/core/email.cpp
+    src/identity/core/guardian_access.cpp
+    src/identity/core/guardian_consent.cpp
+    src/identity/core/guardian_scope.cpp
     src/identity/core/guardianship.cpp
     src/identity/core/login_throttle.cpp
     src/identity/core/membership.cpp
@@ -50,7 +61,11 @@ if(userver_FOUND)
     # Всё, что этот контекст кладёт в базу и берёт из неё: журнал доступа, вход,
     # роли. Таблицами identity_* владеет он один (docs/architecture/context-map.md).
     add_library(pdr_identity_infrastructure STATIC
+        src/identity/infrastructure/access/dynamic_config_maturity_settings.cpp
         src/identity/infrastructure/access/logging_configuration_faults.cpp
+        src/identity/infrastructure/access/postgres_access_journal.cpp
+        src/identity/infrastructure/access/postgres_birth_dates.cpp
+        src/identity/infrastructure/access/postgres_guardian_consents.cpp
         src/identity/infrastructure/access/postgres_role_repository.cpp
         src/identity/infrastructure/audit/postgres_access_log.cpp
         src/identity/infrastructure/auth/dynamic_config_auth_settings.cpp
@@ -101,6 +116,7 @@ if(PDR_BUILD_TESTS)
     pdr_unit_test_sources(
         tests/access_log_test.cpp
         tests/age_status_test.cpp
+        tests/guardian_access_test.cpp
         tests/guardianship_test.cpp
         tests/invitation_test.cpp
         tests/login_throttle_test.cpp

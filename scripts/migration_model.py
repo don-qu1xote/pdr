@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 FILE_NAME = re.compile(r"^V(\d{3,})__([a-z0-9_]+)\.sql$")
@@ -33,6 +33,12 @@ ALTER_ROW_SECURITY = re.compile(
     re.I,
 )
 ALTER_TABLE_ANY = re.compile(r"\balter\s+table\b", re.I)
+
+ALTER_TABLE_ADD = re.compile(
+    r"\balter\s+table\s+(?:if\s+exists\s+)?([a-z_][a-z0-9_]*)\s+add\s+"
+    r"(?:(column)\s+(?:if\s+not\s+exists\s+)?|(?=constraint\s))",
+    re.I,
+)
 
 CREATE_POLICY = re.compile(
     r"\bcreate\s+policy\s+([a-z_][a-z0-9_]*)\s+on\s+(?:only\s+)?([a-z_][a-z0-9_]*)\b", re.I
@@ -84,6 +90,21 @@ class Table:
 
 
 @dataclass(frozen=True)
+class Alteration:
+    """Одна поздняя правка таблицы: добавленная колонка либо ограничение.
+
+    Правки живут отдельно от `Table` намеренно: `create table` отвечает за день
+    рождения таблицы, а «как она выглядит сейчас» — это создание плюс все
+    правки, и складывает их `merged_tables`.
+    """
+
+    table: str
+    column: Column | None
+    constraint: str
+    line: int
+
+
+@dataclass(frozen=True)
 class Policy:
     """Политика RLS: чьи строки таблица показывает."""
 
@@ -119,6 +140,7 @@ class Migration:
     sql: str
     checksum: str
     tables: tuple[Table, ...]
+    alterations: tuple[Alteration, ...] = ()
     policies: tuple[Policy, ...] = ()
     row_security: tuple[RowSecurity, ...] = ()
     indexes: tuple[Index, ...] = ()
@@ -290,6 +312,73 @@ def parse_tables(sql: str, source: str) -> tuple[Table, ...]:
     return tuple(tables)
 
 
+def parse_alterations(sql: str, source: str) -> tuple[Alteration, ...]:
+    """Поздние правки таблиц: `alter table ... add column` и `... add constraint`.
+
+    Понимается ровно добавление и больше ничего: переименование, смена типа и
+    удаление колонки — это правки, после которых старые записи читаются
+    по-новому, и разрешать их разбору, который их не понимает, нельзя. Всё
+    остальное `unsupported()` объявляет непонятым и роняет проверку.
+    """
+    text = strip_comments(sql)
+    found: list[Alteration] = []
+
+    for match in ALTER_TABLE_ADD.finditer(text):
+        line = text[: match.start()].count("\n") + 1
+        tail = " ".join(_statement_tail(text, match.end()).split())
+        if not tail:
+            raise MigrationError(f"{source}:{line}: у alter table нечего добавлять")
+
+        if match.group(2) is None:
+            found.append(
+                Alteration(table=match.group(1), column=None, constraint=tail, line=line)
+            )
+            continue
+
+        name, _, rest = tail.partition(" ")
+        column_type = _type_of(rest)
+        if not column_type:
+            raise MigrationError(
+                f"{source}:{line}: у добавляемой колонки «{name}» не разобран тип: {tail}"
+            )
+        found.append(
+            Alteration(
+                table=match.group(1),
+                column=Column(name=name.strip('"'), type=column_type, definition=tail, line=line),
+                constraint="",
+                line=line,
+            )
+        )
+
+    return tuple(found)
+
+
+def merged_tables(migrations: "list[Migration]") -> dict[str, Table]:
+    """Таблицы со всеми поздними правками — «как они выглядят сейчас».
+
+    Единственный правильный способ спросить о составе таблицы: `create table`
+    отвечает только за день её рождения, а колонка, добавленная третьей
+    миграцией, для линтера и для docs/architecture/schema.md существует так же,
+    как и все остальные.
+    """
+    tables: dict[str, Table] = {}
+    for migration in migrations:
+        for table in migration.tables:
+            tables[table.name] = table
+    for migration in migrations:
+        for change in migration.alterations:
+            table = tables.get(change.table)
+            if table is None:
+                continue
+            if change.column is not None:
+                tables[change.table] = replace(table, columns=table.columns + (change.column,))
+            else:
+                tables[change.table] = replace(
+                    table, constraints=table.constraints + (change.constraint,)
+                )
+    return tables
+
+
 def _statement_tail(text: str, start: int) -> str:
     """Хвост оператора от позиции до точки с запятой верхнего уровня."""
     depth = 0
@@ -380,6 +469,7 @@ def unsupported(sql: str, source: str) -> list[str]:
             found.append(_teach_me(source, text[: match.start()].count("\n") + 1, name))
 
     understood = {match.start() for match in ALTER_ROW_SECURITY.finditer(text)}
+    understood |= {match.start() for match in ALTER_TABLE_ADD.finditer(text)}
     for match in ALTER_TABLE_ANY.finditer(text):
         if match.start() in understood:
             continue
@@ -427,6 +517,7 @@ def load(directory: Path) -> list[Migration]:
                 sql=sql,
                 checksum=checksum_of(path),
                 tables=parse_tables(sql, path.name),
+                alterations=parse_alterations(sql, path.name),
                 policies=parse_policies(sql),
                 row_security=parse_row_security(sql),
                 indexes=parse_indexes(sql),

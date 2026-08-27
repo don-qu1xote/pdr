@@ -53,8 +53,12 @@ TEST(AccessRecord, UnknownKindIsNotGuessed) {
 }
 
 TEST(AccessRecord, WatchingOwnLeavesNoTrace) {
-    const auto own = AccessRecord::Of(
-        kTenant, kStudent, kStudent, ResourceKind::kRecording, testing::FakeClock::DefaultStart());
+    const auto own = AccessRecord::Of(kTenant,
+                                      kStudent,
+                                      kStudent,
+                                      ResourceKind::kRecording,
+                                      AccessOutcome::kShown,
+                                      testing::FakeClock::DefaultStart());
 
     ASSERT_FALSE(own.HasValue());
     EXPECT_EQ(own.Failure().Code(), "access_log_self_view");
@@ -68,7 +72,8 @@ TEST(NoteSensitiveAccess, StrangerReadingStudentDataLeavesARow) {
     const testing::FakeClock clock;
     const NoteSensitiveAccess note{log, clock};
 
-    const auto noted = note.Execute(kTenant, kStranger, kStudent, ResourceKind::kRecording);
+    const auto noted =
+        note.Execute(kTenant, kStranger, kStudent, ResourceKind::kRecording, AccessOutcome::kShown);
 
     ASSERT_TRUE(noted.HasValue());
     ASSERT_EQ(log.Recorded().size(), 1U);
@@ -88,7 +93,8 @@ TEST(NoteSensitiveAccess, EveryKindOfContentIsWorthARow) {
 
     for (const auto kind :
          {ResourceKind::kRecording, ResourceKind::kTranscript, ResourceKind::kChat}) {
-        ASSERT_TRUE(note.Execute(kTenant, kStranger, kStudent, kind).HasValue());
+        ASSERT_TRUE(
+            note.Execute(kTenant, kStranger, kStudent, kind, AccessOutcome::kShown).HasValue());
     }
 
     ASSERT_EQ(log.Recorded().size(), 3U);
@@ -102,7 +108,8 @@ TEST(NoteSensitiveAccess, WatchingOwnDataDoesNotReachTheJournal) {
     const testing::FakeClock clock;
     const NoteSensitiveAccess note{log, clock};
 
-    const auto refused = note.Execute(kTenant, kStudent, kStudent, ResourceKind::kChat);
+    const auto refused =
+        note.Execute(kTenant, kStudent, kStudent, ResourceKind::kChat, AccessOutcome::kShown);
 
     ASSERT_FALSE(refused.HasValue());
     EXPECT_EQ(refused.Failure().Code(), "access_log_self_view");
@@ -116,11 +123,15 @@ TEST(NoteSensitiveAccess, MomentComesFromTheClockPort) {
     testing::FakeClock clock;
     const NoteSensitiveAccess note{log, clock};
 
-    ASSERT_TRUE(note.Execute(kTenant, kStranger, kStudent, ResourceKind::kChat).HasValue());
+    ASSERT_TRUE(
+        note.Execute(kTenant, kStranger, kStudent, ResourceKind::kChat, AccessOutcome::kShown)
+            .HasValue());
     const auto first = clock.Now();
 
     clock.Advance(std::chrono::duration_cast<core::Instant::Duration>(72h));
-    ASSERT_TRUE(note.Execute(kTenant, kStranger, kStudent, ResourceKind::kChat).HasValue());
+    ASSERT_TRUE(
+        note.Execute(kTenant, kStranger, kStudent, ResourceKind::kChat, AccessOutcome::kShown)
+            .HasValue());
 
     ASSERT_EQ(log.Recorded().size(), 2U);
     EXPECT_EQ(log.Recorded()[0].At(), first);

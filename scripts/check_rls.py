@@ -62,13 +62,15 @@ def check_migrations(migrations: Sequence[tuple[str, model.Migration]]) -> tuple
     """Нарушения изоляции и число проверенных доменных таблиц."""
     violations: list[str] = []
 
+    merged = model.merged_tables([migration for _, migration in migrations])
+
     created: dict[str, tuple[str, model.Table]] = {}
     enabled: dict[str, str] = {}
     forced: dict[str, str] = {}
     policies: dict[str, list[tuple[str, model.Policy]]] = {}
 
     for source, migration in migrations:
-        for table in migration.tables:
+        for table in (merged.get(item.name, item) for item in migration.tables):
             created[table.name] = (_place(source, table.line), table)
 
         for change in migration.row_security:

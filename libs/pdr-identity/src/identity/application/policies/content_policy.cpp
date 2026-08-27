@@ -3,14 +3,14 @@
 #include <array>
 
 #include "identity/application/policies/combinators.hpp"
+#include "identity/application/policies/guardian_policy.hpp"
 
 namespace pdr::identity::policies {
 namespace {
 
 const AllOf kAuthor{HasRole{Role::kTutor}, Tied{Tie::kMine}};
 
-const AnyOf kAssigned{AllOf{HasRole{Role::kStudent}, Tied{Tie::kAboutMe}},
-                      AllOf{HasRole{Role::kGuardian}, Tied{Tie::kMyWard}}};
+const AnyOf kAssigned{AllOf{HasRole{Role::kStudent}, Tied{Tie::kAboutMe}}, GuardianInNotes()};
 
 const AnyOf kReaders{kAuthor, kAssigned};
 

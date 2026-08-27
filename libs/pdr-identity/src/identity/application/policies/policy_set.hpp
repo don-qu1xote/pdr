@@ -6,6 +6,9 @@
 
 #include "identity/application/policies/billing_policy.hpp"
 #include "identity/application/policies/content_policy.hpp"
+#include "identity/application/policies/guardian_policy.hpp"
+#include "identity/application/policies/journal_policy.hpp"
+#include "identity/application/policies/media_policy.hpp"
 #include "identity/application/policies/policy.hpp"
 #include "identity/application/policies/progress_policy.hpp"
 #include "identity/application/policies/scheduling_policy.hpp"
@@ -48,6 +51,9 @@ private:
     BillingPolicy billing_;
     ContentPolicy content_;
     ProgressPolicy progress_;
+    MediaPolicy media_;
+    JournalPolicy journal_;
+    ConsentPolicy consents_;
 
     std::array<const Policy*, static_cast<std::size_t>(Action::kBoundary)> table_{};
     const ports::ConfigurationFaults& faults_;

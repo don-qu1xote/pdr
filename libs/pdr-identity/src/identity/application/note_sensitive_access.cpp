@@ -9,8 +9,9 @@ NoteSensitiveAccess::NoteSensitiveAccess(ports::AccessLog& log,
 core::Result<void> NoteSensitiveAccess::Execute(const core::TenantId& tenant,
                                                 const core::PersonId& actor,
                                                 const core::PersonId& subject,
-                                                ResourceKind kind) const {
-    auto record = AccessRecord::Of(tenant, actor, subject, kind, clock_.Now());
+                                                ResourceKind kind,
+                                                AccessOutcome outcome) const {
+    auto record = AccessRecord::Of(tenant, actor, subject, kind, outcome, clock_.Now());
     if (!record) {
         return record.Failure();
     }

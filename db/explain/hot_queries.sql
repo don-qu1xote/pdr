@@ -54,6 +54,20 @@ select id, granted_at
    and student_id = '{person}'
    and revoked_at is null;
 
+-- запрос: identity_guardian_consent_by_pair
+-- откуда: identity::ports::GuardianConsents::ActiveFor — «что открыто ЭТОМУ
+--         опекуну про ЭТОГО ученика». Спрашивается на КАЖДОМ обращении опекуна,
+--         рядом с ролями; перебор здесь означает чтение всех согласий кабинета
+--         на каждый показ расписания. Идёт по индексу уникальности: его первые
+--         три колонки — это ровно пара, и отдельный индекс под тот же вопрос
+--         был бы платой за то, чего в плане не видно
+-- индекс: identity_guardian_consent_active
+select scope, granted_at, granted_by, expires_at
+  from identity_guardian_consent
+ where guardian_id = '{guardian}'
+   and student_id = '{person}'
+   and revoked_at is null;
+
 -- запрос: identity_guardianship_by_student
 -- откуда: identity::Contract::MayActFor — кто вправе действовать за ученика
 -- индекс: identity_guardianship_by_student

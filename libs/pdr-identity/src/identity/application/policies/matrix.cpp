@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "identity/application/policies/subject.hpp"
+#include "identity/core/guardian_scope.hpp"
 
 namespace pdr::identity::policies {
 namespace {
@@ -41,13 +42,25 @@ core::PersonId Someone() {
 
 /// Что разрешено этой роли на это действие. Отношения перебираются все подряд:
 /// клетка обязана говорить не «да», а «да, но только своё».
+/// Субъект для опроса: одна роль, одно отношение, названные уровни опекуна.
+Subject Asking(Role role, Tie tie, GuardianScopeSet scopes) {
+    const auto tenant = Somewhere();
+    return Subject{tenant,
+                   Someone(),
+                   RoleSet{}.With(role),
+                   tie,
+                   GuardianAccess{scopes, GuardianScopeSet{}, GuardianScopeSet{}}};
+}
+
+/// Клетка роли. Уровни опекуна открыты все: столбец говорит про роль и
+/// отношение, а какой уровень для этого нужен — отдельный столбец рядом.
 std::string Cell(const PolicySet& permissions, Role role, Action action) {
     const auto tenant = Somewhere();
     const Resource resource{tenant, std::nullopt, std::nullopt};
 
     std::vector<std::string_view> allowed;
     for (const auto tie : kEveryTie) {
-        const Subject subject{tenant, Someone(), RoleSet{}.With(role), tie};
+        const auto subject = Asking(role, tie, GuardianScopeSet::Everything());
         if (permissions.Decide(subject, action, resource).allowed) {
             allowed.push_back(Says(tie));
         }
@@ -68,6 +81,45 @@ std::string Cell(const PolicySet& permissions, Role role, Action action) {
         cell += said;
     }
     return cell;
+}
+
+/// Какой уровень согласия нужен опекуну для этого действия.
+///
+/// Спрашивается у самих политик, а не берётся из таблицы рядом: уровни
+/// проверяются по одному, и в столбец попадает тот, с которым опекуну дали.
+std::string GuardianLevel(const PolicySet& permissions, Action action) {
+    const auto tenant = Somewhere();
+    const Resource resource{tenant, std::nullopt, std::nullopt};
+
+    if (permissions
+            .Decide(Asking(Role::kGuardian, Tie::kMyWard, GuardianScopeSet::Everything()),
+                    action,
+                    resource)
+            .allowed == false) {
+        return "—";
+    }
+
+    if (permissions
+            .Decide(Asking(Role::kGuardian, Tie::kMyWard, GuardianScopeSet{}), action, resource)
+            .allowed) {
+        return "не нужен";
+    }
+
+    std::string levels;
+    for (const auto scope : kEveryGuardianScope) {
+        const auto only = GuardianScopeSet{}.With(scope);
+        if (!permissions.Decide(Asking(Role::kGuardian, Tie::kMyWard, only), action, resource)
+                 .allowed) {
+            continue;
+        }
+        if (!levels.empty()) {
+            levels += ", ";
+        }
+        levels += "`";
+        levels += Name(scope);
+        levels += "`";
+    }
+    return levels.empty() ? "—" : levels;
 }
 
 }  // namespace
@@ -106,6 +158,14 @@ std::string_view Title(Action action) noexcept {
             return "Унести историю занятий";
         case Action::kViewTenantProgress:
             return "Смотреть сводку по кабинету";
+        case Action::kViewLessonRecording:
+            return "Слушать запись занятия";
+        case Action::kViewLessonTranscript:
+            return "Читать расшифровку занятия";
+        case Action::kViewAccessJournal:
+            return "Смотреть, кто заходил в мои данные";
+        case Action::kManageGuardianAccess:
+            return "Открывать и отзывать доступ опекуну";
         case Action::kBoundary:
             return "";
     }
@@ -133,11 +193,11 @@ std::string RenderMatrix(const PolicySet& permissions) {
         out += Title(role);
         out += " |";
     }
-    out += "\n| --- | --- |";
+    out += " Уровень опекуна |\n| --- | --- |";
     for (std::size_t column = 0; column < kEveryRole.size(); ++column) {
         out += " --- |";
     }
-    out += "\n";
+    out += " --- |\n";
 
     for (const auto action : kEveryAction) {
         out += "| ";
@@ -150,7 +210,9 @@ std::string RenderMatrix(const PolicySet& permissions) {
             out += Cell(permissions, role, action);
             out += " |";
         }
-        out += "\n";
+        out += " ";
+        out += GuardianLevel(permissions, action);
+        out += " |\n";
     }
 
     return out;

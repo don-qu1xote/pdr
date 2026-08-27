@@ -36,6 +36,14 @@ std::string_view Name(Action action) noexcept {
             return "export_progress";
         case Action::kViewTenantProgress:
             return "view_tenant_progress";
+        case Action::kViewLessonRecording:
+            return "view_lesson_recording";
+        case Action::kViewLessonTranscript:
+            return "view_lesson_transcript";
+        case Action::kViewAccessJournal:
+            return "view_access_journal";
+        case Action::kManageGuardianAccess:
+            return "manage_guardian_access";
         case Action::kBoundary:
             return "boundary";
     }
@@ -61,6 +69,10 @@ std::string_view Name(DenyReason reason) noexcept {
             return "role_missing";
         case DenyReason::kNotYours:
             return "not_yours";
+        case DenyReason::kScopeMissing:
+            return "scope_missing";
+        case DenyReason::kStudentGrewUp:
+            return "student_grew_up";
         case DenyReason::kNoPolicy:
             return "no_policy";
     }

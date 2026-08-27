@@ -23,7 +23,8 @@ public:
     core::Result<void> Execute(const core::TenantId& tenant,
                                const core::PersonId& actor,
                                const core::PersonId& subject,
-                               ResourceKind kind) const;
+                               ResourceKind kind,
+                               AccessOutcome outcome) const;
 
 private:
     ports::AccessLog& log_;

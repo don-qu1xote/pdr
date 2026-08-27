@@ -4,7 +4,7 @@
      правка переживёт ровно до следующей пересборки. Изменить схему — значит
      написать новую миграцию. -->
 
-Собрано из миграций: 6. Таблиц: 14.
+Собрано из миграций: 7. Таблиц: 15.
 
 Правила, которым подчиняется каждая колонка, — в
 [migrations.md](migrations.md). Как устроена изоляция арендаторов и почему у
@@ -27,6 +27,7 @@
 | `subject_id` | `uuid` | uuid not null |
 | `resource_kind` | `text` | text not null |
 | `at` | `timestamptz` | timestamptz not null default now() |
+| `outcome` | `text` | text not null default |
 
 Ограничения:
 
@@ -35,6 +36,7 @@
 * `constraint identity_access_log_subject_fk foreign key (tenant_id, subject_id) references identity_person (tenant_id, id)`
 * `constraint identity_access_log_not_self check (actor_id <> subject_id)`
 * `constraint identity_access_log_kind_known check (resource_kind in ( , , ))`
+* `constraint identity_access_log_outcome_known check (outcome in ( , ))`
 
 Индексы:
 
@@ -70,6 +72,48 @@
 Политики:
 
 * `identity_credential_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
+
+### identity_guardian_consent
+
+Согласие на один уровень доступа опекуна. Отзыв — строка с датой: журнал обязан отвечать на «кто имел доступ в марте».
+
+Заведена миграцией `V007__guardian_access.sql`.
+
+| Колонка | Тип | Определение |
+| --- | --- | --- |
+| `tenant_id` | `uuid` | uuid not null references identity_tenant (tenant_id) |
+| `id` | `uuid` | uuid not null |
+| `guardian_id` | `uuid` | uuid not null |
+| `student_id` | `uuid` | uuid not null |
+| `scope` | `text` | text not null |
+| `granted_at` | `timestamptz` | timestamptz not null default now() |
+| `granted_by` | `uuid` | uuid not null |
+| `expires_at` | `timestamptz` | timestamptz |
+| `revoked_at` | `timestamptz` | timestamptz |
+| `revoked_by` | `uuid` | uuid |
+
+Ограничения:
+
+* `constraint identity_guardian_consent_pk primary key (tenant_id, id)`
+* `constraint identity_guardian_consent_guardian_fk foreign key (tenant_id, guardian_id) references identity_person (tenant_id, id)`
+* `constraint identity_guardian_consent_student_fk foreign key (tenant_id, student_id) references identity_person (tenant_id, id)`
+* `constraint identity_guardian_consent_granted_by_fk foreign key (tenant_id, granted_by) references identity_person (tenant_id, id)`
+* `constraint identity_guardian_consent_revoked_by_fk foreign key (tenant_id, revoked_by) references identity_person (tenant_id, id)`
+* `constraint identity_guardian_consent_not_self check (guardian_id <> student_id)`
+* `constraint identity_guardian_consent_scope_known check (scope in ( , , , ))`
+* `constraint identity_guardian_consent_expires_after_granted check (expires_at is null or expires_at > granted_at)`
+* `constraint identity_guardian_consent_revoked_after_granted check (revoked_at is null or revoked_at >= granted_at)`
+* `constraint identity_guardian_consent_revoked_by_someone check ((revoked_at is null) = (revoked_by is null))`
+
+Индексы:
+
+* `identity_guardian_consent_active` — уникальный, `(tenant_id, guardian_id, student_id, scope) where revoked_at is null`
+
+Построчная защита включена и форсирована.
+
+Политики:
+
+* `identity_guardian_consent_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
 
 ### identity_guardianship
 
@@ -186,6 +230,7 @@
 | `email` | `text` | text |
 | `tz` | `text` | text not null |
 | `created_at` | `timestamptz` | timestamptz not null default now() |
+| `born_on` | `date` | date |
 
 Ограничения:
 
@@ -437,3 +482,4 @@
 1. `V004__observability.sql` — observability_product_event
 1. `V005__access_log.sql` — identity_access_log
 1. `V006__auth.sql` — identity_credential, identity_session, identity_one_time_token, identity_login_attempt
+1. `V007__guardian_access.sql` — identity_guardian_consent

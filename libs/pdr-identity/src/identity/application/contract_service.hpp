@@ -1,8 +1,8 @@
 #pragma once
 
+#include "identity/application/note_sensitive_access.hpp"
 #include "identity/application/policies/policy_set.hpp"
-#include "identity/application/ports/guardianship_repository.hpp"
-#include "identity/application/ports/role_repository.hpp"
+#include "identity/application/policies/subject_builder.hpp"
 #include "identity/contract.hpp"
 
 namespace pdr::identity {
@@ -13,14 +13,16 @@ namespace pdr::identity {
 /// прямой, внутри процесса; когда identity выделится в свой сервис, здесь
 /// появится сетевой адаптер, а у вызывающего не поменяется ни строки.
 ///
-/// СОБИРАЕТ СУБЪЕКТА И ОТДАЁТ ЕГО ПОЛИТИКЕ. Роли и опеку спрашивает здесь и
-/// только здесь: политика от этого остаётся чистой функцией, а спрашивающий не
-/// получает в руки ни ролей, ни связей — только ответ.
+/// СПРОСИТЬ — УЖЕ ЗНАЧИТ ОСТАВИТЬ СЛЕД. `Decide` для действий над содержанием
+/// занятия пишет строку в журнал доступа — и когда пустил, и когда отказал.
+/// Это не побочный эффект «заодно»: журнал, который заполняют отдельным
+/// вызовом, через полгода имеет дыры ровно там, где смотрели молча. Обойти его
+/// нечем, потому что обойти проверку прав нечем.
 class ContractService final : public Contract {
 public:
-    ContractService(const ports::GuardianshipRepository& guardianships,
-                    const ports::RoleRepository& roles,
-                    const policies::PolicySet& permissions) noexcept;
+    ContractService(const policies::SubjectBuilder& subjects,
+                    const policies::PolicySet& permissions,
+                    const NoteSensitiveAccess& journal) noexcept;
 
     bool MayActFor(const core::TenantId& tenant,
                    const core::PersonId& actor,
@@ -32,13 +34,9 @@ public:
                           const Resource& resource) const override;
 
 private:
-    bool Guards(const core::TenantId& tenant,
-                const core::PersonId& actor,
-                const Resource& resource) const;
-
-    const ports::GuardianshipRepository& guardianships_;
-    const ports::RoleRepository& roles_;
+    const policies::SubjectBuilder& subjects_;
     const policies::PolicySet& permissions_;
+    const NoteSensitiveAccess& journal_;
 };
 
 }  // namespace pdr::identity

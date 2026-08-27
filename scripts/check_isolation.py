@@ -48,6 +48,8 @@ ROLE_A = "0a0a0a0a-0000-4000-8000-00000000d001"
 ROLE_B = "0b0b0b0b-0000-4000-8000-00000000d002"
 LOG_A = "0a0a0a0a-0000-4000-8000-00000000f001"
 LOG_B = "0b0b0b0b-0000-4000-8000-00000000f002"
+CONSENT_A = "0a0a0a0a-0000-4000-8000-000000007001"
+CONSENT_B = "0b0b0b0b-0000-4000-8000-000000007002"
 SESSION_A = "0a0a0a0a-0000-4000-8000-000000005001"
 SESSION_B = "0b0b0b0b-0000-4000-8000-000000005002"
 TOKEN_A = "0a0a0a0a-0000-4000-8000-000000006001"
@@ -59,8 +61,9 @@ DIGEST_B = "b" * 64
 ARGON2 = "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$aGFzaGhhc2hoYXNoaGFzaA"
 
 TABLES = ("identity_tenant", "identity_person", "identity_role_assignment",
-          "identity_guardianship", "identity_access_log", "identity_credential",
-          "identity_session", "identity_one_time_token", "identity_login_attempt")
+          "identity_guardianship", "identity_guardian_consent", "identity_access_log",
+          "identity_credential", "identity_session", "identity_one_time_token",
+          "identity_login_attempt")
 
 SQLSTATE = re.compile(r"\bERROR:\s+([0-9A-Z]{5}):")
 
@@ -147,6 +150,10 @@ insert into identity_role_assignment (tenant_id, id, person_id, role) values
 insert into identity_guardianship (tenant_id, id, guardian_id, student_id) values
     ('{TENANT_A}', '{LINK_A}', '{GUARDIAN_A}', '{STUDENT_A}'),
     ('{TENANT_B}', '{LINK_B}', '{GUARDIAN_B}', '{STUDENT_B}');
+insert into identity_guardian_consent
+    (tenant_id, id, guardian_id, student_id, scope, granted_by) values
+    ('{TENANT_A}', '{CONSENT_A}', '{GUARDIAN_A}', '{STUDENT_A}', 'recordings', '{STUDENT_A}'),
+    ('{TENANT_B}', '{CONSENT_B}', '{GUARDIAN_B}', '{STUDENT_B}', 'recordings', '{STUDENT_B}');
 insert into identity_access_log (tenant_id, id, actor_id, subject_id, resource_kind, at) values
     ('{TENANT_A}', '{LOG_A}', '{GUARDIAN_A}', '{STUDENT_A}', 'recording',   now()),
     ('{TENANT_B}', '{LOG_B}', '{GUARDIAN_B}', '{STUDENT_B}', 'transcript', now());
@@ -180,6 +187,7 @@ delete from identity_one_time_token where tenant_id in {tenants};
 delete from identity_session where tenant_id in {tenants};
 delete from identity_credential where tenant_id in {tenants};
 delete from identity_access_log where tenant_id in {tenants};
+delete from identity_guardian_consent where tenant_id in {tenants};
 delete from identity_guardianship where tenant_id in {tenants};
 delete from identity_role_assignment where tenant_id in {tenants};
 delete from identity_person where tenant_id in {tenants};
@@ -533,6 +541,45 @@ rollback;
     return problems
 
 
+def a_revoked_consent_cannot_be_deleted(database: Database) -> list[str]:
+    """Отозванное согласие остаётся строкой: удалить его из-под приложения нечем.
+
+    Права роли — только `select`, `insert` и `update` (V007__guardian_access.sql).
+    По этому доступу человек смотрел чужие данные, и на вопрос «кто имел доступ в
+    марте» отвечает эта строка. Удалённая отвечает «никто», и это неправда, —
+    поэтому `delete` не выдан вовсе, а не оставлен на дисциплину вызывающего.
+
+    Отзыв при этом обязан проходить: он `update`, а не `delete`.
+    """
+    problems = []
+    code = database.app_refusal(
+        f"delete from identity_guardian_consent where id = '{CONSENT_A}';", TENANT_A
+    )
+    if code != "42501":
+        problems.append(
+            f"согласие удаляется из-под приложения: «{code or 'успех'}» вместо отказа 42501"
+        )
+
+    database.app(f"""
+update identity_guardian_consent
+   set revoked_at = now(), revoked_by = '{STUDENT_A}'
+ where id = '{CONSENT_A}';
+""", TENANT_A)
+    rows = database.app(f"""
+select count(*) from identity_guardian_consent
+ where id = '{CONSENT_A}' and revoked_at is not null;
+""", TENANT_A)
+    if int(rows[0][0]) != 1:
+        problems.append("отзыв не прошёл: закрыть уровень доступа нечем")
+
+    theirs = database.app(
+        f"select count(*) from identity_guardian_consent where id = '{CONSENT_A}';", TENANT_B
+    )
+    if int(theirs[0][0]) != 0:
+        problems.append("чужое согласие находится по прямому обращению по идентификатору")
+    return problems
+
+
 def protection_cannot_be_switched_off(database: Database) -> list[str]:
     """Роль приложения не может ни снять защиту, ни заглянуть в реестр миграций."""
     problems = []
@@ -567,6 +614,7 @@ CASES = (
     ("журнал доступа не правится и не исчезает", the_journal_is_append_only),
     ("чужая сессия не находится по идентификатору", a_foreign_session_is_not_found_by_its_identifier),
     ("отозванный доступ оставляет след", a_revoked_access_leaves_a_trace),
+    ("отозванное согласие остаётся строкой", a_revoked_consent_cannot_be_deleted),
     ("защиту не выключить из-под приложения", protection_cannot_be_switched_off),
 )
 

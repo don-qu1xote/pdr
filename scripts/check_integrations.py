@@ -242,13 +242,14 @@ def check_foreign_keys(root: Path) -> list[str]:
         return [str(error)]
 
     violations: list[str] = []
+    merged = model.merged_tables(migrations)
     for migration in migrations:
         try:
             source = str(migration.path.relative_to(root))
         except ValueError:
             source = migration.path.name
 
-        for table in migration.tables:
+        for table in (merged.get(item.name, item) for item in migration.tables):
             foreign = [column.name for column in table.columns if FOREIGN_ID.match(column.name)]
             if not foreign:
                 continue

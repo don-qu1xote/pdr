@@ -34,6 +34,9 @@ delete from identity_session where tenant_id in (
 delete from identity_credential where tenant_id in (
     select tenant_id from identity_tenant where name like 'План %'
 );
+delete from identity_guardian_consent where tenant_id in (
+    select tenant_id from identity_tenant where name like 'План %'
+);
 delete from identity_guardianship where tenant_id in (
     select tenant_id from identity_tenant where name like 'План %'
 );
@@ -77,6 +80,32 @@ select ('0e0e0e0e-0000-4000-8000-' || lpad(tenant::text, 12, '0'))::uuid,
        ('0e0e0e0e-0001-4000-8000-' || lpad((tenant * 1000 + person)::text, 12, '0'))::uuid,
        ('0e0e0e0e-0001-4000-8000-' || lpad((tenant * 1000 + person + 1)::text, 12, '0'))::uuid
 from generate_series(1, 200) as tenant, generate_series(1, 99, 2) as person;
+
+-- Согласия опекунов: три уровня на каждую опекаемую пару, из них один
+-- отозванный. Главный вопрос к таблице — «что открыто этому опекуну про этого
+-- ученика», и задаётся он на КАЖДОМ обращении опекуна.
+--
+-- Отозванные строки в засеве не для полноты картины: индекс частичный
+-- (`where revoked_at is null`), и без отозванных строк «частичный» ничего бы не
+-- значило — он покрывал бы всю таблицу, и план ничего бы не доказывал.
+insert into identity_guardian_consent
+    (tenant_id, id, guardian_id, student_id, scope, granted_at, granted_by,
+     revoked_at, revoked_by)
+select ('0e0e0e0e-0000-4000-8000-' || lpad(tenant::text, 12, '0'))::uuid,
+       ('0e0e0e0e-0008-4000-8000-' ||
+        lpad((tenant * 10000 + person * 10 + level)::text, 12, '0'))::uuid,
+       ('0e0e0e0e-0001-4000-8000-' || lpad((tenant * 1000 + person)::text, 12, '0'))::uuid,
+       ('0e0e0e0e-0001-4000-8000-' || lpad((tenant * 1000 + person + 1)::text, 12, '0'))::uuid,
+       case level when 1 then 'schedule' when 2 then 'payments' else 'recordings' end,
+       now() - interval '1 year',
+       ('0e0e0e0e-0001-4000-8000-' || lpad((tenant * 1000 + person + 1)::text, 12, '0'))::uuid,
+       case when level = 3 then now() - interval '1 month' end,
+       case when level = 3
+            then ('0e0e0e0e-0001-4000-8000-' ||
+                  lpad((tenant * 1000 + person + 1)::text, 12, '0'))::uuid
+       end
+from generate_series(1, 200) as tenant, generate_series(1, 99, 2) as person,
+     generate_series(1, 3) as level;
 
 -- Следы действий: двести пятьдесят на арендатора. Возраст распределён так, как
 -- он выглядит у системы, где уборка ДЕЙСТВИТЕЛЬНО ходит: свежих следов много,
@@ -178,6 +207,7 @@ analyze identity_tenant;
 analyze identity_person;
 analyze identity_role_assignment;
 analyze identity_guardianship;
+analyze identity_guardian_consent;
 analyze identity_access_log;
 analyze identity_credential;
 analyze identity_session;

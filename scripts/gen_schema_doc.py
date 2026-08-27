@@ -65,7 +65,18 @@ def _isolation(table: str, migrations: Sequence[model.Migration]) -> list[str]:
 
 
 def render(migrations: Sequence[model.Migration]) -> str:
-    tables = [(migration, table) for migration in migrations for table in migration.tables]
+    """Собрать документ схемы.
+
+    Таблицы берутся СЛОЖЕННЫМИ: колонка, добавленная поздней миграцией,
+    существует для документа так же, как заведённая сразу. Иначе schema.md
+    показывал бы таблицу такой, какой она была в день рождения.
+    """
+    merged = model.merged_tables(migrations)
+    tables = [
+        (migration, merged.get(table.name, table))
+        for migration in migrations
+        for table in migration.tables
+    ]
 
     lines = [HEADER.format(count=len(migrations), tables=len(tables))]
 

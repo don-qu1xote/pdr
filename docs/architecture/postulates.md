@@ -35,6 +35,12 @@ ctest, либо пометка «намерение».
 | Действие без политики запрещено и объявлено поломкой | `libs/pdr-identity/src/identity/application/ports/configuration_faults.hpp` | `libs/pdr-identity/tests/policy_registry_test.cpp` |
 | Матрица прав собрана из кода, а не написана руками | `libs/pdr-identity/src/identity/application/policies/matrix.cpp` | `libs/pdr-identity/tests/permissions_matrix_test.cpp` |
 | Супер-администратора не существует | `docs/architecture/permissions.md` | `libs/pdr-identity/tests/policies_test.cpp` |
+| Единого «родитель видит всё» нет: доступ открывается по уровню за раз | `libs/pdr-identity/src/identity/core/guardian_scope.hpp` | `libs/pdr-identity/tests/policies_test.cpp`, `libs/pdr-identity/tests/guardian_access_test.cpp` |
+| Записи занятий не открываются вместе с опекой | `libs/pdr-identity/src/identity/core/guardian_scope.cpp` | `libs/pdr-identity/tests/policies_test.cpp` |
+| Отзыв доступа — строка с датой, а не удаление | `db/migrations/V007__guardian_access.sql` | `libs/pdr-identity/tests/guardian_access_test.cpp`, `scripts/check_isolation.py` |
+| Совершеннолетие даёт срок на решение, а не мгновенный обрыв | `libs/pdr-identity/src/identity/core/guardian_access.cpp` | `libs/pdr-identity/tests/guardian_access_test.cpp` |
+| Отказ опекуну попадает в журнал наравне с просмотром | `libs/pdr-identity/src/identity/application/contract_service.cpp` | `libs/pdr-identity/tests/guardian_access_test.cpp` |
+| Ученик читает журнал доступов к себе, опекун — нет ни при каком уровне | `libs/pdr-identity/src/identity/application/show_access_journal.hpp` | `libs/pdr-identity/tests/guardian_access_test.cpp` |
 | Сессию хранилища не получить мимо области арендатора | `libs/pdr-core/src/application/ports/tenant_aware_repository.hpp` | `tenant_session_outside_scope` |
 | Время — `timestamptz` в UTC плюс отдельная зона IANA | `libs/pdr-core/src/core/types/time.cpp` | `scripts/check_migrations.py`, `libs/pdr-core/tests/time_test.cpp` |
 | Деньги — целые минорные единицы и код валюты | `libs/pdr-core/src/core/money.cpp` | `scripts/check_migrations.py`, `libs/pdr-billing/tests/quote_test.cpp` |

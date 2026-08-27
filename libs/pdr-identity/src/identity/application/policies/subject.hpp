@@ -6,6 +6,7 @@
 
 #include "core/types/ids.hpp"
 #include "identity/contract.hpp"
+#include "identity/core/guardian_access.hpp"
 #include "identity/core/membership.hpp"
 
 namespace pdr::identity {
@@ -43,8 +44,27 @@ std::string_view Name(Tie tie) noexcept;
 /// пришёл по ссылке.
 class Subject final {
 public:
+    Subject(core::TenantId tenant,
+            core::PersonId person,
+            RoleSet roles,
+            Tie tie,
+            GuardianAccess access) noexcept
+        : tenant_{std::move(tenant)},
+          person_{std::move(person)},
+          roles_{roles},
+          tie_{tie},
+          access_{access} {}
+
+    /// Без опекунских уровней — то есть без единого.
+    ///
+    /// Умолчание здесь ЗАПРЕТ, а не «всё открыто»: субъект, собранный
+    /// невнимательно, обязан получать отказ, а не чужую запись занятия.
     Subject(core::TenantId tenant, core::PersonId person, RoleSet roles, Tie tie) noexcept
-        : tenant_{std::move(tenant)}, person_{std::move(person)}, roles_{roles}, tie_{tie} {}
+        : Subject{std::move(tenant),
+                  std::move(person),
+                  roles,
+                  tie,
+                  GuardianAccess{GuardianScopeSet{}, GuardianScopeSet{}, GuardianScopeSet{}}} {}
 
     const core::TenantId& Tenant() const noexcept {
         return tenant_;
@@ -59,11 +79,19 @@ public:
         return tie_;
     }
 
+    /// Что ему открыто как опекуну. Считается до политики — из согласий и
+    /// возраста подопечного (`WeighConsents`), потому что и то и другое живёт
+    /// в хранилище.
+    const GuardianAccess& AsGuardian() const noexcept {
+        return access_;
+    }
+
 private:
     core::TenantId tenant_;
     core::PersonId person_;
     RoleSet roles_;
     Tie tie_;
+    GuardianAccess access_;
 };
 
 /// Кем человек приходится ресурсу. ЕДИНСТВЕННОЕ МЕСТО, где это считается.

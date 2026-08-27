@@ -10,6 +10,7 @@
 #include "identity/application/policies/combinators.hpp"
 #include "identity/application/policies/policy_set.hpp"
 #include "identity/application/policies/subject.hpp"
+#include "identity/core/guardian_scope.hpp"
 
 namespace pdr::identity::policies {
 namespace {
@@ -96,7 +97,44 @@ const std::vector<Grant> kGranted{
     {Action::kViewTenantProgress, Role::kOwner, Tie::kAboutMe},
     {Action::kViewTenantProgress, Role::kOwner, Tie::kMyWard},
     {Action::kViewTenantProgress, Role::kOwner, Tie::kNone},
+
+    {Action::kViewLessonRecording, Role::kStudent, Tie::kAboutMe},
+    {Action::kViewLessonRecording, Role::kTutor, Tie::kMine},
+    {Action::kViewLessonRecording, Role::kGuardian, Tie::kMyWard},
+
+    {Action::kViewLessonTranscript, Role::kStudent, Tie::kAboutMe},
+    {Action::kViewLessonTranscript, Role::kTutor, Tie::kMine},
+    {Action::kViewLessonTranscript, Role::kGuardian, Tie::kMyWard},
+
+    {Action::kViewAccessJournal, Role::kStudent, Tie::kAboutMe},
+    {Action::kViewAccessJournal, Role::kTutor, Tie::kMine},
+
+    {Action::kManageGuardianAccess, Role::kStudent, Tie::kAboutMe},
+    {Action::kManageGuardianAccess, Role::kTutor, Tie::kMine},
 };
+
+/// ЧТО ОТКРЫВАЕТ КАЖДЫЙ УРОВЕНЬ. Тоже написано заново: уровень, поехавший на
+/// соседнюю область, из кода не виден — там это одна строка в наборе `AnyOf`.
+struct Level final {
+    GuardianScope scope;
+    std::vector<Action> opens;
+};
+
+const std::vector<Level> kLevels{
+    {GuardianScope::kSchedule,
+     {Action::kBookLesson,
+      Action::kCancelLesson,
+      Action::kRescheduleLesson,
+      Action::kViewSchedule}},
+    {GuardianScope::kPayments, {Action::kViewInvoice, Action::kPayInvoice}},
+    {GuardianScope::kNotesAndHomework,
+     {Action::kViewMaterial, Action::kViewProgress, Action::kExportProgress}},
+    {GuardianScope::kRecordings, {Action::kViewLessonRecording, Action::kViewLessonTranscript}},
+};
+
+bool Opens(const Level& level, Action action) {
+    return std::find(level.opens.begin(), level.opens.end(), action) != level.opens.end();
+}
 
 bool IsGranted(Action action, Role role, Tie tie) {
     return std::any_of(kGranted.begin(), kGranted.end(), [&](const Grant& grant) {
@@ -115,8 +153,18 @@ bool RoleInvolved(Action action, Role role) {
 
 class PoliciesTest : public ::testing::Test {
 protected:
+    /// Уровни опекуна открыты все: этот набор проверяет РОЛЬ И ОТНОШЕНИЕ, а
+    /// про уровни есть отдельный набор ниже.
     PolicyDecision Ask(Role role, Action action, Tie tie) const {
-        const Subject subject{tenant_, person_, RoleSet{}.With(role), tie};
+        return Ask(role, action, tie, GuardianScopeSet::Everything());
+    }
+
+    PolicyDecision Ask(Role role, Action action, Tie tie, GuardianScopeSet scopes) const {
+        const Subject subject{tenant_,
+                              person_,
+                              RoleSet{}.With(role),
+                              tie,
+                              GuardianAccess{scopes, GuardianScopeSet{}, GuardianScopeSet{}}};
         return permissions_.Decide(subject, action, Resource{tenant_, std::nullopt, std::nullopt});
     }
 
@@ -170,7 +218,13 @@ TEST_F(PoliciesTest, RefusalTellsWhichOfTheTwoWentWrong) {
 TEST_F(PoliciesTest, NobodyWithoutARoleGetsAnything) {
     for (const auto action : kEveryAction) {
         for (const auto tie : kEveryTie) {
-            const Subject nobody{tenant_, person_, RoleSet{}, tie};
+            const Subject nobody{
+                tenant_,
+                person_,
+                RoleSet{},
+                tie,
+                GuardianAccess{
+                    GuardianScopeSet::Everything(), GuardianScopeSet{}, GuardianScopeSet{}}};
             const auto decision =
                 permissions_.Decide(nobody, action, Resource{tenant_, std::nullopt, std::nullopt});
 
@@ -196,6 +250,10 @@ TEST_F(PoliciesTest, TheSchoolOwnerIsNotASuperuser) {
         Action::kViewProgress,
         Action::kRecordAttempt,
         Action::kExportProgress,
+        Action::kViewLessonRecording,
+        Action::kViewLessonTranscript,
+        Action::kViewAccessJournal,
+        Action::kManageGuardianAccess,
     };
 
     for (const auto action : never) {
@@ -210,7 +268,11 @@ TEST_F(PoliciesTest, TheSchoolOwnerIsNotASuperuser) {
 /// родитель. Права складываются, а не выбирается «главная».
 TEST_F(PoliciesTest, SeveralRolesAddUp) {
     const Subject both{
-        tenant_, person_, RoleSet::Of({Role::kTutor, Role::kGuardian}), Tie::kMyWard};
+        tenant_,
+        person_,
+        RoleSet::Of({Role::kTutor, Role::kGuardian}),
+        Tie::kMyWard,
+        GuardianAccess{GuardianScopeSet::Everything(), GuardianScopeSet{}, GuardianScopeSet{}}};
 
     const auto decision = permissions_.Decide(
         both, Action::kBookLesson, Resource{tenant_, std::nullopt, std::nullopt});
@@ -228,6 +290,119 @@ TEST_F(PoliciesTest, RoleSetRemembersWhatWasPutIn) {
     EXPECT_FALSE(set.Has(Role::kGuardian));
     EXPECT_FALSE(set.Empty());
     EXPECT_TRUE(RoleSet{}.Empty());
+}
+
+/// НИ ОДИН УРОВЕНЬ НЕ ОТКРЫВАЕТСЯ САМ. Всё, что опекуну вообще даётся, при
+/// пустом наборе уровней запрещено — и запрещено ИМЕННО ЗА УРОВЕНЬ, а не за
+/// роль: иначе человек пойдёт выпрашивать роль, которая у него и так есть.
+TEST_F(PoliciesTest, NothingIsOpenToAGuardianWithoutConsent) {
+    int checked = 0;
+    for (const auto action : kEveryAction) {
+        if (!Ask(Role::kGuardian, action, Tie::kMyWard, GuardianScopeSet::Everything()).allowed) {
+            continue;
+        }
+        ++checked;
+
+        const auto decision = Ask(Role::kGuardian, action, Tie::kMyWard, GuardianScopeSet{});
+        EXPECT_FALSE(decision.allowed) << Name(action);
+        EXPECT_EQ(decision.reason, DenyReason::kScopeMissing) << Name(action);
+    }
+
+    EXPECT_GT(checked, 0) << "опекуну не даётся ничего: проверять нечего";
+}
+
+/// UNIT ПО КАЖДОМУ УРОВНЮ. Включён ровно один — и открылось ровно то, что этим
+/// уровнем называется. Отказ по остальным назван уровнем, а не ролью: человек,
+/// услышавший «нет роли», пойдёт выпрашивать роль, которая у него и так есть.
+TEST_F(PoliciesTest, EachLevelOpensExactlyItsOwnActions) {
+    ASSERT_EQ(kLevels.size(), kEveryGuardianScope.size())
+        << "уровень завели, а что он открывает — не написали";
+
+    for (const auto& level : kLevels) {
+        const auto only = GuardianScopeSet{}.With(level.scope);
+
+        for (const auto action : kEveryAction) {
+            const auto decision = Ask(Role::kGuardian, action, Tie::kMyWard, only);
+            const bool expected = Opens(level, action);
+            const std::string where =
+                std::string{Name(level.scope)} + " / " + std::string{Name(action)};
+
+            EXPECT_EQ(decision.allowed, expected) << where;
+            if (!expected && IsGranted(action, Role::kGuardian, Tie::kMyWard)) {
+                EXPECT_EQ(decision.reason, DenyReason::kScopeMissing) << where;
+            }
+        }
+    }
+}
+
+/// ЗАПИСИ ЗАНЯТИЙ НЕ ОТКРЫВАЮТСЯ ВМЕСТЕ С ОПЕКОЙ. Набор, который выдаётся при
+/// заведении опеки, слушать урок не позволяет — на это нужно отдельное
+/// согласие.
+TEST_F(PoliciesTest, RecordingsStayShutWhenGuardianshipIsEstablished) {
+    const auto by_default = GuardianScopeSet::OpenedByGuardianship();
+
+    EXPECT_FALSE(by_default.Has(GuardianScope::kRecordings));
+    EXPECT_TRUE(by_default.Has(GuardianScope::kSchedule));
+    EXPECT_TRUE(by_default.Has(GuardianScope::kPayments));
+    EXPECT_TRUE(by_default.Has(GuardianScope::kNotesAndHomework));
+
+    for (const auto action : {Action::kViewLessonRecording, Action::kViewLessonTranscript}) {
+        const auto decision = Ask(Role::kGuardian, action, Tie::kMyWard, by_default);
+
+        EXPECT_FALSE(decision.allowed) << "запись занятия открылась вместе с опекой";
+        EXPECT_EQ(decision.reason, DenyReason::kScopeMissing);
+    }
+}
+
+/// Уровни не подменяют друг друга: расписание не открывает записей.
+TEST_F(PoliciesTest, OneLevelDoesNotOpenAnother) {
+    const auto schedule_only = GuardianScopeSet{}.With(GuardianScope::kSchedule);
+
+    EXPECT_TRUE(Ask(Role::kGuardian, Action::kViewSchedule, Tie::kMyWard, schedule_only).allowed);
+    EXPECT_FALSE(
+        Ask(Role::kGuardian, Action::kViewLessonRecording, Tie::kMyWard, schedule_only).allowed);
+    EXPECT_FALSE(Ask(Role::kGuardian, Action::kPayInvoice, Tie::kMyWard, schedule_only).allowed);
+    EXPECT_FALSE(Ask(Role::kGuardian, Action::kViewProgress, Tie::kMyWard, schedule_only).allowed);
+}
+
+/// «Ученик вырос» — отдельная причина, а не «уровень не открыли»: идти надо не
+/// к репетитору, а к самому ученику.
+TEST_F(PoliciesTest, AGrownStudentIsANamedReason) {
+    const Subject grown{tenant_,
+                        person_,
+                        RoleSet{}.With(Role::kGuardian),
+                        Tie::kMyWard,
+                        GuardianAccess{GuardianScopeSet{},
+                                       GuardianScopeSet{},
+                                       GuardianScopeSet{}.With(GuardianScope::kRecordings)}};
+
+    const auto decision = permissions_.Decide(
+        grown, Action::kViewLessonRecording, Resource{tenant_, std::nullopt, std::nullopt});
+
+    EXPECT_FALSE(decision.allowed);
+    EXPECT_EQ(decision.reason, DenyReason::kStudentGrewUp);
+}
+
+/// Опекун не смотрит журнал доступа к своему подопечному ни при каком уровне.
+/// Иначе он видит, заметил ли ребёнок его просмотры, и гарантия перестаёт быть
+/// гарантией.
+TEST_F(PoliciesTest, TheJournalIsNotForTheGuardian) {
+    for (const auto tie : kEveryTie) {
+        EXPECT_FALSE(
+            Ask(Role::kGuardian, Action::kViewAccessJournal, tie, GuardianScopeSet::Everything())
+                .allowed)
+            << "опекун читает журнал доступа к ребёнку";
+    }
+}
+
+/// Опекун не открывает уровни сам себе.
+TEST_F(PoliciesTest, AGuardianDoesNotConsentForHimself) {
+    for (const auto tie : kEveryTie) {
+        EXPECT_FALSE(
+            Ask(Role::kGuardian, Action::kManageGuardianAccess, tie, GuardianScopeSet::Everything())
+                .allowed)
+            << "опекун сам себе открыл доступ";
+    }
 }
 
 /// Комбинаторы — не украшение: `AllOf` останавливается на первом отказе и

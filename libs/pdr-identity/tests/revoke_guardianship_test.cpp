@@ -109,20 +109,14 @@ TEST_F(RevokeGuardianshipTest, SecondRevokeReturnsRefusalAndPublishesNothing) {
 }
 
 TEST_F(RevokeGuardianshipTest, ContractAnswersWhoMayActForWhom) {
-    const testing::FakeRoles roles;
-    const testing::FakeFaults faults;
-    const policies::PolicySet permissions{faults};
+    testing::AccessWorld world;
+    world.guardianships.Establish(tenant_, guardian_, student_);
 
-    const FakeGuardianships guardianships{Granted()};
-    const ContractService contract{guardianships, roles, permissions};
+    EXPECT_TRUE(world.contract.MayActFor(tenant_, guardian_, student_));
+    EXPECT_TRUE(world.contract.MayActFor(tenant_, student_, student_));
 
-    EXPECT_TRUE(contract.MayActFor(tenant_, guardian_, student_));
-
-    EXPECT_TRUE(contract.MayActFor(tenant_, student_, student_));
-
-    const FakeGuardianships without{std::nullopt};
-    const ContractService strict{without, roles, permissions};
-    EXPECT_FALSE(strict.MayActFor(tenant_, guardian_, student_));
+    testing::AccessWorld without;
+    EXPECT_FALSE(without.contract.MayActFor(tenant_, guardian_, student_));
 }
 
 }  // namespace

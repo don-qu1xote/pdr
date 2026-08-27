@@ -41,6 +41,11 @@ enum class Action : std::uint8_t {
     kExportProgress,
     kViewTenantProgress,
 
+    kViewLessonRecording,
+    kViewLessonTranscript,
+    kViewAccessJournal,
+    kManageGuardianAccess,
+
     /// ГРАНИЦА СПИСКА, а не действие.
     ///
     /// Она здесь ради одной проверки: `kEveryAction` обязан содержать ровно
@@ -56,23 +61,17 @@ std::string_view Name(Action action) noexcept;
 std::optional<Action> ParseAction(std::string_view text);
 
 /// Все действия подряд. Единственный способ обойти реестр целиком.
-inline constexpr std::array<Action, 16> kEveryAction{
-    Action::kBookLesson,
-    Action::kCancelLesson,
-    Action::kRescheduleLesson,
-    Action::kViewSchedule,
-    Action::kViewInvoice,
-    Action::kPayInvoice,
-    Action::kIssueRefund,
-    Action::kSetTariff,
-    Action::kViewMaterial,
-    Action::kEditMaterial,
-    Action::kPublishMaterial,
-    Action::kAssignPlan,
-    Action::kViewProgress,
-    Action::kRecordAttempt,
-    Action::kExportProgress,
-    Action::kViewTenantProgress,
+inline constexpr std::array<Action, 20> kEveryAction{
+    Action::kBookLesson,          Action::kCancelLesson,
+    Action::kRescheduleLesson,    Action::kViewSchedule,
+    Action::kViewInvoice,         Action::kPayInvoice,
+    Action::kIssueRefund,         Action::kSetTariff,
+    Action::kViewMaterial,        Action::kEditMaterial,
+    Action::kPublishMaterial,     Action::kAssignPlan,
+    Action::kViewProgress,        Action::kRecordAttempt,
+    Action::kExportProgress,      Action::kViewTenantProgress,
+    Action::kViewLessonRecording, Action::kViewLessonTranscript,
+    Action::kViewAccessJournal,   Action::kManageGuardianAccess,
 };
 
 static_assert(kEveryAction.size() == static_cast<std::size_t>(Action::kBoundary),
@@ -103,6 +102,15 @@ enum class DenyReason : std::uint8_t {
     /// Роль подходящая, но ресурс чужой: не он его ведёт, не о нём данные и не
     /// о том, кого он опекает.
     kNotYours,
+
+    /// Опекун своего подопечного, но ЭТОТ УРОВЕНЬ ему не открывали. Записи
+    /// занятий не открываются вместе с опекой — только отдельным согласием.
+    kScopeMissing,
+
+    /// Ученик стал взрослым, и слово теперь за ним. Отдельная причина, потому
+    /// что идти надо не к репетитору, а к самому ученику: это единственный
+    /// человек, который может открыть доступ обратно.
+    kStudentGrewUp,
 
     /// ДЕЙСТВИЕ БЕЗ ПОЛИТИКИ. Это не отказ человеку, а ошибка настройки: кто-то
     /// завёл действие и не связал его с политикой. Значение по умолчанию —

@@ -7,7 +7,6 @@
 
 #include "builders/access_world.hpp"
 #include "builders/identifiers.hpp"
-#include "identity/application/contract_service.hpp"
 #include "identity/application/policies/policy_set.hpp"
 #include "identity/application/policies/subject.hpp"
 
@@ -60,10 +59,12 @@ TEST(PolicyRegistry, DenyReasonsHaveDistinctCodes) {
         Name(DenyReason::kForeignTenant),
         Name(DenyReason::kRoleMissing),
         Name(DenyReason::kNotYours),
+        Name(DenyReason::kScopeMissing),
+        Name(DenyReason::kStudentGrewUp),
         Name(DenyReason::kNoPolicy),
     };
 
-    EXPECT_EQ(codes.size(), 5U);
+    EXPECT_EQ(codes.size(), 7U) << "у двух причин отказа один код: человек не различит их";
 }
 
 /// ЗНАЧЕНИЕ ПО УМОЛЧАНИЮ — ЗАПРЕТ, и он не молчит.
@@ -116,18 +117,18 @@ TEST(PolicyRegistry, AResourceFromAnotherOfficeIsRefusedBeforeAnyPolicy) {
 class ContractDecidesTest : public ::testing::Test {
 protected:
     ContractDecidesTest() {
-        roles_.Grant(tenant_, tutor_, Role::kTutor);
-        roles_.Grant(tenant_, student_, Role::kStudent);
-        roles_.Grant(tenant_, guardian_, Role::kGuardian);
+        world_.roles.Grant(tenant_, tutor_, Role::kTutor);
+        world_.roles.Grant(tenant_, student_, Role::kStudent);
+        world_.roles.Grant(tenant_, guardian_, Role::kGuardian);
+        world_.guardianships.Establish(tenant_, guardian_, student_);
+        world_.Open(tenant_, guardian_, student_, GuardianScope::kSchedule, tutor_);
     }
 
     Resource Lesson() const {
         return Resource{tenant_, tutor_, student_};
     }
 
-    testing::FakeRoles roles_;
-    testing::FakeFaults faults_;
-    policies::PolicySet permissions_{faults_};
+    testing::AccessWorld world_;
 
     core::TenantId tenant_{Numbered<core::TenantId>(1)};
     core::PersonId tutor_{Numbered<core::PersonId>(10)};
@@ -136,57 +137,37 @@ protected:
     core::PersonId stranger_{Numbered<core::PersonId>(40)};
 };
 
-class GuardianOf final : public ports::GuardianshipRepository {
-public:
-    GuardianOf(core::PersonId guardian, core::PersonId student) noexcept
-        : guardian_{std::move(guardian)}, student_{std::move(student)} {}
-
-    std::optional<Guardianship> FindActive(const core::TenantId& tenant,
-                                           const core::PersonId& guardian,
-                                           const core::PersonId& student) const override {
-        if (guardian != guardian_ || student != student_) {
-            return std::nullopt;
-        }
-        return Guardianship::Restore(
-            tenant, guardian, student, core::Instant::FromUnixMicros(0), std::nullopt);
-    }
-
-    void Save(const Guardianship&) override {}
-
-private:
-    core::PersonId guardian_;
-    core::PersonId student_;
-};
-
 TEST_F(ContractDecidesTest, TheTutorCancelsHisOwnLesson) {
-    const GuardianOf guardianships{guardian_, student_};
-    const ContractService contract{guardianships, roles_, permissions_};
-
-    EXPECT_TRUE(contract.Decide(tenant_, tutor_, Action::kCancelLesson, Lesson()).allowed);
+    EXPECT_TRUE(world_.contract.Decide(tenant_, tutor_, Action::kCancelLesson, Lesson()).allowed);
 }
 
 TEST_F(ContractDecidesTest, TheGuardianCancelsForTheirWard) {
-    const GuardianOf guardianships{guardian_, student_};
-    const ContractService contract{guardianships, roles_, permissions_};
+    EXPECT_TRUE(
+        world_.contract.Decide(tenant_, guardian_, Action::kCancelLesson, Lesson()).allowed);
+}
 
-    EXPECT_TRUE(contract.Decide(tenant_, guardian_, Action::kCancelLesson, Lesson()).allowed);
+/// Тот же опекун, тот же подопечный — но уровень «деньги» ему не открывали.
+TEST_F(ContractDecidesTest, AGuardianWithoutTheLevelIsRefused) {
+    const auto decision = world_.contract.Decide(tenant_, guardian_, Action::kPayInvoice, Lesson());
+
+    EXPECT_FALSE(decision.allowed);
+    EXPECT_EQ(decision.reason, DenyReason::kScopeMissing);
 }
 
 TEST_F(ContractDecidesTest, SomeoneElsesGuardianGetsNothing) {
-    const GuardianOf guardianships{guardian_, Numbered<core::PersonId>(99)};
-    const ContractService contract{guardianships, roles_, permissions_};
+    const auto outsider = Numbered<core::PersonId>(99);
+    world_.roles.Grant(tenant_, outsider, Role::kGuardian);
 
-    const auto decision = contract.Decide(tenant_, guardian_, Action::kCancelLesson, Lesson());
+    const auto decision =
+        world_.contract.Decide(tenant_, outsider, Action::kCancelLesson, Lesson());
 
     EXPECT_FALSE(decision.allowed);
     EXPECT_EQ(decision.reason, DenyReason::kNotYours);
 }
 
 TEST_F(ContractDecidesTest, AStrangerWithoutARoleIsRefusedForTheRole) {
-    const GuardianOf guardianships{guardian_, student_};
-    const ContractService contract{guardianships, roles_, permissions_};
-
-    const auto decision = contract.Decide(tenant_, stranger_, Action::kCancelLesson, Lesson());
+    const auto decision =
+        world_.contract.Decide(tenant_, stranger_, Action::kCancelLesson, Lesson());
 
     EXPECT_FALSE(decision.allowed);
     EXPECT_EQ(decision.reason, DenyReason::kRoleMissing);
@@ -195,13 +176,10 @@ TEST_F(ContractDecidesTest, AStrangerWithoutARoleIsRefusedForTheRole) {
 /// «Вправе действовать за ученика» — это тот же расчёт отношения, а не второе
 /// правило рядом: иначе два ответа на один вопрос разойдутся на первой правке.
 TEST_F(ContractDecidesTest, MayActForAgreesWithTheTie) {
-    const GuardianOf guardianships{guardian_, student_};
-    const ContractService contract{guardianships, roles_, permissions_};
-
-    EXPECT_TRUE(contract.MayActFor(tenant_, student_, student_));
-    EXPECT_TRUE(contract.MayActFor(tenant_, guardian_, student_));
-    EXPECT_FALSE(contract.MayActFor(tenant_, tutor_, student_));
-    EXPECT_FALSE(contract.MayActFor(tenant_, stranger_, student_));
+    EXPECT_TRUE(world_.contract.MayActFor(tenant_, student_, student_));
+    EXPECT_TRUE(world_.contract.MayActFor(tenant_, guardian_, student_));
+    EXPECT_FALSE(world_.contract.MayActFor(tenant_, tutor_, student_));
+    EXPECT_FALSE(world_.contract.MayActFor(tenant_, stranger_, student_));
 }
 
 }  // namespace

@@ -2,6 +2,7 @@
 
 #include <string>
 
+#include <userver/storages/postgres/io/date.hpp>
 #include <userver/storages/postgres/query.hpp>
 
 #include "core/types/ids.hpp"
@@ -18,8 +19,8 @@ using RoleAssignmentId = core::StrongId<struct RoleAssignmentTag>;
 /// исключением значило бы разбирать код SQLSTATE и надеяться, что это был
 /// именно тот уникальный ключ.
 const userver::storages::postgres::Query kEnrolPerson{
-    "INSERT INTO identity_person (tenant_id, id, display_name, email, tz) "
-    "VALUES ($1::uuid, $2::uuid, $3, $4, $5) "
+    "INSERT INTO identity_person (tenant_id, id, display_name, email, tz, born_on) "
+    "VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6) "
     "ON CONFLICT (tenant_id, email) DO NOTHING",
     userver::storages::postgres::Query::Name{"identity_person_enrol"},
 };
@@ -41,12 +42,16 @@ core::Result<void> PostgresParticipantDirectory::Enrol(const core::TenantId& ten
                                                        const ports::Enrolment& enrolment) {
     const auto& person = enrolment.person;
 
-    const auto added = scope_.Session().Execute(kEnrolPerson,
-                                                tenant.ToString(),
-                                                person.Id().ToString(),
-                                                enrolment.display_name,
-                                                person.Mail().Value(),
-                                                enrolment.zone.Name());
+    const auto added = scope_.Session().Execute(
+        kEnrolPerson,
+        tenant.ToString(),
+        person.Id().ToString(),
+        enrolment.display_name,
+        person.Mail().Value(),
+        enrolment.zone.Name(),
+        userver::storages::postgres::Date{person.BornOn().Year(),
+                                          static_cast<int>(person.BornOn().Month()),
+                                          static_cast<int>(person.BornOn().Day())});
     if (added.RowsAffected() == 0) {
         return core::Error{core::ErrorKind::kConflict,
                            "participant_email_taken",
