@@ -56,6 +56,7 @@
 | [ADR-0006](0006-parental-access-by-design.md) | родительский доступ проектируется, а не добавляется |
 | [ADR-0008](0008-tutor-is-the-seller.md) | продавец — репетитор, а не платформа |
 | [ADR-0018](0018-age-thresholds-are-a-legal-question.md) | возрастные пороги — юридический вопрос, а не продуктовый |
+| [ADR-0020](0020-adult-student-is-the-main-case.md) | взрослый ученик без опекуна — основной случай |
 | [ADR-0017](0017-a-layer-in-help-not-a-seller.md) | мы прослойка в помощи, а не продавец с товаром |
 
 Корневое из них — [ADR-0017](0017-a-layer-in-help-not-a-seller.md): из того, что

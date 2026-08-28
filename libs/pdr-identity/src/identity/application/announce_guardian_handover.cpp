@@ -8,12 +8,15 @@
 
 namespace pdr::identity {
 
-AnnounceGuardianHandover::AnnounceGuardianHandover(const ports::GuardianConsents& consents,
-                                                   const ports::BirthDates& birth_dates,
-                                                   const ports::MaturitySettings& maturity,
-                                                   const application::ports::Clock& clock,
-                                                   events::Bus& bus) noexcept
+AnnounceGuardianHandover::AnnounceGuardianHandover(
+    const ports::GuardianConsents& consents,
+    const ports::GuardianshipRepository& guardianships,
+    const ports::BirthDates& birth_dates,
+    const ports::MaturitySettings& maturity,
+    const application::ports::Clock& clock,
+    events::Bus& bus) noexcept
     : consents_{consents},
+      guardianships_{guardianships},
       birth_dates_{birth_dates},
       maturity_{maturity},
       clock_{clock},
@@ -34,7 +37,11 @@ core::Result<bool> AnnounceGuardianHandover::Execute(const core::TenantId& tenan
 
     const auto now = clock_.Now();
     const auto access =
-        WeighConsents(consents_.ActiveFor(tenant, guardian, student), born_on, rule.Value(), now);
+        WeighConsents(consents_.ActiveFor(tenant, guardian, student),
+                      born_on,
+                      rule.Value(),
+                      now,
+                      guardianships_.FindActive(tenant, guardian, student).has_value());
     if (access.Deciding().Empty()) {
         return false;
     }

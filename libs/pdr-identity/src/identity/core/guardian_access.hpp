@@ -122,9 +122,15 @@ private:
 /// стали спрашивать. Тогда правило совершеннолетия НЕ СРАБАТЫВАЕТ: отобрать
 /// доступ у родителя из-за пустой колонки хуже, чем оставить его до выяснения.
 /// Что с такими делать — docs/runbooks/guardian-access.md.
+/// `guardianship_holds` — действует ли между этими двумя опека прямо сейчас.
+///
+/// Согласие, выданное НА ОСНОВАНИИ опеки, держится ею: отозвали опеку — доступ
+/// кончился, сколько бы строк согласий ни осталось. Согласие, которое взрослый
+/// выдал сам, опеки не требует вовсе — у него её и нет.
 GuardianAccess WeighConsents(std::span<const GuardianConsent> consents,
                              const std::optional<BirthDate>& student_born_on,
                              const MaturityRule& rule,
-                             core::Instant now);
+                             core::Instant now,
+                             bool guardianship_holds);
 
 }  // namespace pdr::identity

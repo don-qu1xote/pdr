@@ -15,7 +15,7 @@ bool ContractService::MayActFor(const core::TenantId& tenant,
     const Resource about{tenant, std::nullopt, student};
     const auto tie = subjects_.TieFor(tenant, actor, about);
 
-    return tie == Tie::kAboutMe || tie == Tie::kMyWard;
+    return tie == Tie::kAboutMe || tie == Tie::kInMyCare;
 }
 
 PolicyDecision ContractService::Decide(const core::TenantId& tenant,

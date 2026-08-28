@@ -8,8 +8,8 @@ std::string_view Name(Tie tie) noexcept {
             return "mine";
         case Tie::kAboutMe:
             return "about_me";
-        case Tie::kMyWard:
-            return "my_ward";
+        case Tie::kInMyCare:
+            return "in_my_care";
         case Tie::kNone:
             return "none";
     }
@@ -18,15 +18,15 @@ std::string_view Name(Tie tie) noexcept {
 
 Tie TieBetween(const core::PersonId& person,
                const Resource& resource,
-               bool guards_subject) noexcept {
+               bool looks_after_subject) noexcept {
     if (resource.owner.has_value() && *resource.owner == person) {
         return Tie::kMine;
     }
     if (resource.subject.has_value() && *resource.subject == person) {
         return Tie::kAboutMe;
     }
-    if (resource.subject.has_value() && guards_subject) {
-        return Tie::kMyWard;
+    if (resource.subject.has_value() && looks_after_subject) {
+        return Tie::kInMyCare;
     }
     return Tie::kNone;
 }

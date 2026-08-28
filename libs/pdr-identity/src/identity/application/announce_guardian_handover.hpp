@@ -6,6 +6,7 @@
 #include "events/bus.hpp"
 #include "identity/application/ports/birth_dates.hpp"
 #include "identity/application/ports/guardian_consents.hpp"
+#include "identity/application/ports/guardianship_repository.hpp"
 #include "identity/application/ports/maturity_settings.hpp"
 
 namespace pdr::identity {
@@ -28,6 +29,7 @@ namespace pdr::identity {
 class AnnounceGuardianHandover final {
 public:
     AnnounceGuardianHandover(const ports::GuardianConsents& consents,
+                             const ports::GuardianshipRepository& guardianships,
                              const ports::BirthDates& birth_dates,
                              const ports::MaturitySettings& maturity,
                              const application::ports::Clock& clock,
@@ -39,6 +41,7 @@ public:
 
 private:
     const ports::GuardianConsents& consents_;
+    const ports::GuardianshipRepository& guardianships_;
     const ports::BirthDates& birth_dates_;
     const ports::MaturitySettings& maturity_;
     const application::ports::Clock& clock_;

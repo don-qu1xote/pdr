@@ -18,7 +18,7 @@ namespace {
 
 using pdr::testing::Numbered;
 
-constexpr std::array kEveryTie{Tie::kMine, Tie::kAboutMe, Tie::kMyWard, Tie::kNone};
+constexpr std::array kEveryTie{Tie::kMine, Tie::kAboutMe, Tie::kInMyCare, Tie::kNone};
 
 struct Grant final {
     Action action;
@@ -36,76 +36,76 @@ struct Grant final {
 const std::vector<Grant> kGranted{
     {Action::kBookLesson, Role::kTutor, Tie::kMine},
     {Action::kBookLesson, Role::kStudent, Tie::kAboutMe},
-    {Action::kBookLesson, Role::kGuardian, Tie::kMyWard},
+    {Action::kBookLesson, Role::kGuardian, Tie::kInMyCare},
 
     {Action::kCancelLesson, Role::kTutor, Tie::kMine},
     {Action::kCancelLesson, Role::kStudent, Tie::kAboutMe},
-    {Action::kCancelLesson, Role::kGuardian, Tie::kMyWard},
+    {Action::kCancelLesson, Role::kGuardian, Tie::kInMyCare},
 
     {Action::kRescheduleLesson, Role::kTutor, Tie::kMine},
     {Action::kRescheduleLesson, Role::kStudent, Tie::kAboutMe},
-    {Action::kRescheduleLesson, Role::kGuardian, Tie::kMyWard},
+    {Action::kRescheduleLesson, Role::kGuardian, Tie::kInMyCare},
 
     {Action::kViewSchedule, Role::kTutor, Tie::kMine},
     {Action::kViewSchedule, Role::kStudent, Tie::kAboutMe},
-    {Action::kViewSchedule, Role::kGuardian, Tie::kMyWard},
+    {Action::kViewSchedule, Role::kGuardian, Tie::kInMyCare},
     {Action::kViewSchedule, Role::kOwner, Tie::kMine},
     {Action::kViewSchedule, Role::kOwner, Tie::kAboutMe},
-    {Action::kViewSchedule, Role::kOwner, Tie::kMyWard},
+    {Action::kViewSchedule, Role::kOwner, Tie::kInMyCare},
     {Action::kViewSchedule, Role::kOwner, Tie::kNone},
 
     {Action::kViewInvoice, Role::kStudent, Tie::kAboutMe},
-    {Action::kViewInvoice, Role::kGuardian, Tie::kMyWard},
+    {Action::kViewInvoice, Role::kGuardian, Tie::kInMyCare},
     {Action::kViewInvoice, Role::kTutor, Tie::kMine},
     {Action::kViewInvoice, Role::kOwner, Tie::kMine},
     {Action::kViewInvoice, Role::kOwner, Tie::kAboutMe},
-    {Action::kViewInvoice, Role::kOwner, Tie::kMyWard},
+    {Action::kViewInvoice, Role::kOwner, Tie::kInMyCare},
     {Action::kViewInvoice, Role::kOwner, Tie::kNone},
 
     {Action::kPayInvoice, Role::kStudent, Tie::kAboutMe},
-    {Action::kPayInvoice, Role::kGuardian, Tie::kMyWard},
+    {Action::kPayInvoice, Role::kGuardian, Tie::kInMyCare},
 
     {Action::kIssueRefund, Role::kTutor, Tie::kMine},
     {Action::kIssueRefund, Role::kOwner, Tie::kMine},
     {Action::kIssueRefund, Role::kOwner, Tie::kAboutMe},
-    {Action::kIssueRefund, Role::kOwner, Tie::kMyWard},
+    {Action::kIssueRefund, Role::kOwner, Tie::kInMyCare},
     {Action::kIssueRefund, Role::kOwner, Tie::kNone},
 
     {Action::kSetTariff, Role::kTutor, Tie::kMine},
     {Action::kSetTariff, Role::kOwner, Tie::kMine},
     {Action::kSetTariff, Role::kOwner, Tie::kAboutMe},
-    {Action::kSetTariff, Role::kOwner, Tie::kMyWard},
+    {Action::kSetTariff, Role::kOwner, Tie::kInMyCare},
     {Action::kSetTariff, Role::kOwner, Tie::kNone},
 
     {Action::kViewMaterial, Role::kTutor, Tie::kMine},
     {Action::kViewMaterial, Role::kStudent, Tie::kAboutMe},
-    {Action::kViewMaterial, Role::kGuardian, Tie::kMyWard},
+    {Action::kViewMaterial, Role::kGuardian, Tie::kInMyCare},
 
     {Action::kEditMaterial, Role::kTutor, Tie::kMine},
     {Action::kPublishMaterial, Role::kTutor, Tie::kMine},
     {Action::kAssignPlan, Role::kTutor, Tie::kMine},
 
     {Action::kViewProgress, Role::kStudent, Tie::kAboutMe},
-    {Action::kViewProgress, Role::kGuardian, Tie::kMyWard},
+    {Action::kViewProgress, Role::kGuardian, Tie::kInMyCare},
     {Action::kViewProgress, Role::kTutor, Tie::kMine},
 
     {Action::kRecordAttempt, Role::kStudent, Tie::kAboutMe},
 
     {Action::kExportProgress, Role::kStudent, Tie::kAboutMe},
-    {Action::kExportProgress, Role::kGuardian, Tie::kMyWard},
+    {Action::kExportProgress, Role::kGuardian, Tie::kInMyCare},
 
     {Action::kViewTenantProgress, Role::kOwner, Tie::kMine},
     {Action::kViewTenantProgress, Role::kOwner, Tie::kAboutMe},
-    {Action::kViewTenantProgress, Role::kOwner, Tie::kMyWard},
+    {Action::kViewTenantProgress, Role::kOwner, Tie::kInMyCare},
     {Action::kViewTenantProgress, Role::kOwner, Tie::kNone},
 
     {Action::kViewLessonRecording, Role::kStudent, Tie::kAboutMe},
     {Action::kViewLessonRecording, Role::kTutor, Tie::kMine},
-    {Action::kViewLessonRecording, Role::kGuardian, Tie::kMyWard},
+    {Action::kViewLessonRecording, Role::kGuardian, Tie::kInMyCare},
 
     {Action::kViewLessonTranscript, Role::kStudent, Tie::kAboutMe},
     {Action::kViewLessonTranscript, Role::kTutor, Tie::kMine},
-    {Action::kViewLessonTranscript, Role::kGuardian, Tie::kMyWard},
+    {Action::kViewLessonTranscript, Role::kGuardian, Tie::kInMyCare},
 
     {Action::kViewAccessJournal, Role::kStudent, Tie::kAboutMe},
     {Action::kViewAccessJournal, Role::kTutor, Tie::kMine},
@@ -115,20 +115,20 @@ const std::vector<Grant> kGranted{
 
     {Action::kWriteReview, Role::kStudent, Tie::kAboutMe},
 
-    {Action::kManageAutoPayment, Role::kGuardian, Tie::kMyWard},
+    {Action::kManageAutoPayment, Role::kGuardian, Tie::kInMyCare},
 
     {Action::kInvitePeople, Role::kOwner, Tie::kMine},
     {Action::kInvitePeople, Role::kOwner, Tie::kAboutMe},
-    {Action::kInvitePeople, Role::kOwner, Tie::kMyWard},
+    {Action::kInvitePeople, Role::kOwner, Tie::kInMyCare},
     {Action::kInvitePeople, Role::kOwner, Tie::kNone},
     {Action::kInvitePeople, Role::kTutor, Tie::kMine},
     {Action::kInvitePeople, Role::kTutor, Tie::kAboutMe},
-    {Action::kInvitePeople, Role::kTutor, Tie::kMyWard},
+    {Action::kInvitePeople, Role::kTutor, Tie::kInMyCare},
     {Action::kInvitePeople, Role::kTutor, Tie::kNone},
 
     {Action::kManagePractice, Role::kOwner, Tie::kMine},
     {Action::kManagePractice, Role::kOwner, Tie::kAboutMe},
-    {Action::kManagePractice, Role::kOwner, Tie::kMyWard},
+    {Action::kManagePractice, Role::kOwner, Tie::kInMyCare},
     {Action::kManagePractice, Role::kOwner, Tie::kNone},
 };
 
@@ -293,7 +293,7 @@ TEST_F(PoliciesTest, SeveralRolesAddUp) {
         tenant_,
         person_,
         RoleSet::Of({Role::kTutor, Role::kGuardian}),
-        Tie::kMyWard,
+        Tie::kInMyCare,
         GuardianAccess{GuardianScopeSet::Everything(), GuardianScopeSet{}, GuardianScopeSet{}}};
 
     const auto decision = permissions_.Decide(
@@ -320,12 +320,12 @@ TEST_F(PoliciesTest, RoleSetRemembersWhatWasPutIn) {
 TEST_F(PoliciesTest, NothingIsOpenToAGuardianWithoutConsent) {
     int checked = 0;
     for (const auto action : kEveryAction) {
-        if (!Ask(Role::kGuardian, action, Tie::kMyWard, GuardianScopeSet::Everything()).allowed) {
+        if (!Ask(Role::kGuardian, action, Tie::kInMyCare, GuardianScopeSet::Everything()).allowed) {
             continue;
         }
         ++checked;
 
-        const auto decision = Ask(Role::kGuardian, action, Tie::kMyWard, GuardianScopeSet{});
+        const auto decision = Ask(Role::kGuardian, action, Tie::kInMyCare, GuardianScopeSet{});
         EXPECT_FALSE(decision.allowed) << Name(action);
         EXPECT_EQ(decision.reason, DenyReason::kScopeMissing) << Name(action);
     }
@@ -344,13 +344,13 @@ TEST_F(PoliciesTest, EachLevelOpensExactlyItsOwnActions) {
         const auto only = GuardianScopeSet{}.With(level.scope);
 
         for (const auto action : kEveryAction) {
-            const auto decision = Ask(Role::kGuardian, action, Tie::kMyWard, only);
+            const auto decision = Ask(Role::kGuardian, action, Tie::kInMyCare, only);
             const bool expected = Opens(level, action);
             const std::string where =
                 std::string{Name(level.scope)} + " / " + std::string{Name(action)};
 
             EXPECT_EQ(decision.allowed, expected) << where;
-            if (!expected && IsGranted(action, Role::kGuardian, Tie::kMyWard)) {
+            if (!expected && IsGranted(action, Role::kGuardian, Tie::kInMyCare)) {
                 EXPECT_EQ(decision.reason, DenyReason::kScopeMissing) << where;
             }
         }
@@ -369,7 +369,7 @@ TEST_F(PoliciesTest, RecordingsStayShutWhenGuardianshipIsEstablished) {
     EXPECT_TRUE(by_default.Has(GuardianScope::kNotesAndHomework));
 
     for (const auto action : {Action::kViewLessonRecording, Action::kViewLessonTranscript}) {
-        const auto decision = Ask(Role::kGuardian, action, Tie::kMyWard, by_default);
+        const auto decision = Ask(Role::kGuardian, action, Tie::kInMyCare, by_default);
 
         EXPECT_FALSE(decision.allowed) << "запись занятия открылась вместе с опекой";
         EXPECT_EQ(decision.reason, DenyReason::kScopeMissing);
@@ -380,11 +380,12 @@ TEST_F(PoliciesTest, RecordingsStayShutWhenGuardianshipIsEstablished) {
 TEST_F(PoliciesTest, OneLevelDoesNotOpenAnother) {
     const auto schedule_only = GuardianScopeSet{}.With(GuardianScope::kSchedule);
 
-    EXPECT_TRUE(Ask(Role::kGuardian, Action::kViewSchedule, Tie::kMyWard, schedule_only).allowed);
+    EXPECT_TRUE(Ask(Role::kGuardian, Action::kViewSchedule, Tie::kInMyCare, schedule_only).allowed);
     EXPECT_FALSE(
-        Ask(Role::kGuardian, Action::kViewLessonRecording, Tie::kMyWard, schedule_only).allowed);
-    EXPECT_FALSE(Ask(Role::kGuardian, Action::kPayInvoice, Tie::kMyWard, schedule_only).allowed);
-    EXPECT_FALSE(Ask(Role::kGuardian, Action::kViewProgress, Tie::kMyWard, schedule_only).allowed);
+        Ask(Role::kGuardian, Action::kViewLessonRecording, Tie::kInMyCare, schedule_only).allowed);
+    EXPECT_FALSE(Ask(Role::kGuardian, Action::kPayInvoice, Tie::kInMyCare, schedule_only).allowed);
+    EXPECT_FALSE(
+        Ask(Role::kGuardian, Action::kViewProgress, Tie::kInMyCare, schedule_only).allowed);
 }
 
 /// «Ученик вырос» — отдельная причина, а не «уровень не открыли»: идти надо не
@@ -393,7 +394,7 @@ TEST_F(PoliciesTest, AGrownStudentIsANamedReason) {
     const Subject grown{tenant_,
                         person_,
                         RoleSet{}.With(Role::kGuardian),
-                        Tie::kMyWard,
+                        Tie::kInMyCare,
                         GuardianAccess{GuardianScopeSet{},
                                        GuardianScopeSet{},
                                        GuardianScopeSet{}.With(GuardianScope::kRecordings)}};
@@ -470,7 +471,7 @@ TEST(Ties, TheClosestTieWins) {
 
     EXPECT_EQ(TieBetween(tutor, lesson, false), Tie::kMine);
     EXPECT_EQ(TieBetween(student, lesson, false), Tie::kAboutMe);
-    EXPECT_EQ(TieBetween(Numbered<core::PersonId>(30), lesson, true), Tie::kMyWard);
+    EXPECT_EQ(TieBetween(Numbered<core::PersonId>(30), lesson, true), Tie::kInMyCare);
     EXPECT_EQ(TieBetween(Numbered<core::PersonId>(30), lesson, false), Tie::kNone);
 
     const Resource of_the_office{tenant, std::nullopt, std::nullopt};

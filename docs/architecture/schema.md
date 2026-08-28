@@ -4,7 +4,7 @@
      правка переживёт ровно до следующей пересборки. Изменить схему — значит
      написать новую миграцию. -->
 
-Собрано из миграций: 8. Таблиц: 17.
+Собрано из миграций: 9. Таблиц: 17.
 
 Правила, которым подчиняется каждая колонка, — в
 [migrations.md](migrations.md). Как устроена изоляция арендаторов и почему у
@@ -116,6 +116,7 @@
 | `expires_at` | `timestamptz` | timestamptz |
 | `revoked_at` | `timestamptz` | timestamptz |
 | `revoked_by` | `uuid` | uuid |
+| `basis` | `text` | text not null default |
 
 Ограничения:
 
@@ -129,6 +130,8 @@
 * `constraint identity_guardian_consent_expires_after_granted check (expires_at is null or expires_at > granted_at)`
 * `constraint identity_guardian_consent_revoked_after_granted check (revoked_at is null or revoked_at >= granted_at)`
 * `constraint identity_guardian_consent_revoked_by_someone check ((revoked_at is null) = (revoked_by is null))`
+* `constraint identity_guardian_consent_basis_known check (basis in ( , , ))`
+* `constraint identity_guardian_consent_money_is_not_sight check (basis <> or scope = )`
 
 Индексы:
 
@@ -550,3 +553,4 @@
 1. `V006__auth.sql` — identity_credential, identity_session, identity_one_time_token, identity_login_attempt
 1. `V007__guardian_access.sql` — identity_guardian_consent
 1. `V008__practice_and_accounts.sql` — identity_account, identity_signup_attempt
+1. `V009__consent_basis.sql` — без новых таблиц

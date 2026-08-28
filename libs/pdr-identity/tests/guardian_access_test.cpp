@@ -42,12 +42,14 @@ MaturityRule Rule(int grace_days = 30) {
 GuardianConsent Consent(GuardianScope scope,
                         core::PersonId granted_by,
                         core::Instant at,
-                        int number = 1) {
+                        int number = 1,
+                        ConsentBasis basis = ConsentBasis::kGuardianship) {
     return GuardianConsent::Grant(Numbered<ConsentId>(static_cast<std::uint64_t>(number)),
                                   kTenant,
                                   kGuardian,
                                   kStudent,
                                   scope,
+                                  basis,
                                   std::move(granted_by),
                                   at,
                                   std::nullopt)
@@ -116,8 +118,10 @@ protected:
         return AgeStatus::TurnsAt(born_, 14);
     }
 
-    GuardianAccess Weigh(const std::vector<GuardianConsent>& consents, core::Instant now) const {
-        return WeighConsents(consents, born_, Rule(), now);
+    GuardianAccess Weigh(const std::vector<GuardianConsent>& consents,
+                         core::Instant now,
+                         bool guardianship_holds = true) const {
+        return WeighConsents(consents, born_, Rule(), now, guardianship_holds);
     }
 
     BirthDate born_{BirthDate::Of(2011, 3, 4).Value()};
@@ -200,6 +204,7 @@ TEST_F(WeighingTest, RevokedAndExpiredConsentsOpenNothing) {
                                                  kGuardian,
                                                  kStudent,
                                                  GuardianScope::kPayments,
+                                                 ConsentBasis::kGuardianship,
                                                  kTutor,
                                                  granted,
                                                  granted + Days(5))
@@ -215,7 +220,7 @@ TEST_F(WeighingTest, AnUnknownBirthDateDoesNotCloseAnything) {
     const std::vector<GuardianConsent> consents{
         Consent(GuardianScope::kRecordings, kTutor, granted)};
 
-    const auto access = WeighConsents(consents, std::nullopt, Rule(), granted + Days(10000));
+    const auto access = WeighConsents(consents, std::nullopt, Rule(), granted + Days(10000), true);
 
     EXPECT_TRUE(access.Open().Has(GuardianScope::kRecordings));
     EXPECT_TRUE(access.AwaitsStudent().Empty());
@@ -244,6 +249,7 @@ TEST(GuardianConsentTest, SelfGuardianshipIsRefused) {
                                                 kStudent,
                                                 kStudent,
                                                 GuardianScope::kSchedule,
+                                                ConsentBasis::kGuardianship,
                                                 kTutor,
                                                 core::Instant::FromUnixMicros(0),
                                                 std::nullopt);
@@ -390,8 +396,13 @@ protected:
                                        world_.maturity,
                                        world_.ids,
                                        world_.clock};
-        return grant.Execute(GrantGuardianScopeRequest{
-            kTenant, std::move(guardian), kStudent, scope, std::move(granted_by), std::nullopt});
+        return grant.Execute(GrantGuardianScopeRequest{kTenant,
+                                                       std::move(guardian),
+                                                       kStudent,
+                                                       scope,
+                                                       ConsentBasis::kGuardianship,
+                                                       std::move(granted_by),
+                                                       std::nullopt});
     }
 
     core::Result<void> Close(GuardianScope scope, core::PersonId revoked_by) {
@@ -477,6 +488,7 @@ TEST_F(GrantingTest, WhatWasRevokedIsGrantedAgainAsANewRow) {
 class HandoverTest : public ::testing::Test {
 protected:
     HandoverTest() {
+        world_.guardianships.Establish(kTenant, kGuardian, kStudent);
         world_.birth_dates.Put(kTenant, kStudent, born_);
         world_.Open(kTenant, kGuardian, kStudent, GuardianScope::kRecordings, kTutor);
         bus_.Subscribe<pdr::events::identity::GuardianHandoverStarted>(
@@ -486,8 +498,12 @@ protected:
     }
 
     bool Announce() {
-        const AnnounceGuardianHandover announce{
-            world_.consents, world_.birth_dates, world_.maturity, world_.clock, bus_};
+        const AnnounceGuardianHandover announce{world_.consents,
+                                                world_.guardianships,
+                                                world_.birth_dates,
+                                                world_.maturity,
+                                                world_.clock,
+                                                bus_};
         const auto said = announce.Execute(kTenant, kGuardian, kStudent);
         EXPECT_TRUE(said.HasValue());
         return said.HasValue() && said.Value();
@@ -531,7 +547,7 @@ TEST_F(HandoverTest, AnUnknownBirthDateIsSilent) {
     testing::AccessWorld blank;
     blank.Open(kTenant, kGuardian, kStudent, GuardianScope::kRecordings, kTutor);
     const AnnounceGuardianHandover announce{
-        blank.consents, blank.birth_dates, blank.maturity, blank.clock, bus_};
+        blank.consents, blank.guardianships, blank.birth_dates, blank.maturity, blank.clock, bus_};
 
     const auto said = announce.Execute(kTenant, kGuardian, kStudent);
 

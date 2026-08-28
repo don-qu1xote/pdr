@@ -2,11 +2,35 @@
 
 namespace pdr::identity {
 
+std::string_view Name(ConsentBasis basis) noexcept {
+    switch (basis) {
+        case ConsentBasis::kGuardianship:
+            return "guardianship";
+        case ConsentBasis::kNamedByStudent:
+            return "named_by_student";
+        case ConsentBasis::kPaysForLessons:
+            return "pays_for_lessons";
+        case ConsentBasis::kBoundary:
+            return "boundary";
+    }
+    return "boundary";
+}
+
+std::optional<ConsentBasis> ParseConsentBasis(std::string_view text) {
+    for (const auto basis : kEveryConsentBasis) {
+        if (Name(basis) == text) {
+            return basis;
+        }
+    }
+    return std::nullopt;
+}
+
 core::Result<GuardianConsent> GuardianConsent::Grant(ConsentId id,
                                                      core::TenantId tenant,
                                                      core::PersonId guardian,
                                                      core::PersonId student,
                                                      GuardianScope scope,
+                                                     ConsentBasis basis,
                                                      core::PersonId granted_by,
                                                      core::Instant granted_at,
                                                      std::optional<core::Instant> expires_at) {
@@ -19,6 +43,17 @@ core::Result<GuardianConsent> GuardianConsent::Grant(ConsentId id,
         return core::Error{
             core::ErrorKind::kValidation, "consent_scope_unknown", "такого уровня доступа нет"};
     }
+    if (basis == ConsentBasis::kBoundary) {
+        return core::Error{core::ErrorKind::kValidation,
+                           "consent_basis_unknown",
+                           "такого основания для доступа нет"};
+    }
+    if (!MayCarry(basis, scope)) {
+        return core::Error{core::ErrorKind::kForbidden,
+                           "consent_basis_forbids_scope",
+                           "плательщик получает деньги и только деньги: смотреть занятия "
+                           "оплата не позволяет"};
+    }
     if (expires_at.has_value() && *expires_at <= granted_at) {
         return core::Error{core::ErrorKind::kValidation,
                            "consent_expires_before_granted",
@@ -30,6 +65,7 @@ core::Result<GuardianConsent> GuardianConsent::Grant(ConsentId id,
                            std::move(guardian),
                            std::move(student),
                            scope,
+                           basis,
                            std::move(granted_by),
                            granted_at,
                            expires_at,
@@ -42,6 +78,7 @@ GuardianConsent GuardianConsent::Restore(ConsentId id,
                                          core::PersonId guardian,
                                          core::PersonId student,
                                          GuardianScope scope,
+                                         ConsentBasis basis,
                                          core::PersonId granted_by,
                                          core::Instant granted_at,
                                          std::optional<core::Instant> expires_at,
@@ -52,6 +89,7 @@ GuardianConsent GuardianConsent::Restore(ConsentId id,
                            std::move(guardian),
                            std::move(student),
                            scope,
+                           basis,
                            std::move(granted_by),
                            granted_at,
                            expires_at,
@@ -86,6 +124,7 @@ core::Result<GuardianConsent> GuardianConsent::Revoked(core::Instant at, core::P
                            guardian_,
                            student_,
                            scope_,
+                           basis_,
                            granted_by_,
                            granted_at_,
                            expires_at_,

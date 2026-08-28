@@ -60,9 +60,18 @@ public:
                             const core::PersonId& student) const;
 
 private:
-    bool Guards(const core::TenantId& tenant,
-                const core::PersonId& actor,
-                const Resource& resource) const;
+    /// Смотрит ли этот человек за тем, о ком ресурс.
+    ///
+    /// ДВА ОСНОВАНИЯ, ОДИН ОТВЕТ. Опека — у ребёнка; названный самим взрослым
+    /// наблюдатель — у того, у кого опеки нет вовсе. Второе не выводится из
+    /// первого: у совершеннолетнего ученика опекуна не существует, и требовать
+    /// её от супруга, которого он сам назвал, значит требовать несуществующего.
+    ///
+    /// Согласия на основании опеки сюда НЕ считаются: они держатся опекой, и
+    /// отозванная опека обязана обрывать доступ, сколько бы строк ни осталось.
+    bool LooksAfter(const core::TenantId& tenant,
+                    const core::PersonId& actor,
+                    const Resource& resource) const;
 
     const ports::GuardianshipRepository& guardianships_;
     const ports::RoleRepository& roles_;

@@ -19,19 +19,29 @@ SubjectBuilder::SubjectBuilder(const ports::GuardianshipRepository& guardianship
       maturity_{maturity},
       clock_{clock} {}
 
-bool SubjectBuilder::Guards(const core::TenantId& tenant,
-                            const core::PersonId& actor,
-                            const Resource& resource) const {
+bool SubjectBuilder::LooksAfter(const core::TenantId& tenant,
+                                const core::PersonId& actor,
+                                const Resource& resource) const {
     if (!resource.subject.has_value() || *resource.subject == actor) {
         return false;
     }
-    return guardianships_.FindActive(tenant, actor, *resource.subject).has_value();
+    if (guardianships_.FindActive(tenant, actor, *resource.subject).has_value()) {
+        return true;
+    }
+
+    const auto now = clock_.Now();
+    for (const auto& consent : consents_.ActiveFor(tenant, actor, *resource.subject)) {
+        if (NamedByTheStudentHimself(consent.Basis()) && consent.IsActiveAt(now)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 Tie SubjectBuilder::TieFor(const core::TenantId& tenant,
                            const core::PersonId& actor,
                            const Resource& resource) const {
-    return TieBetween(actor, resource, Guards(tenant, actor, resource));
+    return TieBetween(actor, resource, LooksAfter(tenant, actor, resource));
 }
 
 GuardianAccess SubjectBuilder::AccessOf(const core::TenantId& tenant,
@@ -43,7 +53,9 @@ GuardianAccess SubjectBuilder::AccessOf(const core::TenantId& tenant,
     }
 
     const auto consents = consents_.ActiveFor(tenant, guardian, student);
-    return WeighConsents(consents, birth_dates_.Of(tenant, student), rule.Value(), clock_.Now());
+    const bool guarded = guardianships_.FindActive(tenant, guardian, student).has_value();
+    return WeighConsents(
+        consents, birth_dates_.Of(tenant, student), rule.Value(), clock_.Now(), guarded);
 }
 
 Capabilities SubjectBuilder::AbilityOf(const core::TenantId& tenant,
@@ -68,7 +80,7 @@ Subject SubjectBuilder::For(const core::TenantId& tenant,
     const auto tie = TieFor(tenant, actor, resource);
 
     auto access = GuardianAccess{GuardianScopeSet{}, GuardianScopeSet{}, GuardianScopeSet{}};
-    if (tie == Tie::kMyWard && resource.subject.has_value()) {
+    if (tie == Tie::kInMyCare && resource.subject.has_value()) {
         access = AccessOf(tenant, actor, *resource.subject);
     }
 

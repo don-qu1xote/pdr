@@ -252,7 +252,8 @@ struct AccessWorld final {
               const core::PersonId& guardian,
               const core::PersonId& student,
               GuardianScope scope,
-              const core::PersonId& granted_by) {
+              const core::PersonId& granted_by,
+              ConsentBasis basis = ConsentBasis::kGuardianship) {
         static std::uint64_t next = 1;
         core::IdBytes bytes{};
         bytes.back() = static_cast<std::uint8_t>(next++);
@@ -261,6 +262,7 @@ struct AccessWorld final {
                                              guardian,
                                              student,
                                              scope,
+                                             basis,
                                              granted_by,
                                              clock.Now(),
                                              std::nullopt)

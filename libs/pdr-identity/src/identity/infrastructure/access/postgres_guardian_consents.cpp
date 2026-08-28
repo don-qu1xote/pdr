@@ -15,7 +15,7 @@ using infrastructure::db::AsTimestamptz;
 using infrastructure::db::Timestamptz;
 
 const userver::storages::postgres::Query kActiveFor{
-    "SELECT id, scope, granted_by, granted_at, expires_at "
+    "SELECT id, scope, basis, granted_by, granted_at, expires_at "
     "FROM identity_guardian_consent "
     "WHERE guardian_id = $1::uuid AND student_id = $2::uuid AND revoked_at IS NULL",
     userver::storages::postgres::Query::Name{"identity_guardian_consent_active"},
@@ -25,9 +25,9 @@ const userver::storages::postgres::Query kActiveFor{
 /// позволил бы двум действующим согласиям на пару и уровень, и правильно.
 const userver::storages::postgres::Query kSave{
     "INSERT INTO identity_guardian_consent "
-    "(tenant_id, id, guardian_id, student_id, scope, granted_at, granted_by, expires_at, "
-    "revoked_at, revoked_by) "
-    "VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7::uuid, $8, $9, $10::uuid) "
+    "(tenant_id, id, guardian_id, student_id, scope, basis, granted_at, granted_by, "
+    "expires_at, revoked_at, revoked_by) "
+    "VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7, $8::uuid, $9, $10, $11::uuid) "
     "ON CONFLICT (tenant_id, id) DO UPDATE "
     "SET revoked_at = excluded.revoked_at, revoked_by = excluded.revoked_by",
     userver::storages::postgres::Query::Name{"identity_guardian_consent_save"},
@@ -39,8 +39,9 @@ GuardianConsent From(const userver::storages::postgres::Row& row,
                      const core::PersonId& student) {
     const auto id = ConsentId::Parse(row["id"].As<std::string>());
     const auto scope = ParseGuardianScope(row["scope"].As<std::string>());
+    const auto basis = ParseConsentBasis(row["basis"].As<std::string>());
     const auto granted_by = core::PersonId::Parse(row["granted_by"].As<std::string>());
-    if (!id.has_value() || !scope.has_value() || !granted_by.has_value()) {
+    if (!id.has_value() || !scope.has_value() || !basis.has_value() || !granted_by.has_value()) {
         throw std::runtime_error{"identity_guardian_consent: строка не разбирается"};
     }
 
@@ -55,6 +56,7 @@ GuardianConsent From(const userver::storages::postgres::Row& row,
                                     guardian,
                                     student,
                                     *scope,
+                                    *basis,
                                     *granted_by,
                                     AsInstant(row["granted_at"].As<Timestamptz>()),
                                     expires,
@@ -115,6 +117,7 @@ void PostgresGuardianConsents::Save(const GuardianConsent& consent) {
                              consent.Guardian().ToString(),
                              consent.Student().ToString(),
                              std::string{Name(consent.Scope())},
+                             std::string{Name(consent.Basis())},
                              AsTimestamptz(consent.GrantedAt()),
                              consent.GrantedBy().ToString(),
                              expires,

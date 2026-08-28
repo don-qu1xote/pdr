@@ -52,6 +52,10 @@ ctest, либо пометка «намерение».
 | Текст отзыва опекуну не показывают: в событии для него нет места | `libs/pdr-events/include/events/identity/ward_acted_alone.hpp` | `scripts/check_guardian_notice.py` |
 | Автоплатёж с чужой карты ученику не даётся ни в каком возрасте | `libs/pdr-identity/src/identity/application/policies/billing_policy.cpp` | `libs/pdr-identity/tests/capabilities_test.cpp` |
 | Ученик читает журнал доступов к себе, опекун — нет ни при каком уровне | `libs/pdr-identity/src/identity/application/show_access_journal.hpp` | `libs/pdr-identity/tests/guardian_access_test.cpp` |
+| Взрослый ученик без опекуна проходит весь путь: опека нигде не обязательна | `libs/pdr-identity/src/identity/application/policies/subject_builder.cpp` | `scripts/check_adult_student.py`, `libs/pdr-identity/tests/adult_student_test.cpp` |
+| Опека и наблюдение — один механизм с разными основаниями | `libs/pdr-identity/src/identity/core/guardian_consent.hpp` | `libs/pdr-identity/tests/adult_student_test.cpp` |
+| Деньги не дают права смотреть: плательщику открыты только счета | `db/migrations/V009__consent_basis.sql` | `libs/pdr-identity/tests/adult_student_test.cpp`, `scripts/check_isolation.py` |
+| Возраст при регистрации заявительный: документов продукт не просит | `libs/pdr-identity/src/identity/core/birth_date.hpp` | `scripts/check_adult_student.py` |
 | Сессию хранилища не получить мимо области арендатора | `libs/pdr-core/src/application/ports/tenant_aware_repository.hpp` | `tenant_session_outside_scope` |
 | Время — `timestamptz` в UTC плюс отдельная зона IANA | `libs/pdr-core/src/core/types/time.cpp` | `scripts/check_migrations.py`, `libs/pdr-core/tests/time_test.cpp` |
 | Деньги — целые минорные единицы и код валюты | `libs/pdr-core/src/core/money.cpp` | `scripts/check_migrations.py`, `libs/pdr-billing/tests/quote_test.cpp` |

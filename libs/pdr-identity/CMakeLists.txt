@@ -135,6 +135,7 @@ if(PDR_BUILD_TESTS)
     # не имеет права.
     pdr_unit_test_sources(
         tests/access_log_test.cpp
+        tests/adult_student_test.cpp
         tests/age_status_test.cpp
         tests/capabilities_test.cpp
         tests/guardian_access_test.cpp

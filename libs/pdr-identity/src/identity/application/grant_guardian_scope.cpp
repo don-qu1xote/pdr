@@ -24,10 +24,17 @@ core::Result<GuardianConsent> GrantGuardianScope::Execute(
         return rule.Failure();
     }
 
-    if (!guardianships_.FindActive(request.tenant, request.guardian, request.student).has_value()) {
-        return core::Error{core::ErrorKind::kNotFound,
-                           "guardianship_not_found",
-                           "действующей опеки между этими людьми нет"};
+    if (request.basis == ConsentBasis::kGuardianship) {
+        if (!guardianships_.FindActive(request.tenant, request.guardian, request.student)
+                 .has_value()) {
+            return core::Error{core::ErrorKind::kNotFound,
+                               "guardianship_not_found",
+                               "действующей опеки между этими людьми нет"};
+        }
+    } else if (request.granted_by != request.student) {
+        return core::Error{core::ErrorKind::kForbidden,
+                           "watcher_named_by_someone_else",
+                           "наблюдателя называет тот, за кем будут смотреть, и никто другой"};
     }
 
     if (consents_.FindActive(request.tenant, request.guardian, request.student, request.scope)
@@ -40,7 +47,7 @@ core::Result<GuardianConsent> GrantGuardianScope::Execute(
     const auto now = clock_.Now();
     const auto born_on = birth_dates_.Of(request.tenant, request.student);
     const bool student_decides =
-        born_on.has_value() &&
+        request.basis == ConsentBasis::kGuardianship && born_on.has_value() &&
         now >= AgeStatus::TurnsAt(*born_on, rule.Value().ThresholdYears(request.scope));
 
     if (student_decides && request.granted_by != request.student) {
@@ -54,6 +61,7 @@ core::Result<GuardianConsent> GrantGuardianScope::Execute(
                                           request.guardian,
                                           request.student,
                                           request.scope,
+                                          request.basis,
                                           request.granted_by,
                                           now,
                                           request.expires_at);

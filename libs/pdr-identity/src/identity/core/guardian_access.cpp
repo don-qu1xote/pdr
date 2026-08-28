@@ -18,13 +18,17 @@ core::Result<MaturityRule> MaturityRule::Compose(AgeThresholds thresholds,
 GuardianAccess WeighConsents(std::span<const GuardianConsent> consents,
                              const std::optional<BirthDate>& student_born_on,
                              const MaturityRule& rule,
-                             core::Instant now) {
+                             core::Instant now,
+                             bool guardianship_holds) {
     GuardianScopeSet open;
     GuardianScopeSet deciding;
     GuardianScopeSet awaits;
 
     for (const auto& consent : consents) {
         if (!consent.IsActiveAt(now)) {
+            continue;
+        }
+        if (consent.RestsOnGuardianship() && !guardianship_holds) {
             continue;
         }
 

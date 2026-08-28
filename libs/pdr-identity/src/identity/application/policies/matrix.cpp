@@ -13,7 +13,7 @@
 namespace pdr::identity::policies {
 namespace {
 
-constexpr std::array kEveryTie{Tie::kMine, Tie::kAboutMe, Tie::kMyWard, Tie::kNone};
+constexpr std::array kEveryTie{Tie::kMine, Tie::kAboutMe, Tie::kInMyCare, Tie::kNone};
 
 std::string_view Says(Tie tie) noexcept {
     switch (tie) {
@@ -21,8 +21,8 @@ std::string_view Says(Tie tie) noexcept {
             return "своё";
         case Tie::kAboutMe:
             return "о себе";
-        case Tie::kMyWard:
-            return "о подопечном";
+        case Tie::kInMyCare:
+            return "под присмотром";
         case Tie::kNone:
             return "чужое";
     }
@@ -101,7 +101,7 @@ std::string_view WhoAt(const PolicySet& permissions,
             .allowed;
     const bool guardian = permissions
                               .Decide(Asking(Role::kGuardian,
-                                             Tie::kMyWard,
+                                             Tie::kInMyCare,
                                              OpenToGuardianAt(years, thresholds),
                                              Capabilities::Everything()),
                                       action,
@@ -163,7 +163,7 @@ std::string GuardianLevel(const PolicySet& permissions, Action action) {
     const Resource resource{tenant, std::nullopt, std::nullopt};
 
     if (permissions
-            .Decide(Asking(Role::kGuardian, Tie::kMyWard, GuardianScopeSet::Everything()),
+            .Decide(Asking(Role::kGuardian, Tie::kInMyCare, GuardianScopeSet::Everything()),
                     action,
                     resource)
             .allowed == false) {
@@ -171,7 +171,7 @@ std::string GuardianLevel(const PolicySet& permissions, Action action) {
     }
 
     if (permissions
-            .Decide(Asking(Role::kGuardian, Tie::kMyWard, GuardianScopeSet{}), action, resource)
+            .Decide(Asking(Role::kGuardian, Tie::kInMyCare, GuardianScopeSet{}), action, resource)
             .allowed) {
         return "не нужен";
     }
@@ -179,7 +179,7 @@ std::string GuardianLevel(const PolicySet& permissions, Action action) {
     std::string levels;
     for (const auto scope : kEveryGuardianScope) {
         const auto only = GuardianScopeSet{}.With(scope);
-        if (!permissions.Decide(Asking(Role::kGuardian, Tie::kMyWard, only), action, resource)
+        if (!permissions.Decide(Asking(Role::kGuardian, Tie::kInMyCare, only), action, resource)
                  .allowed) {
             continue;
         }

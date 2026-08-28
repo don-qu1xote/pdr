@@ -62,6 +62,13 @@ LOG_A = "0a0a0a0a-0000-4000-8000-00000000f001"
 LOG_B = "0b0b0b0b-0000-4000-8000-00000000f002"
 CONSENT_A = "0a0a0a0a-0000-4000-8000-000000007001"
 CONSENT_B = "0b0b0b0b-0000-4000-8000-000000007002"
+CONSENT_PAYER = "0a0a0a0a-0000-4000-8000-000000007003"
+CONSENT_NONSENSE = "0a0a0a0a-0000-4000-8000-000000007004"
+BLOCKED_SIGHT = {
+    "recordings": "0a0a0a0a-0000-4000-8000-000000007005",
+    "notes_and_homework": "0a0a0a0a-0000-4000-8000-000000007006",
+    "schedule": "0a0a0a0a-0000-4000-8000-000000007007",
+}
 
 SHARED_STUDENT = "0c0c0c0c-0000-4000-8000-000000008001"
 SHARED_ACCOUNT_DIGEST = "c" * 64
@@ -171,9 +178,11 @@ insert into identity_person (tenant_id, id, display_name, email, tz) values
 insert into identity_account (id, email_digest, confirmed_at) values
     ('{SHARED_STUDENT}', '{SHARED_ACCOUNT_DIGEST}', now());
 insert into identity_guardian_consent
-    (tenant_id, id, guardian_id, student_id, scope, granted_by) values
-    ('{TENANT_A}', '{CONSENT_A}', '{GUARDIAN_A}', '{STUDENT_A}', 'recordings', '{STUDENT_A}'),
-    ('{TENANT_B}', '{CONSENT_B}', '{GUARDIAN_B}', '{STUDENT_B}', 'recordings', '{STUDENT_B}');
+    (tenant_id, id, guardian_id, student_id, scope, basis, granted_by) values
+    ('{TENANT_A}', '{CONSENT_A}', '{GUARDIAN_A}', '{STUDENT_A}', 'recordings',
+     'guardianship', '{STUDENT_A}'),
+    ('{TENANT_B}', '{CONSENT_B}', '{GUARDIAN_B}', '{STUDENT_B}', 'recordings',
+     'named_by_student', '{STUDENT_B}');
 insert into identity_access_log (tenant_id, id, actor_id, subject_id, resource_kind, at) values
     ('{TENANT_A}', '{LOG_A}', '{GUARDIAN_A}', '{STUDENT_A}', 'recording',   now()),
     ('{TENANT_B}', '{LOG_B}', '{GUARDIAN_B}', '{STUDENT_B}', 'transcript', now());
@@ -602,6 +611,60 @@ select count(*) from identity_guardian_consent
     return problems
 
 
+def money_does_not_buy_sight(database: Database) -> list[str]:
+    """ДЕНЬГИ НЕ ДАЮТ ПРАВА СМОТРЕТЬ — и это ограничение схемы, а не соглашение.
+
+    Работодатель оплачивает переподготовку, учится человек. Строку «плательщик с
+    доступом к записям» база не примет вовсе: не «мы такого не выдаём», а «выдать
+    нечем» (`identity_guardian_consent_money_is_not_sight`, V009).
+
+    Второй замок нужен потому, что первый — ворота `MayCarry` в домене — обходится
+    любым запросом мимо домена, а такие запросы пишут: миграции данных, разовые
+    правки поддержки, импорт. Деньги при этом обязаны носить деньги: доступ к
+    счетам плательщику открывается, иначе платить ему нечем.
+    """
+    problems = []
+    for scope, row in BLOCKED_SIGHT.items():
+        code = database.app_refusal(f"""
+insert into identity_guardian_consent
+    (tenant_id, id, guardian_id, student_id, scope, basis, granted_by) values
+    ('{TENANT_A}', '{row}', '{GUARDIAN_A}', '{STUDENT_A}', '{scope}',
+     'pays_for_lessons', '{STUDENT_A}');
+""", TENANT_A)
+        if code != "23514":
+            problems.append(
+                f"плательщику открылся уровень «{scope}»: «{code or 'успех'}» вместо отказа "
+                f"23514. Оплата — не основание видеть, как идут занятия"
+            )
+
+    database.app(f"""
+insert into identity_guardian_consent
+    (tenant_id, id, guardian_id, student_id, scope, basis, granted_by) values
+    ('{TENANT_A}', '{CONSENT_PAYER}', '{GUARDIAN_A}', '{STUDENT_A}', 'payments',
+     'pays_for_lessons', '{STUDENT_A}');
+""", TENANT_A)
+    rows = database.app(
+        f"select count(*) from identity_guardian_consent where id = '{CONSENT_PAYER}';", TENANT_A
+    )
+    if int(rows[0][0]) != 1:
+        problems.append(
+            "плательщику не открылся даже счёт: ограничение закрыло то, ради чего его звали"
+        )
+
+    unknown = database.app_refusal(f"""
+insert into identity_guardian_consent
+    (tenant_id, id, guardian_id, student_id, scope, basis, granted_by) values
+    ('{TENANT_A}', '{CONSENT_NONSENSE}', '{GUARDIAN_A}', '{STUDENT_A}', 'payments',
+     'because_i_said_so', '{STUDENT_A}');
+""", TENANT_A)
+    if unknown != "23514":
+        problems.append(
+            f"основание доступа пишется любым словом: «{unknown or 'успех'}» вместо отказа "
+            f"23514. Список оснований закрыт, и закрыт он в схеме"
+        )
+    return problems
+
+
 def one_person_in_two_practices_stays_two_rows(database: Database) -> list[str]:
     """САМЫЙ УЗКИЙ СЛУЧАЙ: один и тот же человек у двух репетиторов.
 
@@ -690,6 +753,8 @@ CASES = (
     ("чужая сессия не находится по идентификатору", a_foreign_session_is_not_found_by_its_identifier),
     ("отозванный доступ оставляет след", a_revoked_access_leaves_a_trace),
     ("отозванное согласие остаётся строкой", a_revoked_consent_cannot_be_deleted),
+    ("ДЕНЬГИ НЕ ДАЮТ ПРАВА СМОТРЕТЬ: плательщику не открыть содержание",
+     money_does_not_buy_sight),
     ("ГЛАВНЫЙ ДЛЯ ДВУХ РЕПЕТИТОРОВ: один человек — две практики, и они не видят друг друга",
      one_person_in_two_practices_stays_two_rows),
     ("защиту не выключить из-под приложения", protection_cannot_be_switched_off),

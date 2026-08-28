@@ -8,7 +8,7 @@ namespace pdr::identity::policies {
 namespace {
 
 GuardianRule Within(GuardianScope scope) noexcept {
-    return GuardianRule{HasRole{Role::kGuardian}, Tied{Tie::kMyWard}, HasScope{scope}};
+    return GuardianRule{HasRole{Role::kGuardian}, Tied{Tie::kInMyCare}, HasScope{scope}};
 }
 
 const AnyOf kMayDecideForWhom{AllOf{HasRole{Role::kTutor}, Tied{Tie::kMine}},
