@@ -517,7 +517,7 @@ jobs:
       - name: Библиотека счёта паролей
         run: |
           set -eu
-          apt-get update -qq
+          apt-get update -qq --allow-releaseinfo-change
           apt-get install -y -qq libargon2-dev
 
       # ПЕРВАЯ настоящая проверка слоя адаптеров: без userver цели
