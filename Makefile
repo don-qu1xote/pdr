@@ -266,6 +266,8 @@ test:
 	python3 scripts/check_debts.py
 	python3 scripts/check_secrets.py --selftest
 	python3 scripts/check_secrets.py
+	python3 scripts/check_secrets_registry.py --selftest
+	python3 scripts/check_secrets_registry.py
 	python3 scripts/detect_changes.py --selftest
 	python3 scripts/check_format.py --selftest
 	python3 scripts/check_comments.py --selftest

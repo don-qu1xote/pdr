@@ -29,6 +29,11 @@ ctest, либо пометка «намерение».
 | Одноразовый токен хранится отпечатком, а не собой | `libs/pdr-identity/src/identity/application/ports/one_time_tokens.hpp` | `libs/pdr-identity/tests/invitation_test.cpp`, `scripts/check_isolation.py` |
 | Счёт попыток входа живёт в базе, а не в памяти процесса | `libs/pdr-identity/src/identity/infrastructure/auth/postgres_login_attempts.hpp` | `libs/pdr-identity/tests/login_throttle_test.cpp` |
 | Секреты берутся у криптографического источника, а не у mt19937 | `libs/pdr-core/src/application/ports/secret_generator.hpp` | `libs/pdr-core/tests/crypto_secret_generator_test.cpp` |
+| Сервис не поднимается без обязательного секрета и называет его имя | `libs/pdr-core/src/application/verify_secrets.cpp` | `libs/pdr-core/tests/secrets_test.cpp`, `scripts/check_secrets_registry.py` |
+| Значений по умолчанию у секретов не существует | `configs/secrets_registry.yaml` | `scripts/check_secrets_registry.py` |
+| Секреты разного назначения не могут совпадать | `libs/pdr-core/src/application/verify_secrets.cpp` | `libs/pdr-core/tests/secrets_test.cpp` |
+| Секрет не печатается никуда: вывод удалён у типа | `libs/pdr-core/src/core/secret_string.hpp` | `secret_string_to_log`, `scripts/check_secrets_registry.py` |
+| Образец окружения не отстаёт от профилей | `deploy/env/.env.example` | `scripts/verify_env_parity.py` |
 | Права решаются в одном месте, а не в хендлерах | `libs/pdr-identity/contract/identity/contract.hpp` | `libs/pdr-identity/tests/policy_registry_test.cpp` |
 | У каждого действия есть политика, иначе не собирается прогон | `libs/pdr-identity/src/identity/application/policies/policy_set.cpp` | `libs/pdr-identity/tests/policy_registry_test.cpp` |
 | Отказ несёт причину, а не «нельзя» | `libs/pdr-identity/contract/identity/contract.hpp` | `libs/pdr-identity/tests/policies_test.cpp` |

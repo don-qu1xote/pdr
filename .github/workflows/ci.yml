@@ -223,6 +223,16 @@ jobs:
           python3 scripts/check_secrets.py --selftest
           python3 scripts/check_secrets.py
 
+      # Секрет без записи в реестре, умолчание у секрета, назначение,
+      # разошедшееся с кодом, и вернувшийся вывод SecretString роняют сборку
+      # здесь. Сервис, поднявшийся с пустым секретом, работает «как будто
+      # нормально»: процесс жив, метрика зелёная, платежи не уходят.
+      - name: Реестр секретов и код не расходятся
+        run: |
+          set -eu
+          python3 scripts/check_secrets_registry.py --selftest
+          python3 scripts/check_secrets_registry.py
+
       - name: Долги первого сервиса собраны в одном списке
         run: |
           set -eu

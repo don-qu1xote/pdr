@@ -9,6 +9,7 @@
 add_library(pdr_core STATIC
     src/core/errors.cpp
     src/core/money.cpp
+    src/core/secrets.cpp
     src/core/types/ids.cpp
     src/core/types/time.cpp
 )
@@ -17,10 +18,13 @@ target_compile_features(pdr_core PUBLIC cxx_std_20)
 # Список зависимостей пуст, и это содержательный факт: домен собирается и
 # тестируется без единой внешней библиотеки.
 
-# Порты платформы — часы и генератор идентификаторов — только заголовки:
-# у слоя application здесь нет ни строчки реализации, и цель это показывает.
-add_library(pdr_application INTERFACE)
-target_link_libraries(pdr_application INTERFACE pdr_core)
+# Слой application платформы: порты (часы, генератор идентификаторов, источник
+# секретов) и один сценарий — проверка секретов при старте. Она здесь, а не в
+# infrastructure, потому что правило «без секрета не поднимаемся» не зависит от
+# того, откуда секреты пришли: файл, окружение или заглушка проверки.
+add_library(pdr_application STATIC src/application/verify_secrets.cpp)
+target_include_directories(pdr_application PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_link_libraries(pdr_application PUBLIC pdr_core)
 
 # Настоящие часы и настоящий генератор идентификаторов. userver им не нужен,
 # поэтому цель собирается везде: подменить часы в тесте можно, а вот собрать
@@ -50,6 +54,14 @@ if(userver_FOUND)
     target_link_libraries(pdr_postgres PUBLIC pdr_core pdr_application userver::postgresql)
 endif()
 
+# Секреты из штатного secdist. Отдельная цель по той же причине, что pdr_crypto:
+# она требует userver, а pdr_infrastructure линкуют contract-тесты.
+if(userver_FOUND)
+    add_library(pdr_secrets STATIC src/infrastructure/secdist/secdist_secret_source.cpp)
+    target_include_directories(pdr_secrets PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_link_libraries(pdr_secrets PUBLIC pdr_core pdr_application userver::core)
+endif()
+
 # Настоящая случайность для секретов. Отдельная цель, а не часть
 # pdr_infrastructure: криптографический источник берётся у userver
 # (crypto::GenerateRandomBlock), а pdr_infrastructure линкуют contract-тесты,
@@ -67,6 +79,7 @@ if(PDR_BUILD_TESTS)
     pdr_unit_test_sources(
         tests/errors_test.cpp
         tests/ids_test.cpp
+        tests/secrets_test.cpp
         tests/tenant_scope_test.cpp
         tests/time_test.cpp
     )
@@ -89,6 +102,7 @@ if(PDR_BUILD_TESTS)
                            ids_implicit_to_string:pdr_core
                            ids_implicit_to_int:pdr_core
                            config_in_core:pdr_core
+                           secret_string_to_log:pdr_core
                            tenant_session_outside_scope:pdr_testing)
 
     # Случаи про НАСТОЯЩУЮ область соединения добавляются только там, где есть

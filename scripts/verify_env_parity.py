@@ -38,6 +38,14 @@ from typing import Sequence
 
 EXAMPLE_SUFFIX = ".env.example"
 
+TEMPLATE = ".env.example"
+"""Образец окружения: полный список переменных с пустыми значениями.
+
+Профилем он не является — это список того, что профиль обязан заполнить, и
+документация по запуску. Значения в нём пустые намеренно: образец со значением
+однажды скопируют целиком, и «change-me» доживёт до прода.
+"""
+
 PROFILE_DIFFERENCES = {
     "ENV_PROFILE": "имя профиля отличает проект в docker",
     "POSTGRES_PASSWORD": "пароль базы задаётся на месте",
@@ -99,15 +107,44 @@ def check(compose_file: Path, env_dir: Path, root: Path,
     allowed = PROFILE_DIFFERENCES if differences is None else differences
     violations: list[str] = []
 
-    examples = sorted(env_dir.glob(f"*{EXAMPLE_SUFFIX}"))
+    examples = [path for path in sorted(env_dir.glob(f"*{EXAMPLE_SUFFIX}"))
+                if path.name != TEMPLATE]
     profiles = [path.name[: -len(EXAMPLE_SUFFIX)] for path in examples]
     if len(profiles) < 2:
         return ([f"{env_dir.relative_to(root)}: профилей меньше двух, сверять нечего"], profiles)
+
+    template = env_dir / TEMPLATE
+    expected: set[str] | None = None
+    if not template.is_file():
+        violations.append(
+            f"{(env_dir / TEMPLATE).relative_to(root)}: образца окружения нет. Он и есть "
+            f"документация по запуску: полный список переменных с пустыми значениями"
+        )
+    else:
+        blank = read_env(template)
+        expected = set(blank)
+        for name, value in sorted(blank.items()):
+            if value:
+                violations.append(
+                    f"{template.relative_to(root)}: у {name} стоит значение «{value}». В "
+                    f"образце значений не бывает: образец однажды скопируют целиком"
+                )
 
     variables: dict[str, dict[str, str]] = {}
     for profile, example in zip(profiles, examples):
         values = read_env(example)
         variables[profile] = values
+
+        if expected is not None:
+            for missing in sorted(expected - set(values)):
+                violations.append(
+                    f"профиль {profile}: нет переменной {missing}, названной в {TEMPLATE}"
+                )
+            for extra in sorted(set(values) - expected):
+                violations.append(
+                    f"{TEMPLATE}: нет переменной {extra}, а профиль {profile} её задаёт. "
+                    f"Образец, отставший от профиля, перестаёт быть документацией по запуску"
+                )
 
         if values.get("ENV_PROFILE") != profile:
             violations.append(
@@ -184,6 +221,8 @@ services:
       - "${DB_PORT:?нет DB_PORT}:5432"
 """
 
+SELFTEST_TEMPLATE = "ENV_PROFILE=\nMEM_LIMIT=\nDB_IMAGE=\nDB_PASSWORD=\nDB_PORT=\n"
+
 SELFTEST_ENV = {
     "local": "ENV_PROFILE=local\nMEM_LIMIT=256m\nDB_IMAGE=postgres:16\nDB_PASSWORD=local-one\nDB_PORT=5432\n",
     "ci": "ENV_PROFILE=ci\nMEM_LIMIT=256m\nDB_IMAGE=postgres:16\nDB_PASSWORD=ci-one\nDB_PORT=55432\n",
@@ -200,6 +239,7 @@ def selftest() -> int:
         compose_file.write_text(SELFTEST_COMPOSE, encoding="utf-8")
         for profile, text in SELFTEST_ENV.items():
             (env_dir / f"{profile}{EXAMPLE_SUFFIX}").write_text(text, encoding="utf-8")
+        (env_dir / TEMPLATE).write_text(SELFTEST_TEMPLATE, encoding="utf-8")
 
         allowed = {
             "ENV_PROFILE": "имя профиля",
