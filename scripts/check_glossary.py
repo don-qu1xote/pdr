@@ -54,6 +54,17 @@ GLOSSARY = Path("docs/product/glossary.md")
 JARGON_HEADER = Path("libs/pdr-testing/include/pdr/testing/integration_contract.hpp")
 
 CLIENT_ROOT = Path("clients")
+
+LEGAL = Path("docs/legal")
+
+LEGAL_SKIP_FROM = "<!-- сверка получателей: начало -->"
+LEGAL_SKIP_TO = "<!-- сверка получателей: конец -->"
+"""Тексты, которые человек читает целиком, а не строкой интерфейса.
+
+Перечень обработки персональных данных читает родитель, и «дескриптор» в нём
+работает ровно так же, как на экране: заставляет учить чужую модель мира вместо
+того, чтобы понять, что мы о нём храним (PDR-SEC-05, PDR-DOC-06).
+"""
 CLIENT_SUFFIXES = frozenset({".ts", ".tsx", ".js", ".jsx", ".json"})
 SKIPPED_DIRS = frozenset({".git", "build", "out", "node_modules", "_deps", "dist", "__pycache__"})
 
@@ -202,6 +213,23 @@ def interface_texts(root: Path) -> Iterator[tuple[str, int, str]]:
                 if not CYRILLIC.search(value):
                     continue
                 yield where, content.count("\n", 0, match.start()) + 1, value
+
+    legal = root / LEGAL
+    if legal.is_dir():
+        for path in sorted(legal.rglob("*.md")):
+            content = path.read_text(encoding="utf-8", errors="replace")
+            where = str(path.relative_to(root))
+            skipping = False
+            for number, line in enumerate(content.splitlines(), start=1):
+                if LEGAL_SKIP_FROM in line:
+                    skipping = True
+                    continue
+                if LEGAL_SKIP_TO in line:
+                    skipping = False
+                    continue
+                if skipping or not CYRILLIC.search(line):
+                    continue
+                yield where, number, line
 
     glossary = root / GLOSSARY
     if glossary.is_file():

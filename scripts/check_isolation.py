@@ -60,6 +60,8 @@ ROLE_A = "0a0a0a0a-0000-4000-8000-00000000d001"
 ROLE_B = "0b0b0b0b-0000-4000-8000-00000000d002"
 LOG_A = "0a0a0a0a-0000-4000-8000-00000000f001"
 LOG_B = "0b0b0b0b-0000-4000-8000-00000000f002"
+AGREED_A = "0a0a0a0a-0000-4000-8000-000000009001"
+AGREED_B = "0b0b0b0b-0000-4000-8000-000000009002"
 CONSENT_A = "0a0a0a0a-0000-4000-8000-000000007001"
 CONSENT_B = "0b0b0b0b-0000-4000-8000-000000007002"
 CONSENT_PAYER = "0a0a0a0a-0000-4000-8000-000000007003"
@@ -83,9 +85,9 @@ DIGEST_B = "b" * 64
 ARGON2 = "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$aGFzaGhhc2hoYXNoaGFzaA"
 
 TABLES = ("identity_tenant", "identity_person", "identity_role_assignment",
-          "identity_guardianship", "identity_guardian_consent", "identity_access_log",
-          "identity_credential", "identity_session", "identity_one_time_token",
-          "identity_login_attempt")
+          "identity_guardianship", "identity_guardian_consent", "identity_consent",
+          "identity_access_log", "identity_credential", "identity_session",
+          "identity_one_time_token", "identity_login_attempt")
 
 SQLSTATE = re.compile(r"\bERROR:\s+([0-9A-Z]{5}):")
 
@@ -183,6 +185,12 @@ insert into identity_guardian_consent
      'guardianship', '{STUDENT_A}'),
     ('{TENANT_B}', '{CONSENT_B}', '{GUARDIAN_B}', '{STUDENT_B}', 'recordings',
      'named_by_student', '{STUDENT_B}');
+insert into identity_consent
+    (tenant_id, id, subject_id, given_by, kind, version, action) values
+    ('{TENANT_A}', '{AGREED_A}', '{STUDENT_A}', '{GUARDIAN_A}', 'processing', 1,
+     'sign_up_checkbox'),
+    ('{TENANT_B}', '{AGREED_B}', '{STUDENT_B}', '{STUDENT_B}', 'recordings', 1,
+     'settings_checkbox');
 insert into identity_access_log (tenant_id, id, actor_id, subject_id, resource_kind, at) values
     ('{TENANT_A}', '{LOG_A}', '{GUARDIAN_A}', '{STUDENT_A}', 'recording',   now()),
     ('{TENANT_B}', '{LOG_B}', '{GUARDIAN_B}', '{STUDENT_B}', 'transcript', now());
@@ -215,6 +223,7 @@ delete from identity_login_attempt where tenant_id in {tenants};
 delete from identity_one_time_token where tenant_id in {tenants};
 delete from identity_session where tenant_id in {tenants};
 delete from identity_credential where tenant_id in {tenants};
+delete from identity_consent where tenant_id in {tenants};
 delete from identity_access_log where tenant_id in {tenants};
 delete from identity_guardian_consent where tenant_id in {tenants};
 delete from identity_guardianship where tenant_id in {tenants};
@@ -665,6 +674,56 @@ insert into identity_guardian_consent
     return problems
 
 
+def a_consent_keeps_its_trace(database: live.Database) -> list[str]:
+    """Согласие отзывается строкой с датой, а не удалением.
+
+    На вопрос «а было ли согласие в марте» отвечает эта строка. Удалённая
+    отвечает «нет», и это неправда: человек согласился, мы на этом основании
+    обрабатывали данные, и стереть след того, что основание было, нельзя.
+
+    Прав `delete` у роли приложения на таблице нет вовсе — механизм не
+    полагается на дисциплину.
+    """
+    problems = []
+
+    code = database.app_refusal(
+        f"delete from identity_consent where id = '{AGREED_A}';", TENANT_A
+    )
+    if code != "42501":
+        problems.append(
+            f"согласие удаляется из-под приложения: «{code or 'успех'}» вместо отказа 42501"
+        )
+
+    database.app(f"""
+update identity_consent set withdrawn_at = now() where id = '{AGREED_A}';
+""", TENANT_A)
+    rows = database.app(f"""
+select count(*) from identity_consent
+ where id = '{AGREED_A}' and withdrawn_at is not null;
+""", TENANT_A)
+    if int(rows[0][0]) != 1:
+        problems.append("отзыв согласия не прошёл: отозвать его нечем")
+
+    theirs = database.app(
+        f"select count(*) from identity_consent where id = '{AGREED_A}';", TENANT_B
+    )
+    if int(theirs[0][0]) != 0:
+        problems.append("чужое согласие находится по прямому обращению по идентификатору")
+
+    second = database.app_refusal(f"""
+insert into identity_consent
+    (tenant_id, id, subject_id, given_by, kind, version, action) values
+    ('{TENANT_B}', '{NEW_ROW}', '{STUDENT_B}', '{STUDENT_B}', 'recordings', 1,
+     'settings_checkbox');
+""", TENANT_B)
+    if second != "23505":
+        problems.append(
+            f"второе действующее согласие того же вида: «{second or 'успех'}» вместо 23505. "
+            f"На вопрос «согласен ли он на запись» стало два ответа"
+        )
+    return problems
+
+
 def one_person_in_two_practices_stays_two_rows(database: Database) -> list[str]:
     """САМЫЙ УЗКИЙ СЛУЧАЙ: один и тот же человек у двух репетиторов.
 
@@ -753,6 +812,7 @@ CASES = (
     ("чужая сессия не находится по идентификатору", a_foreign_session_is_not_found_by_its_identifier),
     ("отозванный доступ оставляет след", a_revoked_access_leaves_a_trace),
     ("отозванное согласие остаётся строкой", a_revoked_consent_cannot_be_deleted),
+    ("согласие на обработку отзывается строкой, а не удалением", a_consent_keeps_its_trace),
     ("ДЕНЬГИ НЕ ДАЮТ ПРАВА СМОТРЕТЬ: плательщику не открыть содержание",
      money_does_not_buy_sight),
     ("ГЛАВНЫЙ ДЛЯ ДВУХ РЕПЕТИТОРОВ: один человек — две практики, и они не видят друг друга",

@@ -15,6 +15,7 @@ add_library(pdr_identity STATIC
     src/identity/application/confirm_email.cpp
     src/identity/application/contract_service.cpp
     src/identity/application/enrol_child.cpp
+    src/identity/application/give_consent.cpp
     src/identity/application/grant_guardian_scope.cpp
     src/identity/application/invite_many.cpp
     src/identity/application/invite_participant.cpp
@@ -22,6 +23,7 @@ add_library(pdr_identity STATIC
     src/identity/application/note_sensitive_access.cpp
     src/identity/application/notify_guardian_of_act.cpp
     src/identity/application/open_practice.cpp
+    src/identity/application/show_my_data.cpp
     src/identity/application/policies/billing_policy.cpp
     src/identity/application/policies/capability_policy.cpp
     src/identity/application/policies/content_policy.cpp
@@ -57,10 +59,12 @@ add_library(pdr_identity STATIC
     src/identity/core/guardian_consent.cpp
     src/identity/core/guardian_scope.cpp
     src/identity/core/guardianship.cpp
+    src/identity/core/consent.cpp
     src/identity/core/independent_act.cpp
     src/identity/core/login_throttle.cpp
     src/identity/core/membership.cpp
     src/identity/core/one_time_token.cpp
+    src/identity/core/personal_data.cpp
     src/identity/core/password.cpp
     src/identity/core/practice.cpp
     src/identity/core/session.cpp
@@ -136,6 +140,7 @@ if(PDR_BUILD_TESTS)
     pdr_unit_test_sources(
         tests/access_log_test.cpp
         tests/adult_student_test.cpp
+        tests/consent_test.cpp
         tests/age_status_test.cpp
         tests/capabilities_test.cpp
         tests/guardian_access_test.cpp

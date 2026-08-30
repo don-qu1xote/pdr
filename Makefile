@@ -268,6 +268,8 @@ test:
 	python3 scripts/check_secrets.py
 	python3 scripts/check_secrets_registry.py --selftest
 	python3 scripts/check_secrets_registry.py
+	python3 scripts/check_personal_data.py --selftest
+	python3 scripts/check_personal_data.py
 	python3 scripts/detect_changes.py --selftest
 	python3 scripts/check_format.py --selftest
 	python3 scripts/check_comments.py --selftest

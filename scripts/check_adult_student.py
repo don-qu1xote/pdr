@@ -70,6 +70,7 @@ ABOUT_GUARDIANSHIP = (
     APPLICATION / "announce_coming_of_age.hpp",
     APPLICATION / "announce_guardian_handover.hpp",
     APPLICATION / "enrol_child.hpp",
+    APPLICATION / "give_consent.hpp",
     APPLICATION / "grant_guardian_scope.hpp",
     APPLICATION / "notify_guardian_of_act.hpp",
     APPLICATION / "revoke_guardianship.hpp",

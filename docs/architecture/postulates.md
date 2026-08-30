@@ -68,6 +68,12 @@ ctest, либо пометка «намерение».
 | Текст отзыва опекуну не показывают: в событии для него нет места | `libs/pdr-events/include/events/identity/ward_acted_alone.hpp` | `scripts/check_guardian_notice.py` |
 | Автоплатёж с чужой карты ученику не даётся ни в каком возрасте | `libs/pdr-identity/src/identity/application/policies/billing_policy.cpp` | `libs/pdr-identity/tests/capabilities_test.cpp` |
 | Ученик читает журнал доступов к себе, опекун — нет ни при каком уровне | `libs/pdr-identity/src/identity/application/show_access_journal.hpp` | `libs/pdr-identity/tests/guardian_access_test.cpp` |
+| Согласие хранится с версией и действием, а не подразумевается | `db/migrations/V011__consent.sql` | `libs/pdr-identity/tests/consent_test.cpp` |
+| За ребёнка соглашается опекун, и без этого ученик не заводится | `libs/pdr-identity/src/identity/application/give_consent.cpp` | `libs/pdr-identity/tests/consent_test.cpp` |
+| Две галочки, а не одна: запись занятий — отдельное согласие | `libs/pdr-identity/src/identity/core/consent.hpp` | `libs/pdr-identity/tests/consent_test.cpp` |
+| Существенность версии назначает человек, а не угадывает код | `docs/legal/personal-data.md` | `libs/pdr-identity/tests/consent_test.cpp`, `scripts/check_personal_data.py` |
+| Перечень обработки и ревизия открытости не расходятся | `docs/legal/personal-data.md` | `scripts/check_personal_data.py` |
+| Экран «мои данные» показывает все категории перечня | `libs/pdr-identity/src/identity/application/show_my_data.cpp` | `libs/pdr-identity/tests/consent_test.cpp` |
 | Взрослый ученик без опекуна проходит весь путь: опека нигде не обязательна | `libs/pdr-identity/src/identity/application/policies/subject_builder.cpp` | `scripts/check_adult_student.py`, `libs/pdr-identity/tests/adult_student_test.cpp` |
 | Опека и наблюдение — один механизм с разными основаниями | `libs/pdr-identity/src/identity/core/guardian_consent.hpp` | `libs/pdr-identity/tests/adult_student_test.cpp` |
 | Деньги не дают права смотреть: плательщику открыты только счета | `db/migrations/V009__consent_basis.sql` | `libs/pdr-identity/tests/adult_student_test.cpp`, `scripts/check_isolation.py` |

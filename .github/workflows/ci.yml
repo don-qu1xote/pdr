@@ -233,6 +233,16 @@ jobs:
           python3 scripts/check_secrets_registry.py --selftest
           python3 scripts/check_secrets_registry.py
 
+      # Получатель мимо ревизии открытости, строка ревизии мимо перечня,
+      # категория в коде без строки для человека, пустая клетка и канцелярит
+      # роняют сборку здесь. Перечень определяет, что мы вообще имеем право
+      # отправить во внешнюю модель, и разойтись с деревом ему нельзя.
+      - name: Перечень обработки персональных данных сходится с деревом
+        run: |
+          set -eu
+          python3 scripts/check_personal_data.py --selftest
+          python3 scripts/check_personal_data.py
+
       - name: Долги первого сервиса собраны в одном списке
         run: |
           set -eu

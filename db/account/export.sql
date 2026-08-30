@@ -42,6 +42,9 @@ select jsonb_pretty(jsonb_build_object(
         'identity_guardianship',
         coalesce((select jsonb_agg(to_jsonb(t) order by t.id)
                     from identity_guardianship t), '[]'::jsonb),
+        'identity_consent',
+        coalesce((select jsonb_agg(to_jsonb(t) order by t.given_at, t.id)
+                    from identity_consent t), '[]'::jsonb),
         'identity_access_log',
         coalesce((select jsonb_agg(to_jsonb(t) order by t.at, t.id)
                     from identity_access_log t), '[]'::jsonb),

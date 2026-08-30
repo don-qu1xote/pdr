@@ -4,7 +4,7 @@
      правка переживёт ровно до следующей пересборки. Изменить схему — значит
      написать новую миграцию. -->
 
-Собрано из миграций: 10. Таблиц: 18.
+Собрано из миграций: 11. Таблиц: 19.
 
 Правила, которым подчиняется каждая колонка, — в
 [migrations.md](migrations.md). Как устроена изоляция арендаторов и почему у
@@ -109,6 +109,45 @@
 * `constraint identity_account_confirmation_whole check ((confirmation_digest is null) = (confirmation_expires_at is null))`
 
 Не доменная таблица: один человек на всю площадку: отпечаток почты и идентификатор (ADR-0019). Арендатора и политики у неё нет.
+
+### identity_consent
+
+Согласие на обработку по перечню и на запись занятий: кто дал, когда, какую версию и каким действием. За ребёнка соглашается опекун.
+
+Заведена миграцией `V011__consent.sql`.
+
+| Колонка | Тип | Определение |
+| --- | --- | --- |
+| `tenant_id` | `uuid` | uuid not null |
+| `id` | `uuid` | uuid not null |
+| `subject_id` | `uuid` | uuid not null |
+| `given_by` | `uuid` | uuid not null |
+| `kind` | `text` | text not null |
+| `version` | `integer` | integer not null |
+| `action` | `text` | text not null |
+| `given_at` | `timestamptz` | timestamptz not null default now() |
+| `withdrawn_at` | `timestamptz` | timestamptz |
+
+Ограничения:
+
+* `constraint identity_consent_pk primary key (tenant_id, id)`
+* `constraint identity_consent_subject_fk foreign key (tenant_id, subject_id) references identity_person (tenant_id, id)`
+* `constraint identity_consent_given_by_fk foreign key (tenant_id, given_by) references identity_person (tenant_id, id)`
+* `constraint identity_consent_kind_known check (kind in ( , ))`
+* `constraint identity_consent_action_known check (action in ( , , ))`
+* `constraint identity_consent_version_from_one check (version >= 1)`
+* `constraint identity_consent_withdrawn_after_given check (withdrawn_at is null or withdrawn_at >= given_at)`
+
+Индексы:
+
+* `identity_consent_live` — уникальный, `(tenant_id, subject_id, kind) where withdrawn_at is null`
+* `identity_consent_by_subject` — обычный, `(tenant_id, subject_id, given_at desc)`
+
+Построчная защита включена и форсирована.
+
+Политики:
+
+* `identity_consent_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
 
 ### identity_credential
 
@@ -592,3 +631,4 @@
 1. `V008__practice_and_accounts.sql` — identity_account, identity_signup_attempt
 1. `V009__consent_basis.sql` — без новых таблиц
 1. `V010__idempotency.sql` — http_idempotency_key
+1. `V011__consent.sql` — identity_consent
