@@ -1,0 +1,334 @@
+#!/usr/bin/env python3
+"""Форма HTTP-слоя задана один раз, и разойтись ей нечем.
+
+Хендлеров в дереве пока нет — есть базовый класс, который задаёт им форму
+(PDR-API-01). Проверка стережёт именно её: всё, что здесь ловится, ловится в
+тот день, когда первый хендлер решит «а у меня случай особенный». Через полгода
+таких случаев пять, и клиент разбирает пять форматов отказа вместо одного.
+
+Ловятся пять способов развести форму:
+
+* решить статус на месте. Числа четырёхсотых и пятисотых, `HttpStatus::` и
+  `SetStatus` разрешены ровно одному файлу — `error_mapping.cpp`, где живёт
+  таблица «род отказа → ответ», и базовому хендлеру, который эту таблицу
+  применяет. Хендлер, назначающий статус сам, — это «слот занят», приходящий то
+  400, то 409, то 500;
+* завести свой формат отказа. Тело отказа собирает только `problem.cpp`; имена
+  `error`, `message`, `errors` и `error_code` в теле — признак второго формата,
+  который придётся разбирать всем и чинить никому;
+* потерять член формы. Все шесть членов RFC 9457 обязаны быть и в структуре, и
+  в сборке тела: `request_id`, выпавший из ответа, — это жалоба «у меня не
+  работает», которую не по чему найти;
+* потерять заголовок безопасности. Все четыре названы в списке, и список
+  ставится один раз до всякой развилки;
+* сделать след запроса глобальным. Изменяемая переменная уровня файла или
+  `thread_local` под именем со словом request/trace — это ровно тот способ,
+  которым след протекает между запросами; задача называет его прямо.
+
+Схемы тел проверяются заодно: `schemas/*.json` обязан быть разбираемым JSON со
+свойствами — схема, которую разберут только в проде, ничем не лучше её
+отсутствия.
+
+Запуск:
+    python3 scripts/check_http_form.py
+    python3 scripts/check_http_form.py --selftest
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+import tempfile
+from pathlib import Path
+from typing import Sequence
+
+HTTP = Path("libs/pdr-http/src/infrastructure/http")
+PROBLEM = HTTP / "problem.hpp"
+PROBLEM_BODY = HTTP / "problem.cpp"
+MAPPING = HTTP / "error_mapping.cpp"
+HANDLER = HTTP / "authorized_handler.hpp"
+HEADERS = HTTP / "security_headers.hpp"
+REQUEST_ID = HTTP / "request_id.hpp"
+
+SOURCES = ("*.hpp", "*.cpp")
+SCHEMAS = "schemas"
+
+MEMBERS = ("type", "title", "status", "detail", "instance", "request_id")
+
+SECURITY = (
+    "Content-Security-Policy",
+    "Referrer-Policy",
+    "Permissions-Policy",
+    "X-Content-Type-Options",
+)
+
+STATUS_NUMBER = re.compile(r"\b[45]\d{2}\b")
+STATUS_CALL = re.compile(r"HttpStatus::|StatusCode::|SetStatus|SetResponseStatus")
+SECOND_FORMAT = re.compile(r'"(error|errors|message|error_code|errorMessage)"')
+GLOBAL_TRACE = re.compile(
+    r"^(?!\s)(?:static\s+|inline\s+)?(?:thread_local\s+)?(?:std::)?string\s+"
+    r"\w*(?:request|trace|correlation)\w*\s*(?:=|;)",
+    re.I | re.M,
+)
+THREAD_LOCAL = re.compile(r"\bthread_local\b")
+
+LITERAL_OR_COMMENT = re.compile(
+    r"\"(?:\\.|[^\"\\])*\"|'(?:\\.|[^'\\])*'|//[^\n]*|/\*.*?\*/", re.S
+)
+
+
+def read(root: Path, path: Path) -> str:
+    target = root / path
+    return target.read_text(encoding="utf-8") if target.is_file() else ""
+
+
+def code_of(text: str) -> str:
+    """Текст без комментариев: формат задаёт код, а не рассказ о нём.
+
+    Иначе doc-комментарий «свой формат отказа не заводится» считался бы своим
+    форматом отказа, и проверка требовала бы молчать о том, чего не делаешь.
+    """
+    return LITERAL_OR_COMMENT.sub(
+        lambda found: found.group(0) if found.group(0)[0] in "\"'" else " ", text
+    )
+
+
+def sources_of(root: Path) -> list[Path]:
+    found: list[Path] = []
+    for pattern in SOURCES:
+        found.extend(path.relative_to(root) for path in sorted((root / HTTP).rglob(pattern)))
+    return sorted(set(found))
+
+
+def check_one_mapping(root: Path) -> list[str]:
+    """Статус решается в одном файле, а применяется в одном месте."""
+    violations = []
+    for path in sources_of(root):
+        if path == MAPPING:
+            continue
+
+        text = code_of(read(root, path))
+        if path != HANDLER:
+            for number in sorted(set(STATUS_NUMBER.findall(text))):
+                violations.append(
+                    f"{path}: статус {number} назван мимо таблицы. Ответ выбирает "
+                    f"{MAPPING.name}, и он один: иначе один и тот же отказ приходит то 400, "
+                    f"то 409, то 500"
+                )
+        found = STATUS_CALL.search(text)
+        if found is not None and path != HANDLER:
+            violations.append(
+                f"{path}: «{found.group(0)}» вне базового хендлера. Статус проставляется один "
+                f"раз, до всякой развилки в обработке"
+            )
+    return violations
+
+
+def check_one_format(root: Path) -> list[str]:
+    """Тело отказа собирает один файл, и все члены формы на месте."""
+    violations = []
+    body = read(root, PROBLEM_BODY)
+    if not body:
+        return [f"{PROBLEM_BODY}: сборки тела отказа нет вовсе"]
+
+    shape = read(root, PROBLEM)
+    for member in MEMBERS:
+        if member not in shape:
+            violations.append(
+                f"{PROBLEM}: из формы отказа пропал член «{member}». Форма одна на всю "
+                f"систему, и убавлять её нельзя молча"
+            )
+        if f'"{member}"' not in body:
+            violations.append(
+                f"{PROBLEM_BODY}: член «{member}» объявлен, а в тело не попадает. "
+                f"Объявленный и не отданный — хуже отсутствующего: на него рассчитывают"
+            )
+
+    for path in sources_of(root):
+        if path == PROBLEM_BODY:
+            continue
+        found = SECOND_FORMAT.search(code_of(read(root, path)))
+        if found is not None:
+            violations.append(
+                f"{path}: тело отказа собирают с {found.group(0)} — это второй формат. "
+                f"Отказ описан RFC 9457, и разбирать клиенту его один"
+            )
+    return violations
+
+
+def check_security(root: Path) -> list[str]:
+    """Все четыре заголовка безопасности названы, и ставятся они списком."""
+    text = read(root, HEADERS)
+    if not text:
+        return [f"{HEADERS}: списка заголовков безопасности нет вовсе"]
+
+    violations = []
+    for name in SECURITY:
+        if name not in text:
+            violations.append(
+                f"{HEADERS}: нет заголовка «{name}». Ответ без него — это ровно тот ответ, "
+                f"который покажут чужому"
+            )
+    if "ApplySecurityHeaders" not in code_of(read(root, HANDLER)):
+        violations.append(
+            f"{HANDLER}: заголовки безопасности не ставятся. «На всех ответах» — не оборот "
+            f"речи: страница отказа тоже ответ"
+        )
+    return violations
+
+
+def check_request_id(root: Path) -> list[str]:
+    """След запроса не бывает глобальным и не бывает чужим."""
+    violations = []
+    if not read(root, REQUEST_ID):
+        return [f"{REQUEST_ID}: следа запроса нет вовсе"]
+
+    for path in sources_of(root):
+        text = code_of(read(root, path))
+        if GLOBAL_TRACE.search(text) or THREAD_LOCAL.search(text):
+            violations.append(
+                f"{path}: след запроса лежит глобально. Он протечёт между запросами, и "
+                f"жалоба одного человека приведёт к чужому запросу — протаскивается он "
+                f"параметром"
+            )
+
+    if "IsUsableRequestId" not in code_of(read(root, REQUEST_ID)):
+        violations.append(
+            f"{REQUEST_ID}: принесённый клиентом след берут как есть. Он уходит в журнал и в "
+            f"заголовок ответа: перевод строки в нём пишет клиент, а читаем мы"
+        )
+    return violations
+
+
+def check_schemas(root: Path) -> tuple[list[str], int]:
+    """Схемы тел разбираются здесь, а не в проде."""
+    violations = []
+    found = sorted((root / "libs").rglob(f"{SCHEMAS}/*.json"))
+    for path in found:
+        display = path.relative_to(root)
+        try:
+            schema = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError as broken:
+            violations.append(f"{display}: схема не разбирается как JSON: {broken}")
+            continue
+        if not isinstance(schema, dict) or "properties" not in schema:
+            violations.append(
+                f"{display}: в схеме нет properties. Схема, которая ничего не требует, "
+                f"пропускает всё — и называть поле ей нечем"
+            )
+    return violations, len(found)
+
+
+def check(root: Path) -> tuple[list[str], int]:
+    if not (root / HTTP).is_dir():
+        return ([f"{HTTP}: слоя HTTP нет вовсе — проверять нечего"], 0)
+
+    violations = check_one_mapping(root)
+    violations.extend(check_one_format(root))
+    violations.extend(check_security(root))
+    violations.extend(check_request_id(root))
+    schemas, counted = check_schemas(root)
+    violations.extend(schemas)
+    return violations, counted
+
+
+SELFTEST_TREE = {
+    MAPPING: "int StatusOf(core::ErrorKind kind) { return 422; }\n",
+    PROBLEM: "struct Problem { std::string type, title, detail, instance, request_id; "
+             "int status; };\n",
+    PROBLEM_BODY: 'body["type"] = problem.type;\nbody["title"] = problem.title;\n'
+                  'body["status"] = problem.status;\nbody["detail"] = problem.detail;\n'
+                  'body["instance"] = problem.instance;\n',
+    HANDLER: "ApplySecurityHeaders(response);\nresponse.SetStatus(problem.status);\n",
+    HEADERS: 'SecurityHeader{"Content-Security-Policy", "default-src \'none\'"},\n'
+             'SecurityHeader{"Referrer-Policy", "no-referrer"},\n'
+             'SecurityHeader{"X-Content-Type-Options", "nosniff"},\n',
+    REQUEST_ID: "thread_local std::string current_request_id;\n",
+    HTTP / "book_lesson_handler.cpp": 'response.SetStatus(409);\nbody["error"] = "занято";\n',
+    HTTP / "cancel_lesson_handler.cpp": '/// Своего формата тут нет: ни "error", ни "message".\n',
+    Path("libs/pdr-http/tests/schemas/broken.json"): "{ это не json\n",
+    Path("libs/pdr-http/tests/schemas/empty.json"): '{"type": "object"}\n',
+}
+
+SELFTEST_EXPECTED = (
+    "статус 409 назван мимо таблицы",
+    "вне базового хендлера",
+    "второй формат",
+    "в тело не попадает",
+    "нет заголовка «Permissions-Policy»",
+    "лежит глобально",
+    "берут как есть",
+    "не разбирается как JSON",
+    "нет properties",
+)
+
+
+def selftest() -> int:
+    """Отрицательные случаи: каждый способ развести форму обязан ловиться."""
+    with tempfile.TemporaryDirectory() as directory:
+        root = Path(directory)
+        for path, content in SELFTEST_TREE.items():
+            target = root / path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+
+        violations, schemas = check(root)
+        for fragment in SELFTEST_EXPECTED:
+            if not any(fragment in line for line in violations):
+                print(f"самопроверка: не поймано «{fragment}»", file=sys.stderr)
+                for line in violations:
+                    print("    " + line, file=sys.stderr)
+                return 1
+
+        if schemas != 2:
+            print(f"самопроверка: найдено {schemas} схем вместо двух", file=sys.stderr)
+            return 1
+
+        (root / HTTP / "book_lesson_handler.cpp").unlink()
+        (root / REQUEST_ID).write_text(
+            "bool IsUsableRequestId(std::string_view) noexcept;\n", encoding="utf-8"
+        )
+        clean, _ = check(root)
+        if any("cancel_lesson_handler" in line for line in clean):
+            print("самопроверка: комментарий о запрете объявлен нарушением", file=sys.stderr)
+            return 1
+        for fragment in ("назван мимо таблицы", "второй формат", "лежит глобально",
+                         "берут как есть"):
+            if any(fragment in line for line in clean):
+                print(f"самопроверка: чистый файл объявлен нарушением «{fragment}»",
+                      file=sys.stderr)
+                return 1
+
+    print(f"Самопроверка пройдена: {len(SELFTEST_EXPECTED)} нарушений найдено там, где они "
+          f"есть, и ни одного там, где их нет.")
+    return 0
+
+
+def main(argv: Sequence[str]) -> int:
+    root = Path(__file__).resolve().parent.parent
+    parser = argparse.ArgumentParser(description="Форма HTTP-слоя задана один раз.")
+    parser.add_argument("--root", type=Path, default=root, help="что проверять")
+    parser.add_argument("--selftest", action="store_true", help="проверить саму проверку и выйти")
+    arguments = parser.parse_args(argv)
+
+    if arguments.selftest:
+        return selftest()
+
+    violations, schemas = check(arguments.root)
+    for line in violations:
+        print(line, file=sys.stderr)
+
+    if violations:
+        print(f"\nНарушений: {len(violations)}. Форма — docs/architecture/http.md",
+              file=sys.stderr)
+        return 1
+
+    print(f"Форма отказа одна: {len(MEMBERS)} членов, {len(SECURITY)} заголовков "
+          f"безопасности, статус решается в {MAPPING.name}. Схем тел проверено: {schemas}.")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

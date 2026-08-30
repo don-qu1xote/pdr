@@ -18,7 +18,66 @@ ctest, либо пометка «намерение».
 | Постулат | Где обеспечен | Каким тестом |
 | --- | --- | --- |
 | Изоляция арендаторов структурная: RLS, а не аккуратный запрос | `db/migrations/V002__init.sql` | `scripts/check_rls.py`, `scripts/check_isolation.py` |
-| Забытый арендатор даёт пустой ответ, а не чужие строки | `libs/pdr-core/src/infrastructure/postgres_tenant_aware_repository.cpp` | `scripts/check_isolation.py`, `libs/pdr-testing/include/pdr/testing/repository_contract.hpp` |
+| Забытый арендатор даёт пустой ответ, а не чужие строки | `libs/pdr-core/src/infrastructure/db/tenant_context.cpp` | `scripts/check_isolation.py`, `libs/pdr-testing/include/pdr/testing/repository_contract.hpp` |
+| Соединение берётся только с объявленным арендатором | `libs/pdr-core/src/infrastructure/db/tenant_context.hpp` | `scripts/check_layers.py`, `tenant_scope_without_tenant`, `tenant_scope_stashed` |
+| Объявление арендатора не переживает транзакцию | `libs/pdr-core/src/infrastructure/db/tenant_context.cpp` | `scripts/check_rls.py`, `scripts/check_isolation.py` |
+| Кто смотрел чужое — видно в журнале, и строку из него не убрать | `db/migrations/V005__access_log.sql` | `libs/pdr-identity/tests/access_log_test.cpp`, `scripts/check_isolation.py` |
+| Пароль считается Argon2id, а не своей схемой | `libs/pdr-identity/src/identity/infrastructure/auth/argon2_password_hasher.cpp` | `libs/pdr-identity/tests/password_test.cpp`, `scripts/check_handmade.py` |
+| Сессия серверная: отзыв действует немедленно | `db/migrations/V006__auth.sql` | `libs/pdr-identity/tests/sign_in_test.cpp`, `scripts/check_isolation.py` |
+| Идентификатор сессии меняется при входе и смене пароля | `libs/pdr-identity/src/identity/application/sign_in.cpp` | `libs/pdr-identity/tests/sign_in_test.cpp` |
+| Проверка сессии не знает, каким транспортом её принесли | `libs/pdr-identity/src/identity/application/authenticate_session.hpp` | `libs/pdr-identity/tests/session_transport_test.cpp` |
+| Одноразовый токен хранится отпечатком, а не собой | `libs/pdr-identity/src/identity/application/ports/one_time_tokens.hpp` | `libs/pdr-identity/tests/invitation_test.cpp`, `scripts/check_isolation.py` |
+| Счёт попыток входа живёт в базе, а не в памяти процесса | `libs/pdr-identity/src/identity/infrastructure/auth/postgres_login_attempts.hpp` | `libs/pdr-identity/tests/login_throttle_test.cpp` |
+| Секреты берутся у криптографического источника, а не у mt19937 | `libs/pdr-core/src/application/ports/secret_generator.hpp` | `libs/pdr-core/tests/crypto_secret_generator_test.cpp` |
+| Сервис не поднимается без обязательного секрета и называет его имя | `libs/pdr-core/src/application/verify_secrets.cpp` | `libs/pdr-core/tests/secrets_test.cpp`, `scripts/check_secrets_registry.py` |
+| Значений по умолчанию у секретов не существует | `configs/secrets_registry.yaml` | `scripts/check_secrets_registry.py` |
+| Секреты разного назначения не могут совпадать | `libs/pdr-core/src/application/verify_secrets.cpp` | `libs/pdr-core/tests/secrets_test.cpp` |
+| Секрет не печатается никуда: вывод удалён у типа | `libs/pdr-core/src/core/secret_string.hpp` | `secret_string_to_log`, `scripts/check_secrets_registry.py` |
+| Образец окружения не отстаёт от профилей | `deploy/env/.env.example` | `scripts/verify_env_parity.py` |
+| Права решаются в одном месте, а не в хендлерах | `libs/pdr-identity/contract/identity/contract.hpp` | `libs/pdr-identity/tests/policy_registry_test.cpp` |
+| У каждого действия есть политика, иначе не собирается прогон | `libs/pdr-identity/src/identity/application/policies/policy_set.cpp` | `libs/pdr-identity/tests/policy_registry_test.cpp` |
+| Отказ несёт причину, а не «нельзя» | `libs/pdr-identity/contract/identity/contract.hpp` | `libs/pdr-identity/tests/policies_test.cpp` |
+| Отказ отдаётся одной формой: problem+json по RFC 9457 | `libs/pdr-http/src/infrastructure/http/problem.cpp` | `libs/pdr-http/tests/problem_test.cpp`, `scripts/check_http_form.py` |
+| Доменная ошибка отображается в статус в ОДНОМ месте | `libs/pdr-http/src/infrastructure/http/error_mapping.cpp` | `libs/pdr-http/tests/error_mapping_test.cpp`, `scripts/check_http_form.py` |
+| След запроса возвращается человеку и не бывает глобальным | `libs/pdr-http/src/infrastructure/http/request_id.hpp` | `libs/pdr-http/tests/request_id_test.cpp`, `scripts/check_http_form.py` |
+| Заголовки безопасности стоят на всех ответах, включая отказы | `libs/pdr-http/src/infrastructure/http/security_headers.hpp` | `libs/pdr-http/tests/authorized_handler_test.cpp` |
+| Тело запроса проверяется схемой, и отказ называет поле | `libs/pdr-http/src/infrastructure/http/request_schema.cpp` | `libs/pdr-http/tests/request_schema_test.cpp` |
+| В хендлере нет бизнес-логики: он зовёт сценарий и всё | `libs/pdr-http/src/infrastructure/http/authorized_handler.hpp` | `libs/pdr-http/tests/authorized_handler_test.cpp` |
+| Ключ повтора обязателен на всех меняющих обращениях | `libs/pdr-http/src/core/idempotency.hpp` | `libs/pdr-http/tests/authorized_handler_test.cpp` |
+| Повтор с тем же ключом и телом операцию не выполняет | `libs/pdr-http/src/infrastructure/http/postgres_idempotency_keys.cpp` | `libs/pdr-http/tests/authorized_handler_test.cpp`, `scripts/check_idempotency.py` |
+| Ключ и операция — одна транзакция: полработы не остаётся | `libs/pdr-http/src/infrastructure/http/authorized_handler.hpp` | `scripts/check_idempotency.py` |
+| Одновременный повтор ждёт в базе, а не в мьютексе процесса | `db/migrations/V010__idempotency.sql` | `scripts/check_idempotency.py` |
+| Тело запроса хранится отпечатком, а не целиком | `libs/pdr-http/src/infrastructure/http/fingerprint.cpp` | `libs/pdr-http/tests/idempotency_test.cpp` |
+| Действие без политики запрещено и объявлено поломкой | `libs/pdr-identity/src/identity/application/ports/configuration_faults.hpp` | `libs/pdr-identity/tests/policy_registry_test.cpp` |
+| Матрица прав собрана из кода, а не написана руками | `libs/pdr-identity/src/identity/application/policies/matrix.cpp` | `libs/pdr-identity/tests/permissions_matrix_test.cpp` |
+| Супер-администратора не существует | `docs/architecture/permissions.md` | `libs/pdr-identity/tests/policies_test.cpp` |
+| Единого «родитель видит всё» нет: доступ открывается по уровню за раз | `libs/pdr-identity/src/identity/core/guardian_scope.hpp` | `libs/pdr-identity/tests/policies_test.cpp`, `libs/pdr-identity/tests/guardian_access_test.cpp` |
+| Записи занятий не открываются вместе с опекой | `libs/pdr-identity/src/identity/core/guardian_scope.cpp` | `libs/pdr-identity/tests/policies_test.cpp` |
+| Отзыв доступа — строка с датой, а не удаление | `db/migrations/V007__guardian_access.sql` | `libs/pdr-identity/tests/guardian_access_test.cpp`, `scripts/check_isolation.py` |
+| Совершеннолетие даёт срок на решение, а не мгновенный обрыв | `libs/pdr-identity/src/identity/core/guardian_access.cpp` | `libs/pdr-identity/tests/guardian_access_test.cpp` |
+| Отказ опекуну попадает в журнал наравне с просмотром | `libs/pdr-identity/src/identity/application/contract_service.cpp` | `libs/pdr-identity/tests/guardian_access_test.cpp` |
+| Развилки при регистрации нет: подбор выключен у всех по умолчанию | `libs/pdr-identity/src/identity/core/practice.hpp` | `libs/pdr-identity/tests/onboarding_test.cpp` |
+| Один человек на площадке, сколько угодно практик | `libs/pdr-identity/src/identity/core/account.hpp` | `libs/pdr-identity/tests/onboarding_test.cpp`, `scripts/check_isolation.py` |
+| Репетитор не видит ничего о занятиях ученика у других | `db/migrations/V008__practice_and_accounts.sql` | `scripts/check_isolation.py`, `libs/pdr-identity/tests/onboarding_test.cpp` |
+| Учебное число не пересекает границу практики | `scripts/migration_model.py` | `scripts/check_rls.py` |
+| Повтор приглашения не шлёт второго письма | `libs/pdr-identity/src/identity/application/invite_participant.hpp` | `libs/pdr-identity/tests/onboarding_test.cpp` |
+| Практику можно выгрузить целиком и удалить целиком | `db/account/delete.sql` | `scripts/check_openness.py`, `make account-export` |
+| Права по возрасту вычисляются, а не выдаются по заявке | `libs/pdr-identity/src/identity/core/capabilities.hpp` | `libs/pdr-identity/tests/capabilities_test.cpp` |
+| Возрастные пороги — значения конфига, а не константы | `configs/dynamic/registry.yaml` | `scripts/check_dynamic_configs.py`, `libs/pdr-identity/tests/capabilities_test.cpp` |
+| Опекун узнаёт о самостоятельном поступке подопечного всегда | `libs/pdr-identity/src/identity/application/notify_guardian_of_act.cpp` | `scripts/check_guardian_notice.py`, `libs/pdr-notifications/tests/deliver_domain_events_test.cpp` |
+| Текст отзыва опекуну не показывают: в событии для него нет места | `libs/pdr-events/include/events/identity/ward_acted_alone.hpp` | `scripts/check_guardian_notice.py` |
+| Автоплатёж с чужой карты ученику не даётся ни в каком возрасте | `libs/pdr-identity/src/identity/application/policies/billing_policy.cpp` | `libs/pdr-identity/tests/capabilities_test.cpp` |
+| Ученик читает журнал доступов к себе, опекун — нет ни при каком уровне | `libs/pdr-identity/src/identity/application/show_access_journal.hpp` | `libs/pdr-identity/tests/guardian_access_test.cpp` |
+| Согласие хранится с версией и действием, а не подразумевается | `db/migrations/V011__consent.sql` | `libs/pdr-identity/tests/consent_test.cpp` |
+| За ребёнка соглашается опекун, и без этого ученик не заводится | `libs/pdr-identity/src/identity/application/give_consent.cpp` | `libs/pdr-identity/tests/consent_test.cpp` |
+| Две галочки, а не одна: запись занятий — отдельное согласие | `libs/pdr-identity/src/identity/core/consent.hpp` | `libs/pdr-identity/tests/consent_test.cpp` |
+| Существенность версии назначает человек, а не угадывает код | `docs/legal/personal-data.md` | `libs/pdr-identity/tests/consent_test.cpp`, `scripts/check_personal_data.py` |
+| Перечень обработки и ревизия открытости не расходятся | `docs/legal/personal-data.md` | `scripts/check_personal_data.py` |
+| Экран «мои данные» показывает все категории перечня | `libs/pdr-identity/src/identity/application/show_my_data.cpp` | `libs/pdr-identity/tests/consent_test.cpp` |
+| Взрослый ученик без опекуна проходит весь путь: опека нигде не обязательна | `libs/pdr-identity/src/identity/application/policies/subject_builder.cpp` | `scripts/check_adult_student.py`, `libs/pdr-identity/tests/adult_student_test.cpp` |
+| Опека и наблюдение — один механизм с разными основаниями | `libs/pdr-identity/src/identity/core/guardian_consent.hpp` | `libs/pdr-identity/tests/adult_student_test.cpp` |
+| Деньги не дают права смотреть: плательщику открыты только счета | `db/migrations/V009__consent_basis.sql` | `libs/pdr-identity/tests/adult_student_test.cpp`, `scripts/check_isolation.py` |
+| Возраст при регистрации заявительный: документов продукт не просит | `libs/pdr-identity/src/identity/core/birth_date.hpp` | `scripts/check_adult_student.py` |
 | Сессию хранилища не получить мимо области арендатора | `libs/pdr-core/src/application/ports/tenant_aware_repository.hpp` | `tenant_session_outside_scope` |
 | Время — `timestamptz` в UTC плюс отдельная зона IANA | `libs/pdr-core/src/core/types/time.cpp` | `scripts/check_migrations.py`, `libs/pdr-core/tests/time_test.cpp` |
 | Деньги — целые минорные единицы и код валюты | `libs/pdr-core/src/core/money.cpp` | `scripts/check_migrations.py`, `libs/pdr-billing/tests/quote_test.cpp` |

@@ -20,13 +20,16 @@ target_link_libraries(pdr_billing PUBLIC pdr_core PRIVATE pdr_application)
 # Адаптеры к Postgres собираются только там, где есть userver. Без него
 # контекст остаётся собираемым и проверяемым целиком, кроме этого слоя.
 if(userver_FOUND)
+    # Компонента «репозиторий тарифов» больше нет: репозиторий живёт внутри
+    # области арендатора и не переживает запрос, а компонент живёт всю жизнь
+    # сервиса. Дверь к соединениям одна и общая — pdr_postgres.
     add_library(pdr_billing_infrastructure STATIC
         src/billing/infrastructure/postgres_tariff_repository.cpp
-        src/billing/infrastructure/tariff_repository_component.cpp
     )
     target_include_directories(pdr_billing_infrastructure
                                PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
-    target_link_libraries(pdr_billing_infrastructure PUBLIC pdr_billing userver::postgresql)
+    target_link_libraries(pdr_billing_infrastructure
+                          PUBLIC pdr_billing pdr_postgres userver::postgresql)
 endif()
 
 if(PDR_BUILD_TESTS)

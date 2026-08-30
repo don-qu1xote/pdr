@@ -43,6 +43,7 @@
 | [ADR-0001](0001-backend-cpp-userver.md) | бэкенд на C++ и userver |
 | [ADR-0002](0002-postgres-only-storage.md) | PostgreSQL — единственное хранилище |
 | [ADR-0003](0003-multitenancy-from-day-one.md) | мульти-тенантность с первого дня |
+| [ADR-0019](0019-one-account-many-practices.md) | один человек на площадке, сколько угодно практик |
 | [ADR-0007](0007-local-without-fake-production.md) | локально, без фиктивного прода |
 | [ADR-0009](0009-monorepo-with-clients.md) | монорепозиторий с несколькими клиентами |
 
@@ -54,6 +55,8 @@
 | [ADR-0005](0005-billing-port-and-first-adapter.md) | биллинг — порт и первый адаптер, а не свой процессинг |
 | [ADR-0006](0006-parental-access-by-design.md) | родительский доступ проектируется, а не добавляется |
 | [ADR-0008](0008-tutor-is-the-seller.md) | продавец — репетитор, а не платформа |
+| [ADR-0018](0018-age-thresholds-are-a-legal-question.md) | возрастные пороги — юридический вопрос, а не продуктовый |
+| [ADR-0020](0020-adult-student-is-the-main-case.md) | взрослый ученик без опекуна — основной случай |
 | [ADR-0017](0017-a-layer-in-help-not-a-seller.md) | мы прослойка в помощи, а не продавец с товаром |
 
 Корневое из них — [ADR-0017](0017-a-layer-in-help-not-a-seller.md): из того, что

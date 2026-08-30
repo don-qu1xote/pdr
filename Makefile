@@ -20,10 +20,11 @@ PG_ENV = set -a; . ./$(ENV_FILE); set +a; \
 	       PGPASSWORD=$$POSTGRES_PASSWORD PGDATABASE=$$POSTGRES_DB;
 
 .DEFAULT_GOAL := help
-.PHONY: help up down test test-unit test-isolation test-jobs test-plans fmt fmt-check \
+.PHONY: help up down test test-unit test-isolation test-jobs test-idempotency test-plans fmt fmt-check \
         comments comments-fix hooks logs migrate migrate-verify migrate-status schema-doc \
         product-events-lock product-events-export product-events-prune \
-        account-export ps check-env
+        idempotency-prune \
+        account-export account-delete practice-queue ps check-env permissions-lock
 
 help:
 	@echo "Цели:"
@@ -33,6 +34,7 @@ help:
 	@echo "  make test-unit   только unit-прогон: без базы, без докера, за миллисекунды"
 	@echo "  make test-isolation   проверить изоляцию арендаторов на живой базе"
 	@echo "  make test-jobs   проверить одиночные задания на живой базе"
+	@echo "  make test-idempotency  проверить защиту от повтора на живой базе"
 	@echo "  make test-plans  снять планы горячих запросов на живой базе"
 	@echo "  make fmt         привести C++ к .clang-format"
 	@echo "  make fmt-check   проверить формат, ничего не меняя (та же цель в CI и в хуке)"
@@ -47,7 +49,10 @@ help:
 	@echo "  make product-events-lock     пересобрать снимок опубликованных схем событий"
 	@echo "  make product-events-export OUT=<файл>   выгрузить продуктовый поток в CSV"
 	@echo "  make product-events-prune DAYS=<дней>   убрать записи старше срока"
+	@echo "  make idempotency-prune                  убрать просроченные ключи повтора"
 	@echo "  make account-export TENANT=<uuid> OUT=<файл>   полная выгрузка аккаунта"
+	@echo "  make account-delete TENANT=<uuid>              удалить практику целиком"
+	@echo "  make practice-queue                            кто ждёт разбора публикации"
 	@echo "  make ps          что сейчас запущено"
 	@echo
 	@echo "Уровни тестов и куда писать новый — docs/testing.md"
@@ -105,12 +110,30 @@ test-isolation: check-env
 test-jobs: check-env
 	@$(PG_ENV) python3 scripts/check_jobs.py
 
+# Идемпотентность: повтор с тем же ключом операцию не выполняет, одновременный
+# повтор ждёт. Проверять на фейке недостаточно — весь смысл в том, что делает
+# база, когда два обращения приходят одновременно на разные реплики.
+test-idempotency: check-env
+	@$(PG_ENV) python3 scripts/check_idempotency.py
+
 # Планы горячих запросов на живой базе. Два шага, и первый обязателен: на
 # пустой базе любой план — перебор, и он правильный. Засев повторяем, поэтому
 # цель можно звать сколько угодно раз подряд.
 test-plans: check-env
 	@$(PG_ENV) psql --no-psqlrc -v ON_ERROR_STOP=1 -qtA -f db/explain/seed.sql >/dev/null
 	@$(PG_ENV) python3 scripts/check_plans.py
+
+# Матрица прав не пишется руками — она собирается из самих политик опросом по
+# всем действиям, ролям и отношениям. Написанная руками, она расходится с кодом
+# на первой правке и после этого хуже, чем её отсутствие: по ней принимают
+# решения, а она врёт. Сверяет её тот же прогон, что и всё остальное (make test).
+permissions-lock:
+	cmake -S . -B $(BUILD_DIR) -DCMAKE_BUILD_TYPE=Debug
+	cmake --build $(BUILD_DIR) --target pdr_unit_tests --parallel
+	@$(BUILD_DIR)/pdr_unit_tests \
+		--gtest_filter='PermissionsMatrix.TheFileInDocsSaysWhatTheCodeDoes' >/dev/null || true
+	@cp $(BUILD_DIR)/permissions.md docs/architecture/permissions.md
+	@echo "матрица прав перезаписана: docs/architecture/permissions.md"
 
 # Документ схемы не пишется руками — он собирается из миграций.
 schema-doc:
@@ -151,6 +174,26 @@ account-export: check-env
 		-f db/account/export.sql > $(OUT)
 	@echo "выгружено: $(OUT), частей: $$(grep -c '": \[' $(OUT))"
 
+# Удаление практики целиком. Переезжать к нам будут ровно настолько охотно,
+# насколько легко уехать обратно, поэтому удаление есть с первого дня и делается
+# одной командой. Идёт под ролью миграций: удалять приходится и то, что роли
+# приложения не отдаётся (сессии, отпечатки ссылок, счётчики попыток).
+#
+# Выгрузку делают ДО этого: make account-export TENANT=... OUT=...
+account-delete: check-env
+	@test -n "$(TENANT)" || { \
+		echo "какую практику: make account-delete TENANT=<uuid>"; \
+		echo "сначала выгрузите: make account-export TENANT=<uuid> OUT=account.json"; \
+		exit 1; \
+	}
+	@$(PG_ENV) psql --no-psqlrc -v ON_ERROR_STOP=1 -qtA -v tenant=$(TENANT) \
+		-f db/account/delete.sql
+
+# Очередь на разбор публикации: кто попросил показывать себя в подборе. Общая
+# поверх всех практик, поэтому под ролью миграций, а не под ролью приложения.
+practice-queue: check-env
+	@$(PG_ENV) psql --no-psqlrc -v ON_ERROR_STOP=1 -qtA -f db/practice/queue.sql
+
 # Уборка по сроку жизни. Числа по умолчанию у цели нет намеренно: срок живёт в
 # PDR_PRODUCT_EVENTS.retention_days, и второго источника правды не заводится.
 product-events-prune: check-env
@@ -161,6 +204,13 @@ product-events-prune: check-env
 	}
 	@$(PG_ENV) psql --no-psqlrc -v ON_ERROR_STOP=1 -tA -v days=$(DAYS) \
 		-f db/observability/prune.sql
+
+# Уборка просроченных ключей идемпотентности. Под ролью МИГРАЦИЙ и по всем
+# практикам сразу: построчная защита отвечает на вопрос «чьи это данные», а у
+# уборки такого вопроса нет — она удаляет по сроку.
+idempotency-prune:
+	@$(PG_ENV) psql --no-psqlrc -v ON_ERROR_STOP=1 -tA -f db/http/prune.sql
+	@echo "просроченные ключи убраны"
 
 ps: check-env
 	$(COMPOSE) ps
@@ -191,6 +241,12 @@ test:
 	python3 scripts/check_handmade.py
 	python3 scripts/check_dynamic_configs.py --selftest
 	python3 scripts/check_dynamic_configs.py
+	python3 scripts/check_guardian_notice.py --selftest
+	python3 scripts/check_guardian_notice.py
+	python3 scripts/check_adult_student.py --selftest
+	python3 scripts/check_adult_student.py
+	python3 scripts/check_http_form.py --selftest
+	python3 scripts/check_http_form.py
 	python3 scripts/check_product_events.py --selftest
 	python3 scripts/check_product_events.py
 	python3 scripts/check_glossary.py --selftest
@@ -210,6 +266,13 @@ test:
 	python3 scripts/check_debts.py
 	python3 scripts/check_secrets.py --selftest
 	python3 scripts/check_secrets.py
+	python3 scripts/check_secrets_registry.py --selftest
+	python3 scripts/check_secrets_registry.py
+	python3 scripts/check_personal_data.py --selftest
+	python3 scripts/check_personal_data.py
+	python3 scripts/check_pr_rules.py --selftest
+	python3 scripts/check_pr_rules.py
+	python3 scripts/pr_body.py --selftest
 	python3 scripts/detect_changes.py --selftest
 	python3 scripts/check_format.py --selftest
 	python3 scripts/check_comments.py --selftest

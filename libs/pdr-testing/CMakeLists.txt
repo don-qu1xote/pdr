@@ -11,6 +11,7 @@
 add_library(pdr_testing STATIC
     src/fakes/fake_clock.cpp
     src/fakes/fake_id_generator.cpp
+    src/fakes/fake_secret_generator.cpp
     src/fakes/fake_tenant_aware_repository.cpp
 )
 target_include_directories(pdr_testing

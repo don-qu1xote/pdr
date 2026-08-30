@@ -20,7 +20,8 @@
 --   перебор     таблицы, где Seq Scan допустим и почему. Без этого ключа любой
 --               Seq Scan в плане роняет джобу.
 --
--- Подстановки: {tenant} {person} {guardian} {email} {job} {keep_days} —
+-- Подстановки: {tenant} {person} {guardian} {email} {session} {token} {job}
+--             {keep_days} —
 -- их заполняет scripts/check_plans.py значениями из db/explain/seed.sql.
 
 -- запрос: identity_person_by_tenant
@@ -44,11 +45,45 @@ select id, display_name
   from identity_person
  where email = '{email}';
 
+-- запрос: identity_account_by_mail
+-- откуда: identity::ports::Accounts::FindByMail — «этот человек уже есть на
+--         площадке?». Задаётся при каждом заведении практики, при каждом приходе
+--         по приглашению и при каждой самостоятельной регистрации. Реестр общий
+--         на всю площадку, и перебор здесь означает чтение всех записей системы
+-- индекс: identity_account_mail_unique
+select id, confirmed_at
+  from identity_account
+ where email_digest = '{digest}';
+
+-- запрос: identity_one_time_token_invited
+-- откуда: identity::ports::OneTimeTokens::LiveInvitationTo — «этому уже писали?».
+--         Задаётся по разу на каждую строку вставленного списка: двадцать
+--         вопросов на одну вставку, и без индекса это двадцать переборов
+-- индекс: identity_one_time_token_invited
+select id, expires_at
+  from identity_one_time_token
+ where invited_digest = '{invited}'
+   and used_at is null;
+
 -- запрос: identity_guardianship_active_pair
 -- откуда: identity::ports::GuardianshipRepository::FindActive
 -- индекс: identity_guardianship_by_student
 select id, granted_at
   from identity_guardianship
+ where guardian_id = '{guardian}'
+   and student_id = '{person}'
+   and revoked_at is null;
+
+-- запрос: identity_guardian_consent_by_pair
+-- откуда: identity::ports::GuardianConsents::ActiveFor — «что открыто ЭТОМУ
+--         опекуну про ЭТОГО ученика». Спрашивается на КАЖДОМ обращении опекуна,
+--         рядом с ролями; перебор здесь означает чтение всех согласий кабинета
+--         на каждый показ расписания. Идёт по индексу уникальности: его первые
+--         три колонки — это ровно пара, и отдельный индекс под тот же вопрос
+--         был бы платой за то, чего в плане не видно
+-- индекс: identity_guardian_consent_active
+select scope, granted_at, granted_by, expires_at
+  from identity_guardian_consent
  where guardian_id = '{guardian}'
    and student_id = '{person}'
    and revoked_at is null;
@@ -62,12 +97,47 @@ select id, guardian_id
    and revoked_at is null;
 
 -- запрос: identity_role_assignment_by_person
--- откуда: роли человека в тенанте; проверяются на каждом обращении
+-- откуда: identity::ports::RoleRepository::RolesOf — права спрашиваются на
+--         каждом действии, и роли для этого читаются каждый раз
 -- индекс: identity_role_assignment_by_person
 select id, role
   from identity_role_assignment
  where person_id = '{person}'
    and revoked_at is null;
+
+-- запрос: identity_session_by_id
+-- откуда: identity::ports::SessionStore::Find — САМЫЙ ЧАСТЫЙ запрос системы:
+--         он идёт на каждом обращении любого человека, а не раз в занятие
+-- индекс: identity_session_pk
+select person_id, expires_at, revoked_at
+  from identity_session
+ where id = '{session}';
+
+-- запрос: identity_credential_by_email
+-- откуда: identity::ports::CredentialStore::FindByEmail — вход; пароль лежит
+--         отдельно от человека, поэтому план проверяется на джойне
+-- индекс: identity_person_email_unique
+select c.person_id, c.password_hash
+  from identity_credential c
+  join identity_person p on p.tenant_id = c.tenant_id and p.id = c.person_id
+ where p.email = '{email}';
+
+-- запрос: identity_one_time_token_by_hash
+-- откуда: identity::ports::OneTimeTokens::Find — переход по ссылке из письма
+-- индекс: identity_one_time_token_secret_unique
+select id, purpose, role, person_id, expires_at, used_at
+  from identity_one_time_token
+ where token_hash = '{token}';
+
+-- запрос: identity_access_log_by_subject
+-- откуда: «кто смотрел мои данные» — единственный вопрос к журналу доступа,
+--         ради него и заведён identity_access_log_by_subject
+-- индекс: identity_access_log_by_subject
+select actor_id, resource_kind, at
+  from identity_access_log
+ where subject_id = '{person}'
+ order by at desc
+ limit 50;
 
 -- запрос: jobs_effect_cleanup
 -- откуда: уборка старых следов, ради которой заведён jobs_effect_by_age

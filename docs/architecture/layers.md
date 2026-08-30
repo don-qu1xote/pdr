@@ -6,8 +6,10 @@
 ```mermaid
 flowchart RL
     subgraph infrastructure["infrastructure — адаптеры"]
-        component["TariffRepositoryComponent<br/>тонкий компонент userver"]
+        component["TenantContextComponent<br/>тонкий компонент userver"]
+        door["db::TenantContext → ScopedTenantContext<br/>единственная дверь к соединениям"]
         adapter["PostgresTariffRepository<br/>обычный класс"]
+        handler["http::AuthorizedHandler<br/>форма запроса и отказа"]
     end
 
     subgraph testing["pdr-testing — только в тестах"]
@@ -23,15 +25,25 @@ flowchart RL
         domain["Money · Tariff · правило цены пакета<br/>StrongId&lt;Tag&gt; · Instant · TimeZone<br/>Error · Result"]
     end
 
-    component --> adapter
+    component --> door
+    adapter --> door
     adapter -- "реализует" --> port
     fakes -- "реализуют" --> port
     usecase --> port
     usecase --> domain
     port --> domain
+    handler --> usecase
+    handler --> port
 ```
 
 Стрелка — «знает о». Наружу не идёт ни одна.
+
+`http::AuthorizedHandler` стоит в `infrastructure` не по расположению файла, а
+по существу: он знает про запрос, про JSON и про статусы — то есть про
+транспорт. Предметных правил у него нет ни одного, и появиться им там нельзя:
+хендлер зовёт сценарий и отдаёт то, что тот вернул
+([http.md](http.md)). Живёт он в `libs/pdr-http` — форма одна на все контексты,
+и заводить её в каждом означало бы завести столько же разных форм.
 
 Это граница по вертикали — внутри одного контекста. Граница по горизонтали,
 между контекстами, и правило владения таблицами — в
@@ -47,6 +59,15 @@ flowchart RL
 | `core/` | `userver`, `pqxx`/`libpq`, `<ctime>`/`<time.h>`, `application/`, `infrastructure/` |
 | `application/` | `userver`, `pqxx`/`libpq`, `<ctime>`/`<time.h>`, `infrastructure/` |
 | `infrastructure/` | — внешний слой, ему можно всё |
+
+Отдельно от слоёв — **пул соединений**. Заголовок
+`userver/storages/postgres/cluster.hpp` и типы `ClusterPtr`, `ClusterHostType`
+упоминаются только внутри `infrastructure/db/`: там стоят две двери к базе —
+`db::TenantContext`, который открывается лишь с объявленным арендатором, и
+`db::UnscopedAccess`, названный так, чтобы обход было видно на ревью. Всё
+остальное получает область арендатора параметром и про пул не знает — тогда
+«взять соединение и забыть объявить арендатора» просто нечем написать. Правила
+изоляции целиком — в [tenancy.md](tenancy.md).
 
 Там же, в `core/` и `application/`, запрещён и сам вызов «который час»:
 `system_clock::now()`, `gettimeofday`, `std::time(nullptr)`. «Сейчас» приходит
@@ -87,8 +108,10 @@ flowchart RL
 стенде» вместо «проверим сразу».
 
 Здесь адаптер — обычный класс с обычным конструктором, а компонент userver
-только создаёт его и отдаёт ссылку на порт. Сценарий подставляет фейк порта и
-проверяется без базы, без докера и без сети.
+только собирает дверь к соединениям и отдаёт ссылку на неё. Компонентов
+«репозиторий такого-то контекста» не бывает вовсе: репозиторий живёт внутри
+области арендатора и не переживает запрос, а компонент живёт всю жизнь сервиса.
+Сценарий подставляет фейк порта и проверяется без базы, без докера и без сети.
 
 Фейки часов и генератора идентификаторов лежат в `libs/pdr-testing` в
 единственном экземпляре на весь проект: свой фейк часов в каждом тестовом файле

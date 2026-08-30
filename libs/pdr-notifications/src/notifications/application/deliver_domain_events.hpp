@@ -1,7 +1,12 @@
 #pragma once
 
+#include <string_view>
+
+#include "core/types/ids.hpp"
+#include "core/types/time.hpp"
 #include "events/bus.hpp"
 #include "notifications/application/ports/outbox_repository.hpp"
+#include "notifications/core/delivery.hpp"
 
 namespace pdr::notifications {
 
@@ -19,6 +24,12 @@ public:
     void SubscribeTo(events::Bus& bus);
 
 private:
+    void Enqueue(const core::TenantId& tenant,
+                 const core::PersonId& recipient,
+                 Channel channel,
+                 std::string_view reason,
+                 core::Instant at);
+
     ports::OutboxRepository& outbox_;
 };
 

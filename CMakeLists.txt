@@ -164,6 +164,14 @@ if(PDR_BUILD_TESTS)
         target_link_libraries(pdr_unit_tests PRIVATE ${unit_libraries} GTest::gtest_main)
         add_test(NAME unit COMMAND pdr_unit_tests)
 
+        # Путь к дереву нужен РОВНО ОДНОМУ тесту — сверке матрицы прав с
+        # docs/architecture/permissions.md. Матрица собирается из самих политик,
+        # и написанная руками она разошлась бы с кодом на первой правке.
+        # Перезаписать файл: make permissions-lock.
+        target_compile_definitions(pdr_unit_tests
+                                   PRIVATE PDR_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+                                           PDR_BINARY_DIR="${CMAKE_BINARY_DIR}")
+
         # ГЛАВНАЯ ГРАНИЦА ПИРАМИДЫ, и она проверяется сборкой, а не обещанием:
         # у unit-прогона нет ни адаптеров, ни драйвера базы, ни userver. Значит,
         # «а я тут быстренько сходил в Postgres» не компилируется — вместо того
@@ -181,5 +189,27 @@ if(PDR_BUILD_TESTS)
         add_executable(pdr_adapter_tests ${adapter_sources})
         target_link_libraries(pdr_adapter_tests PRIVATE ${adapter_libraries} userver::utest)
         add_test(NAME adapter COMMAND pdr_adapter_tests)
+
+        # Образ userver собран с ASan и UBSan, и цель наследует их через
+        # userver::utest. Это хорошо и остаётся: адаптеры — ровно тот слой, где
+        # ошибка с памятью не видна глазами.
+        #
+        # Но у ASan есть предел: он запоминает стек КАЖДОГО выделения памяти
+        # (malloc_context_size, по умолчанию 30 кадров), и на длинном прогоне
+        # хранилище этих стеков упирается в потолок — процесс падает SEGV внутри
+        # самого ASan, не дойдя до конца списка тестов. Падение накопительное:
+        # оно приходит не от конкретного теста, а от их количества, и потому
+        # выглядит как «сломался случайный тест».
+        #
+        # Двадцать кадров хватает, чтобы прочитать любой отчёт ASan, и не
+        # хватает, чтобы упереться: проверено прогоном в три круга. Меньше
+        # диагностики, чем по умолчанию, но она есть, — а падающий прогон не
+        # даёт никакой.
+        set_tests_properties(adapter PROPERTIES
+                             ENVIRONMENT "ASAN_OPTIONS=malloc_context_size=20")
+
+        # Схемы тел запросов читаются файлами, а не вкомпилированы: путь до
+        # дерева нужен затем, чтобы прогон нашёл их из любого каталога сборки.
+        target_compile_definitions(pdr_adapter_tests PRIVATE PDR_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
     endif()
 endif()

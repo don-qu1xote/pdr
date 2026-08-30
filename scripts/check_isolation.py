@@ -18,6 +18,16 @@ scripts/check_rls.py читает миграции и отвечает на во
 
     make test-isolation
     make test-isolation ENV_PROFILE=ci
+
+PEOPLE_PER_TENANT — сколько человек засев заводит в каждом арендаторе: опекун,
+ученик и Маша, которая учится в обоих. Число названо, а не вписано в каждый
+случай: иначе засев с новым человеком роняет половину проверок числом вместо
+смысла.
+
+SHARED_STUDENT — один и тот же идентификатор в двух арендаторах. Так и бывает:
+математику ученик учит у одного репетитора, английский у другого, и человек это
+один (ADR-0019). Отсюда самый узкий случай изоляции — запрос «по человеку» без
+границы арендатора нашёл бы обе практики сразу.
 """
 
 from __future__ import annotations
@@ -33,6 +43,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import migration_model as model  # noqa: E402  (после правки sys.path)
 
+PEOPLE_PER_TENANT = 3
+
 APP_ROLE = "pdr_app"
 PARAMETER = "pdr.tenant_id"
 
@@ -46,10 +58,36 @@ LINK_A = "0a0a0a0a-0000-4000-8000-00000000c001"
 LINK_B = "0b0b0b0b-0000-4000-8000-00000000c002"
 ROLE_A = "0a0a0a0a-0000-4000-8000-00000000d001"
 ROLE_B = "0b0b0b0b-0000-4000-8000-00000000d002"
+LOG_A = "0a0a0a0a-0000-4000-8000-00000000f001"
+LOG_B = "0b0b0b0b-0000-4000-8000-00000000f002"
+AGREED_A = "0a0a0a0a-0000-4000-8000-000000009001"
+AGREED_B = "0b0b0b0b-0000-4000-8000-000000009002"
+CONSENT_A = "0a0a0a0a-0000-4000-8000-000000007001"
+CONSENT_B = "0b0b0b0b-0000-4000-8000-000000007002"
+CONSENT_PAYER = "0a0a0a0a-0000-4000-8000-000000007003"
+CONSENT_NONSENSE = "0a0a0a0a-0000-4000-8000-000000007004"
+BLOCKED_SIGHT = {
+    "recordings": "0a0a0a0a-0000-4000-8000-000000007005",
+    "notes_and_homework": "0a0a0a0a-0000-4000-8000-000000007006",
+    "schedule": "0a0a0a0a-0000-4000-8000-000000007007",
+}
+
+SHARED_STUDENT = "0c0c0c0c-0000-4000-8000-000000008001"
+SHARED_ACCOUNT_DIGEST = "c" * 64
+SESSION_A = "0a0a0a0a-0000-4000-8000-000000005001"
+SESSION_B = "0b0b0b0b-0000-4000-8000-000000005002"
+TOKEN_A = "0a0a0a0a-0000-4000-8000-000000006001"
+TOKEN_B = "0b0b0b0b-0000-4000-8000-000000006002"
 NEW_ROW = "0c0c0c0c-0000-4000-8000-00000000e001"
 
+DIGEST_A = "a" * 64
+DIGEST_B = "b" * 64
+ARGON2 = "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$aGFzaGhhc2hoYXNoaGFzaA"
+
 TABLES = ("identity_tenant", "identity_person", "identity_role_assignment",
-          "identity_guardianship")
+          "identity_guardianship", "identity_guardian_consent", "identity_consent",
+          "identity_access_log", "identity_credential", "identity_session",
+          "identity_one_time_token", "identity_login_attempt")
 
 SQLSTATE = re.compile(r"\bERROR:\s+([0-9A-Z]{5}):")
 
@@ -136,16 +174,63 @@ insert into identity_role_assignment (tenant_id, id, person_id, role) values
 insert into identity_guardianship (tenant_id, id, guardian_id, student_id) values
     ('{TENANT_A}', '{LINK_A}', '{GUARDIAN_A}', '{STUDENT_A}'),
     ('{TENANT_B}', '{LINK_B}', '{GUARDIAN_B}', '{STUDENT_B}');
+insert into identity_person (tenant_id, id, display_name, email, tz) values
+    ('{TENANT_A}', '{SHARED_STUDENT}', 'Маша', 'masha-a@example.test', 'Europe/Moscow'),
+    ('{TENANT_B}', '{SHARED_STUDENT}', 'Маша', 'masha-b@example.test', 'Asia/Tbilisi');
+insert into identity_account (id, email_digest, confirmed_at) values
+    ('{SHARED_STUDENT}', '{SHARED_ACCOUNT_DIGEST}', now());
+insert into identity_guardian_consent
+    (tenant_id, id, guardian_id, student_id, scope, basis, granted_by) values
+    ('{TENANT_A}', '{CONSENT_A}', '{GUARDIAN_A}', '{STUDENT_A}', 'recordings',
+     'guardianship', '{STUDENT_A}'),
+    ('{TENANT_B}', '{CONSENT_B}', '{GUARDIAN_B}', '{STUDENT_B}', 'recordings',
+     'named_by_student', '{STUDENT_B}');
+insert into identity_consent
+    (tenant_id, id, subject_id, given_by, kind, version, action) values
+    ('{TENANT_A}', '{AGREED_A}', '{STUDENT_A}', '{GUARDIAN_A}', 'processing', 1,
+     'sign_up_checkbox'),
+    ('{TENANT_B}', '{AGREED_B}', '{STUDENT_B}', '{STUDENT_B}', 'recordings', 1,
+     'settings_checkbox');
+insert into identity_access_log (tenant_id, id, actor_id, subject_id, resource_kind, at) values
+    ('{TENANT_A}', '{LOG_A}', '{GUARDIAN_A}', '{STUDENT_A}', 'recording',   now()),
+    ('{TENANT_B}', '{LOG_B}', '{GUARDIAN_B}', '{STUDENT_B}', 'transcript', now());
+insert into identity_credential (tenant_id, person_id, password_hash) values
+    ('{TENANT_A}', '{STUDENT_A}', '{ARGON2}'),
+    ('{TENANT_B}', '{STUDENT_B}', '{ARGON2}');
+insert into identity_session
+    (tenant_id, id, person_id, expires_at, user_agent_hash, ip_hash) values
+    ('{TENANT_A}', '{SESSION_A}', '{STUDENT_A}', now() + interval '30 days',
+     '{DIGEST_A}', '{DIGEST_A}'),
+    ('{TENANT_B}', '{SESSION_B}', '{STUDENT_B}', now() + interval '30 days',
+     '{DIGEST_B}', '{DIGEST_B}');
+insert into identity_one_time_token
+    (tenant_id, id, purpose, token_hash, role, expires_at) values
+    ('{TENANT_A}', '{TOKEN_A}', 'invitation', '{DIGEST_A}', 'student',
+     now() + interval '7 days'),
+    ('{TENANT_B}', '{TOKEN_B}', 'invitation', '{DIGEST_B}', 'student',
+     now() + interval '7 days');
+insert into identity_login_attempt
+    (tenant_id, subject_kind, subject_hash, window_started_at, attempts) values
+    ('{TENANT_A}', 'account', '{DIGEST_A}', now(), 1),
+    ('{TENANT_B}', 'account', '{DIGEST_B}', now(), 1);
 """)
 
 
 def teardown(database: Database) -> None:
     tenants = f"('{TENANT_A}', '{TENANT_B}')"
     database.owner(f"""
+delete from identity_login_attempt where tenant_id in {tenants};
+delete from identity_one_time_token where tenant_id in {tenants};
+delete from identity_session where tenant_id in {tenants};
+delete from identity_credential where tenant_id in {tenants};
+delete from identity_consent where tenant_id in {tenants};
+delete from identity_access_log where tenant_id in {tenants};
+delete from identity_guardian_consent where tenant_id in {tenants};
 delete from identity_guardianship where tenant_id in {tenants};
 delete from identity_role_assignment where tenant_id in {tenants};
 delete from identity_person where tenant_id in {tenants};
 delete from identity_tenant where tenant_id in {tenants};
+delete from identity_account where id = '{SHARED_STUDENT}';
 """)
 
 
@@ -249,9 +334,10 @@ select (select count(*) from identity_person p
     problems = []
     if joined != 1:
         problems.append(f"джойн под арендатором А вернул {joined} строк вместо 1")
-    if product != 2:
+    if product != PEOPLE_PER_TENANT:
         problems.append(
-            f"произведение person × tenant под арендатором А вернуло {product} строк вместо 2"
+            f"произведение person × tenant под арендатором А вернуло {product} строк вместо "
+            f"{PEOPLE_PER_TENANT}"
         )
     return problems
 
@@ -264,6 +350,71 @@ def nothing_is_visible_without_the_parameter(database: Database) -> list[str]:
             rows = database.app(f"select count(*) from {table};", tenant)
             if int(rows[0][0]) != 0:
                 problems.append(f"{table}: {label}, а строки видны")
+    return problems
+
+
+def the_declaration_does_not_outlive_the_transaction(database: Database) -> list[str]:
+    """ОБЯЗАТЕЛЬНЫЙ СЛУЧАЙ: соединение не уносит арендатора следующему.
+
+    Главная утечка приложения выглядит не как дыра в политике, а как забытое
+    объявление: соединение вернулось в пул с чужим `pdr.tenant_id`, и запрос
+    СЛЕДУЮЩЕГО человека прошёл под предыдущим арендатором. Ни один запрос при
+    этом не «сломан» — каждый честно спросил своё, а ответ пришёл чужой.
+
+    Решает здесь не наш код, а третий аргумент `set_config`: `true` привязывает
+    объявление к транзакции, `false` — к соединению. По исходнику это уже
+    сверено (scripts/check_rls.py), но что `true` значит именно то, о чём мы
+    думаем, показывает только настоящая база.
+
+    Всё идёт в ОДНОЙ сессии psql: между транзакциями соединение то же самое —
+    ровно как в пуле. Второй арендатор берёт его сразу после первого.
+    """
+    rows = database.app(f"""
+begin;
+select set_config('{PARAMETER}', '{TENANT_A}', true);
+select 'первый', count(*) filter (where tenant_id = '{TENANT_A}'), count(*) from identity_person;
+commit;
+select 'между', coalesce(nullif(current_setting('{PARAMETER}', true), ''), 'пусто'),
+       (select count(*) from identity_person);
+begin;
+select set_config('{PARAMETER}', '{TENANT_B}', true);
+select 'второй', count(*) filter (where tenant_id = '{TENANT_B}'), count(*) from identity_person;
+rollback;
+select 'после отката', coalesce(nullif(current_setting('{PARAMETER}', true), ''), 'пусто'),
+       (select count(*) from identity_person);
+""")
+    said = {row[0]: row[1:] for row in rows if len(row) >= 3}
+    missing = [label for label in ("первый", "между", "второй", "после отката")
+               if label not in said]
+    if missing:
+        return [f"база не ответила на шаги {', '.join(missing)}: проверять нечего"]
+
+    problems = []
+    for label, tenant in (("первый", "А"), ("второй", "Б")):
+        own, total = (int(value) for value in said[label])
+        if total != own:
+            problems.append(
+                f"{label} арендатор ({tenant}) видит {total - own} чужих строк: "
+                f"объявление не работает вовсе"
+            )
+        if own != PEOPLE_PER_TENANT:
+            problems.append(
+                f"{label} арендатор ({tenant}) видит {own} своих строк вместо "
+                f"{PEOPLE_PER_TENANT}: засев не тот, случай ничего не доказывает"
+            )
+
+    for label, ended in (("между", "фиксации"), ("после отката", "отката")):
+        parameter, visible = said[label][0], int(said[label][1])
+        if parameter != "пусто":
+            problems.append(
+                f"после {ended} на соединении остался арендатор «{parameter}»: "
+                f"следующий запрос пойдёт от чужого имени"
+            )
+        if visible:
+            problems.append(
+                f"после {ended} без объявления видно {visible} строк: соединение "
+                f"вернулось в пул с чужими правами"
+            )
     return problems
 
 
@@ -344,6 +495,288 @@ rollback;
     return []
 
 
+def the_journal_is_append_only(database: Database) -> list[str]:
+    """Строку журнала доступа не поправить и не стереть из-под приложения.
+
+    Права роли — только `select` и `insert` (V005__access_log.sql). Журнал, из
+    которого можно убрать строку, отвечает на вопрос «кто смотрел в марте» не
+    сам, а голосом того, у кого была причина его подчистить. Проверяется здесь,
+    потому что решают это ГРАНТЫ в живом кластере, а не наша аккуратность.
+    """
+    problems = []
+    attempts = (
+        ("правка", f"update identity_access_log set resource_kind = 'chat' "
+                   f"where id = '{LOG_A}';"),
+        ("удаление", f"delete from identity_access_log where id = '{LOG_A}';"),
+    )
+    for what, sql in attempts:
+        code = database.app_refusal(sql, TENANT_A)
+        if code != "42501":
+            problems.append(
+                f"{what} строки журнала доступа дало «{code or 'успех'}» вместо отказа 42501"
+            )
+
+    rows = database.app(f"select count(*) from identity_access_log where id = '{LOG_A}';", TENANT_A)
+    if int(rows[0][0]) != 1:
+        problems.append("после отказов строка журнала всё же изменилась или исчезла")
+    return problems
+
+
+def a_foreign_session_is_not_found_by_its_identifier(database: Database) -> list[str]:
+    """Знать чужой идентификатор сессии — не значит войти по нему.
+
+    Ради этого случая арендатор и едет вместе с секретом: строку сессии закрывает
+    та же построчная защита, что и всё остальное, и без объявленного арендатора
+    она не отвечает вовсе. Подставленный чужой идентификатор даёт «такой сессии
+    нет», а не чужого человека.
+    """
+    problems = []
+    mine = database.app(f"select count(*) from identity_session where id = '{SESSION_A}';",
+                        TENANT_A)
+    if int(mine[0][0]) != 1:
+        problems.append("под своим арендатором не находится собственная сессия")
+
+    theirs = database.app(f"select count(*) from identity_session where id = '{SESSION_A}';",
+                          TENANT_B)
+    if int(theirs[0][0]) != 0:
+        problems.append("чужая сессия находится по прямому обращению по идентификатору")
+
+    token = database.app(
+        f"select count(*) from identity_one_time_token where token_hash = '{DIGEST_A}';", TENANT_B
+    )
+    if int(token[0][0]) != 0:
+        problems.append("чужая одноразовая ссылка находится по отпечатку")
+    return problems
+
+
+def a_revoked_access_leaves_a_trace(database: Database) -> list[str]:
+    """Отозванную сессию и сработавшую ссылку не стереть из-под приложения.
+
+    Права роли — только `select`, `insert` и `update` (V006__auth.sql). «Когда
+    этот доступ забрали» — вопрос, который задают после того, как что-то
+    случилось; отвечать на него должно хранилище, а не память.
+
+    Счётчик попыток, наоборот, чистить можно и нужно: удачный вход забывает
+    счёт, а уборка выносит отработавшие окна. Поэтому в конце проверяется
+    обратное — что он вычищается.
+    """
+    problems = []
+    attempts = (
+        ("сессию", f"delete from identity_session where id = '{SESSION_A}';"),
+        ("одноразовую ссылку", f"delete from identity_one_time_token where id = '{TOKEN_A}';"),
+        ("хеш пароля", f"delete from identity_credential where person_id = '{STUDENT_A}';"),
+    )
+    for what, sql in attempts:
+        code = database.app_refusal(sql, TENANT_A)
+        if code != "42501":
+            problems.append(f"удаление строки «{what}» дало «{code or 'успех'}» вместо отказа 42501")
+
+    forgotten = database.app(f"""
+begin;
+with removed as (delete from identity_login_attempt returning 1) select count(*) from removed;
+rollback;
+""", TENANT_A)
+    if int(forgotten[0][0]) != 1:
+        problems.append("счётчик попыток не вычищается из-под приложения — забыть счёт нечем")
+    return problems
+
+
+def a_revoked_consent_cannot_be_deleted(database: Database) -> list[str]:
+    """Отозванное согласие остаётся строкой: удалить его из-под приложения нечем.
+
+    Права роли — только `select`, `insert` и `update` (V007__guardian_access.sql).
+    По этому доступу человек смотрел чужие данные, и на вопрос «кто имел доступ в
+    марте» отвечает эта строка. Удалённая отвечает «никто», и это неправда, —
+    поэтому `delete` не выдан вовсе, а не оставлен на дисциплину вызывающего.
+
+    Отзыв при этом обязан проходить: он `update`, а не `delete`.
+    """
+    problems = []
+    code = database.app_refusal(
+        f"delete from identity_guardian_consent where id = '{CONSENT_A}';", TENANT_A
+    )
+    if code != "42501":
+        problems.append(
+            f"согласие удаляется из-под приложения: «{code or 'успех'}» вместо отказа 42501"
+        )
+
+    database.app(f"""
+update identity_guardian_consent
+   set revoked_at = now(), revoked_by = '{STUDENT_A}'
+ where id = '{CONSENT_A}';
+""", TENANT_A)
+    rows = database.app(f"""
+select count(*) from identity_guardian_consent
+ where id = '{CONSENT_A}' and revoked_at is not null;
+""", TENANT_A)
+    if int(rows[0][0]) != 1:
+        problems.append("отзыв не прошёл: закрыть уровень доступа нечем")
+
+    theirs = database.app(
+        f"select count(*) from identity_guardian_consent where id = '{CONSENT_A}';", TENANT_B
+    )
+    if int(theirs[0][0]) != 0:
+        problems.append("чужое согласие находится по прямому обращению по идентификатору")
+    return problems
+
+
+def money_does_not_buy_sight(database: Database) -> list[str]:
+    """ДЕНЬГИ НЕ ДАЮТ ПРАВА СМОТРЕТЬ — и это ограничение схемы, а не соглашение.
+
+    Работодатель оплачивает переподготовку, учится человек. Строку «плательщик с
+    доступом к записям» база не примет вовсе: не «мы такого не выдаём», а «выдать
+    нечем» (`identity_guardian_consent_money_is_not_sight`, V009).
+
+    Второй замок нужен потому, что первый — ворота `MayCarry` в домене — обходится
+    любым запросом мимо домена, а такие запросы пишут: миграции данных, разовые
+    правки поддержки, импорт. Деньги при этом обязаны носить деньги: доступ к
+    счетам плательщику открывается, иначе платить ему нечем.
+    """
+    problems = []
+    for scope, row in BLOCKED_SIGHT.items():
+        code = database.app_refusal(f"""
+insert into identity_guardian_consent
+    (tenant_id, id, guardian_id, student_id, scope, basis, granted_by) values
+    ('{TENANT_A}', '{row}', '{GUARDIAN_A}', '{STUDENT_A}', '{scope}',
+     'pays_for_lessons', '{STUDENT_A}');
+""", TENANT_A)
+        if code != "23514":
+            problems.append(
+                f"плательщику открылся уровень «{scope}»: «{code or 'успех'}» вместо отказа "
+                f"23514. Оплата — не основание видеть, как идут занятия"
+            )
+
+    database.app(f"""
+insert into identity_guardian_consent
+    (tenant_id, id, guardian_id, student_id, scope, basis, granted_by) values
+    ('{TENANT_A}', '{CONSENT_PAYER}', '{GUARDIAN_A}', '{STUDENT_A}', 'payments',
+     'pays_for_lessons', '{STUDENT_A}');
+""", TENANT_A)
+    rows = database.app(
+        f"select count(*) from identity_guardian_consent where id = '{CONSENT_PAYER}';", TENANT_A
+    )
+    if int(rows[0][0]) != 1:
+        problems.append(
+            "плательщику не открылся даже счёт: ограничение закрыло то, ради чего его звали"
+        )
+
+    unknown = database.app_refusal(f"""
+insert into identity_guardian_consent
+    (tenant_id, id, guardian_id, student_id, scope, basis, granted_by) values
+    ('{TENANT_A}', '{CONSENT_NONSENSE}', '{GUARDIAN_A}', '{STUDENT_A}', 'payments',
+     'because_i_said_so', '{STUDENT_A}');
+""", TENANT_A)
+    if unknown != "23514":
+        problems.append(
+            f"основание доступа пишется любым словом: «{unknown or 'успех'}» вместо отказа "
+            f"23514. Список оснований закрыт, и закрыт он в схеме"
+        )
+    return problems
+
+
+def a_consent_keeps_its_trace(database: live.Database) -> list[str]:
+    """Согласие отзывается строкой с датой, а не удалением.
+
+    На вопрос «а было ли согласие в марте» отвечает эта строка. Удалённая
+    отвечает «нет», и это неправда: человек согласился, мы на этом основании
+    обрабатывали данные, и стереть след того, что основание было, нельзя.
+
+    Прав `delete` у роли приложения на таблице нет вовсе — механизм не
+    полагается на дисциплину.
+    """
+    problems = []
+
+    code = database.app_refusal(
+        f"delete from identity_consent where id = '{AGREED_A}';", TENANT_A
+    )
+    if code != "42501":
+        problems.append(
+            f"согласие удаляется из-под приложения: «{code or 'успех'}» вместо отказа 42501"
+        )
+
+    database.app(f"""
+update identity_consent set withdrawn_at = now() where id = '{AGREED_A}';
+""", TENANT_A)
+    rows = database.app(f"""
+select count(*) from identity_consent
+ where id = '{AGREED_A}' and withdrawn_at is not null;
+""", TENANT_A)
+    if int(rows[0][0]) != 1:
+        problems.append("отзыв согласия не прошёл: отозвать его нечем")
+
+    theirs = database.app(
+        f"select count(*) from identity_consent where id = '{AGREED_A}';", TENANT_B
+    )
+    if int(theirs[0][0]) != 0:
+        problems.append("чужое согласие находится по прямому обращению по идентификатору")
+
+    second = database.app_refusal(f"""
+insert into identity_consent
+    (tenant_id, id, subject_id, given_by, kind, version, action) values
+    ('{TENANT_B}', '{NEW_ROW}', '{STUDENT_B}', '{STUDENT_B}', 'recordings', 1,
+     'settings_checkbox');
+""", TENANT_B)
+    if second != "23505":
+        problems.append(
+            f"второе действующее согласие того же вида: «{second or 'успех'}» вместо 23505. "
+            f"На вопрос «согласен ли он на запись» стало два ответа"
+        )
+    return problems
+
+
+def one_person_in_two_practices_stays_two_rows(database: Database) -> list[str]:
+    """САМЫЙ УЗКИЙ СЛУЧАЙ: один и тот же человек у двух репетиторов.
+
+    Идентификатор у него один — иначе «тот же самый ученик» не выразить, — и
+    ровно поэтому запрос «по человеку» без границы арендатора нашёл бы обе
+    практики. Здесь проверяется, что не находит: репетитор по математике не
+    видит ни строки ученицы из другой практики, ни того, что вторая практика
+    вообще есть.
+
+    Реестр учётных записей при этом виден обоим и должен быть виден: он и
+    отвечает на вопрос «этот человек уже есть?». Отвечает он ровно отпечатком
+    почты и идентификатором — ни имени, ни адреса, ни того, чей он ученик.
+    """
+    problems = []
+
+    both = database.owner(f"select count(*) from identity_person where id = '{SHARED_STUDENT}';")
+    if int(both[0][0]) != 2:
+        problems.append("засев не завёл одного человека в двух практиках: проверять нечего")
+
+    mine = database.app(
+        f"select count(*) from identity_person where id = '{SHARED_STUDENT}';", TENANT_A
+    )
+    if int(mine[0][0]) != 1:
+        problems.append(
+            f"под арендатором А по идентификатору ученицы видно {mine[0][0]} строк вместо одной: "
+            f"репетитор узнал о занятиях у другого"
+        )
+
+    theirs = database.app(
+        f"select count(*) from identity_person "
+        f"where id = '{SHARED_STUDENT}' and email = 'masha-b@example.test';",
+        TENANT_A,
+    )
+    if int(theirs[0][0]) != 0:
+        problems.append("почта ученицы из чужой практики видна по её идентификатору")
+
+    named = database.app(
+        f"select count(*) from identity_tenant where tenant_id = '{TENANT_B}';", TENANT_A
+    )
+    if int(named[0][0]) != 0:
+        problems.append("чужая практика видна по прямому обращению: имя коллеги узнаётся так")
+
+    registry = database.app(
+        f"select count(*) from identity_account where id = '{SHARED_STUDENT}';", TENANT_A
+    )
+    if int(registry[0][0]) != 1:
+        problems.append(
+            "реестр учётных записей не отвечает под арендатором: «этот человек уже есть?» "
+            "спросить будет нечем, и у ученицы заведётся второй идентификатор"
+        )
+    return problems
+
+
 def protection_cannot_be_switched_off(database: Database) -> list[str]:
     """Роль приложения не может ни снять защиту, ни заглянуть в реестр миграций."""
     problems = []
@@ -368,11 +801,22 @@ CASES = (
     ("чужая строка не находится и по прямому id", foreign_row_is_not_found_by_id),
     ("джойн и произведение не проносят чужого", joins_do_not_leak),
     ("без параметра сессии не видно ничего", nothing_is_visible_without_the_parameter),
+    ("ОБЯЗАТЕЛЬНЫЙ: объявление арендатора не переживает транзакцию",
+     the_declaration_does_not_outlive_the_transaction),
     ("мусор в параметре — отказ", garbage_in_the_parameter_is_refused),
     ("вставка с чужим арендатором отвергается", foreign_insert_is_refused),
     ("вставка без арендатора отвергается", insert_without_tenant_is_refused),
     ("своя вставка проходит и остаётся своей", own_insert_passes_and_stays_own),
     ("delete без where трогает только своё", bare_delete_touches_only_own_rows),
+    ("журнал доступа не правится и не исчезает", the_journal_is_append_only),
+    ("чужая сессия не находится по идентификатору", a_foreign_session_is_not_found_by_its_identifier),
+    ("отозванный доступ оставляет след", a_revoked_access_leaves_a_trace),
+    ("отозванное согласие остаётся строкой", a_revoked_consent_cannot_be_deleted),
+    ("согласие на обработку отзывается строкой, а не удалением", a_consent_keeps_its_trace),
+    ("ДЕНЬГИ НЕ ДАЮТ ПРАВА СМОТРЕТЬ: плательщику не открыть содержание",
+     money_does_not_buy_sight),
+    ("ГЛАВНЫЙ ДЛЯ ДВУХ РЕПЕТИТОРОВ: один человек — две практики, и они не видят друг друга",
+     one_person_in_two_practices_stays_two_rows),
     ("защиту не выключить из-под приложения", protection_cannot_be_switched_off),
 )
 

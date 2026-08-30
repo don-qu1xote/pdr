@@ -50,7 +50,7 @@ WORKER_B = "host-b:locker-2"
 
 TENANT_A = "0d0d0d0d-0000-4000-8000-000000000001"
 TENANT_B = "0d0d0d0d-0000-4000-8000-000000000002"
-EXPORT_TENANT = "0e0e0e0e-0000-4000-8000-000000000007"
+EXPORT_TENANT = "0d0d0d0d-0000-4000-8000-000000000007"
 
 KEYS = ("lesson-1", "lesson-2", "lesson-3")
 
@@ -145,31 +145,50 @@ def psql_async(psql: str, sql: str) -> subprocess.Popen[str]:
 def seed(database: live.Database) -> None:
     teardown(database)
     database.owner(f"""
+delete from observability_product_event where tenant_id = '{EXPORT_TENANT}';
+delete from identity_access_log where tenant_id = '{EXPORT_TENANT}';
+delete from identity_consent where tenant_id = '{EXPORT_TENANT}';
+delete from identity_guardianship where tenant_id = '{EXPORT_TENANT}';
+delete from identity_role_assignment where tenant_id = '{EXPORT_TENANT}';
+delete from identity_person where tenant_id = '{EXPORT_TENANT}';
+delete from identity_tenant where tenant_id = '{EXPORT_TENANT}';
 insert into identity_tenant (tenant_id, name, tz) values
     ('{TENANT_A}', 'Арендатор заданий А', 'Europe/Moscow'),
     ('{TENANT_B}', 'Арендатор заданий Б', 'Asia/Tbilisi'),
     ('{EXPORT_TENANT}', 'Арендатор выгрузки', 'Europe/Moscow');
 insert into identity_person (tenant_id, id, display_name, email, tz) values
-    ('{EXPORT_TENANT}', '0e0e0e0e-0000-4000-8000-00000000a001',
+    ('{EXPORT_TENANT}', '0d0d0d0d-0000-4000-8000-00000000a001',
      'Человек выгрузки', 'export@example.test', 'Europe/Moscow'),
-    ('{EXPORT_TENANT}', '0e0e0e0e-0000-4000-8000-00000000a002',
+    ('{EXPORT_TENANT}', '0d0d0d0d-0000-4000-8000-00000000a002',
      'Ученик выгрузки', 'student@example.test', 'Europe/Moscow');
 insert into identity_role_assignment (tenant_id, id, person_id, role) values
-    ('{EXPORT_TENANT}', '0e0e0e0e-0000-4000-8000-00000000d001',
-     '0e0e0e0e-0000-4000-8000-00000000a001', 'guardian'),
-    ('{EXPORT_TENANT}', '0e0e0e0e-0000-4000-8000-00000000d002',
-     '0e0e0e0e-0000-4000-8000-00000000a002', 'student');
+    ('{EXPORT_TENANT}', '0d0d0d0d-0000-4000-8000-00000000d001',
+     '0d0d0d0d-0000-4000-8000-00000000a001', 'guardian'),
+    ('{EXPORT_TENANT}', '0d0d0d0d-0000-4000-8000-00000000d002',
+     '0d0d0d0d-0000-4000-8000-00000000a002', 'student');
 insert into identity_guardianship (tenant_id, id, guardian_id, student_id) values
-    ('{EXPORT_TENANT}', '0e0e0e0e-0000-4000-8000-00000000c001',
-     '0e0e0e0e-0000-4000-8000-00000000a001',
-     '0e0e0e0e-0000-4000-8000-00000000a002');
+    ('{EXPORT_TENANT}', '0d0d0d0d-0000-4000-8000-00000000c001',
+     '0d0d0d0d-0000-4000-8000-00000000a001',
+     '0d0d0d0d-0000-4000-8000-00000000a002');
+insert into identity_access_log
+    (tenant_id, id, actor_id, subject_id, resource_kind, at) values
+    ('{EXPORT_TENANT}', '0d0d0d0d-0000-4000-8000-00000000f001',
+     '0d0d0d0d-0000-4000-8000-00000000a001',
+     '0d0d0d0d-0000-4000-8000-00000000a002',
+      'recording', now() - interval '30 minutes');
+insert into identity_consent
+    (tenant_id, id, subject_id, given_by, kind, version, action) values
+    ('{EXPORT_TENANT}', '0d0d0d0d-0000-4000-8000-0000000000a3',
+     '0d0d0d0d-0000-4000-8000-00000000a002',
+     '0d0d0d0d-0000-4000-8000-00000000a001',
+     'processing', 1, 'sign_up_checkbox');
 insert into observability_product_event
     (tenant_id, id, type, version, actor_role, occurred_at, recorded_at, fields) values
     ('{TENANT_A}', '0d0d0d0d-0000-4000-8000-00000000e001',
      'scheduling.lesson_completed', 1, 'tutor',
      now() - interval '1 hour', now() - interval '1 hour',
      '{{"score": 4}}'),
-    ('{EXPORT_TENANT}', '0e0e0e0e-0000-4000-8000-00000000e001',
+    ('{EXPORT_TENANT}', '0d0d0d0d-0000-4000-8000-00000000e001',
      'scheduling.lesson_completed', 1, 'tutor',
      now() - interval '1 hour', now() - interval '1 hour',
      '{{"score": 5}}');
@@ -183,8 +202,10 @@ def teardown(database: live.Database) -> None:
     остаться от прогона, упавшего на середине, и тогда `delete from
     identity_tenant` упёрся бы во внешний ключ.
 
-    EXPORT_TENANT не удаляется: его данные нужны экспорту аккаунта, который
-    идёт следом (ci.yml).
+    EXPORT_TENANT не удаляется ЗДЕСЬ: его данные нужны экспорту аккаунта, который
+    идёт следом (ci.yml). Убирается он в начале засева — иначе второй прогон
+    подряд упирается в собственную прошлую строку, а «повторяемый засев» перестаёт
+    быть правдой.
     """
     database.owner(f"""
 delete from jobs_effect where job = '{JOB}';

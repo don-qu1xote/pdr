@@ -122,6 +122,36 @@ jobs:
           python3 scripts/check_dynamic_configs.py --selftest
           python3 scripts/check_dynamic_configs.py
 
+      # Настройка «не беспокоить», уровень доступа в условии, поступок без кода
+      # события и строковое поле, в которое поместится текст отзыва, роняют
+      # сборку здесь. Требование записано словами «не отключается», и без этой
+      # проверки оно держалось бы до первой задачи про уведомления.
+      - name: Уведомление опекуну не отключается
+        run: |
+          set -eu
+          python3 scripts/check_guardian_notice.py --selftest
+          python3 scripts/check_guardian_notice.py
+
+      # Опека, спрошенная в записи на занятие, оплате, отзыве или аналитике,
+      # третья роль, вторая таблица наблюдателей и запрос паспорта роняют сборку
+      # здесь. Взрослый ученик без опекуна — основной случай: сломанным он
+      # обнаруживается на демонстрации, а не в тесте про опеку.
+      - name: Взрослый ученик проходит весь путь без опекуна
+        run: |
+          set -eu
+          python3 scripts/check_adult_student.py --selftest
+          python3 scripts/check_adult_student.py
+
+      # Статус, назначенный в хендлере, свой формат отказа, потерянный член
+      # формы, потерянный заголовок безопасности и глобальный след запроса
+      # роняют сборку здесь. Форма задаётся один раз: разошедшись, она
+      # заставляет клиента разбирать пять форматов вместо одного.
+      - name: Форма HTTP-слоя задана один раз
+        run: |
+          set -eu
+          python3 scripts/check_http_form.py --selftest
+          python3 scripts/check_http_form.py
+
       # Событие без вопроса, вопрос без события, продуктовое число без вопроса,
       # поле, именующее человека, и поле, пропавшее из уже опубликованной версии
       # схемы, роняют сборку здесь.
@@ -192,6 +222,37 @@ jobs:
           set -eu
           python3 scripts/check_secrets.py --selftest
           python3 scripts/check_secrets.py
+
+      # Секрет без записи в реестре, умолчание у секрета, назначение,
+      # разошедшееся с кодом, и вернувшийся вывод SecretString роняют сборку
+      # здесь. Сервис, поднявшийся с пустым секретом, работает «как будто
+      # нормально»: процесс жив, метрика зелёная, платежи не уходят.
+      - name: Реестр секретов и код не расходятся
+        run: |
+          set -eu
+          python3 scripts/check_secrets_registry.py --selftest
+          python3 scripts/check_secrets_registry.py
+
+      # Получатель мимо ревизии открытости, строка ревизии мимо перечня,
+      # категория в коде без строки для человека, пустая клетка и канцелярит
+      # роняют сборку здесь. Перечень определяет, что мы вообще имеем право
+      # отправить во внешнюю модель, и разойтись с деревом ему нельзя.
+      - name: Перечень обработки персональных данных сходится с деревом
+        run: |
+          set -eu
+          python3 scripts/check_personal_data.py --selftest
+          python3 scripts/check_personal_data.py
+
+      # Седьмой раздел в шаблоне запроса, чеклист «я протестировал», шаблон,
+      # разошедшийся со сборкой тела, и пропавшее правило комментариев роняют
+      # сборку здесь. Сливаем мы фазами: запрос без формы — это стена, которую
+      # читающий пролистывает и одобряет не читая.
+      - name: Правила запроса на слияние
+        run: |
+          set -eu
+          python3 scripts/check_pr_rules.py --selftest
+          python3 scripts/check_pr_rules.py
+          python3 scripts/pr_body.py --selftest
 
       - name: Долги первого сервиса собраны в одном списке
         run: |
@@ -401,6 +462,12 @@ jobs:
       - name: Одиночные задания на живой базе
         run: make test-jobs ENV_PROFILE=ci
 
+      # Два одинаковых запроса, пришедшие одновременно, обязаны завести РОВНО
+      # ОДНУ сущность. На фейках это утверждение: мьютекс в процессе про вторую
+      # реплику не знает, а тут сессии разные — как разными бывают реплики.
+      - name: Идемпотентность на живой базе
+        run: make test-idempotency ENV_PROFILE=ci
+
       # Хранение и выгрузка продуктового потока: обе цели ходят в живую базу, и
       # обе ломаются молча — опечатка в SQL выясняется в день, когда выгрузку
       # спросят. Выгрузка идёт под административной ролью: pdr_app без
@@ -425,7 +492,7 @@ jobs:
       - name: Полная выгрузка аккаунта
         run: |
           set -eu
-          tenant=0e0e0e0e-0000-4000-8000-000000000007
+          tenant=0d0d0d0d-0000-4000-8000-000000000007
           make account-export ENV_PROFILE=ci TENANT="$tenant" OUT=/tmp/account.json
           python3 - "$tenant" <<'PY'
           import json
@@ -438,6 +505,8 @@ jobs:
               "identity_person",
               "identity_role_assignment",
               "identity_guardianship",
+              "identity_access_log",
+              "identity_consent",
               "observability_product_event",
           }
           assert set(parts) == expected, f"состав выгрузки разошёлся: {sorted(parts)}"
@@ -490,23 +559,35 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
+      # Argon2id считается ЭТАЛОННОЙ БИБЛИОТЕКОЙ, а не своей схемой (ADR-0013).
+      # В образе userver лежит только libargon2.so.1 — без заголовков цель
+      # счёта паролей пропускается конфигурацией, и проверять было бы нечего.
+      - name: Библиотека счёта паролей
+        run: |
+          set -eu
+          apt-get update -qq --allow-releaseinfo-change
+          apt-get install -y -qq libargon2-dev
+
       # ПЕРВАЯ настоящая проверка слоя адаптеров: без userver цели
-      # pdr_postgres, pdr_jobs_infrastructure и pdr_billing_infrastructure
-      # пропускаются конфигурацией, то есть не компилируются вовсе
-      # (docs/architecture/first-service.md).
+      # pdr_postgres, pdr_jobs_infrastructure, pdr_billing_infrastructure и
+      # pdr_identity_infrastructure пропускаются конфигурацией, то есть не
+      # компилируются вовсе (docs/architecture/first-service.md).
       - name: Конфигурация с userver
         run: cmake -S . -B build-userver -DCMAKE_BUILD_TYPE=Debug
 
       - name: Сборка адаптеров
         run: |
           set -eu
-          cmake --build build-userver --target pdr_postgres pdr_jobs_infrastructure \
-            pdr_billing_infrastructure --parallel
+          cmake --build build-userver --target pdr_postgres pdr_crypto \
+            pdr_jobs_infrastructure pdr_billing_infrastructure \
+            pdr_identity_infrastructure pdr_identity_passwords --parallel
 
       # Проверки адаптеров против ШТАТНЫХ заглушек userver: умолчание из кода без
       # источника, применение без пересоздания адаптера, отказ значению вне
-      # диапазона со старым значением на месте и журнал «было → стало». Ни
-      # сервиса, ни базы им не нужно — нужен только userver, а он есть здесь.
+      # диапазона со старым значением на месте и журнал «было → стало». Сюда же
+      # попадает настоящий счёт пароля Argon2id и настоящий источник
+      # случайности. Ни сервиса, ни базы им не нужно — нужен только userver, а
+      # он есть здесь.
       - name: Адаптеры против заглушек userver
         run: |
           set -eu

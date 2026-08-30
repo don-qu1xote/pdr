@@ -7,6 +7,7 @@
 #include "core/types/ids.hpp"
 #include "fakes/fake_clock.hpp"
 #include "fakes/fake_id_generator.hpp"
+#include "fakes/fake_secret_generator.hpp"
 #include "fakes/fake_tenant_aware_repository.hpp"
 
 namespace pdr::testing {
@@ -72,6 +73,15 @@ struct FakeIdGeneratorWorld final {
 
 private:
     FakeIdGenerator generator_;
+};
+
+struct FakeSecretGeneratorWorld final {
+    const application::ports::SecretGenerator& Secrets() const noexcept {
+        return secrets_;
+    }
+
+private:
+    FakeSecretGenerator secrets_;
 };
 
 }  // namespace pdr::testing

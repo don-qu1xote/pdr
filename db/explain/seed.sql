@@ -19,6 +19,31 @@
 delete from jobs_effect where tenant_id in (
     select tenant_id from identity_tenant where name like 'План %'
 );
+delete from observability_product_event where tenant_id in (
+    select tenant_id from identity_tenant where name like 'План %'
+);
+delete from identity_access_log where tenant_id in (
+    select tenant_id from identity_tenant where name like 'План %'
+);
+delete from identity_login_attempt where tenant_id in (
+    select tenant_id from identity_tenant where name like 'План %'
+);
+delete from identity_one_time_token where tenant_id in (
+    select tenant_id from identity_tenant where name like 'План %'
+);
+delete from identity_session where tenant_id in (
+    select tenant_id from identity_tenant where name like 'План %'
+);
+delete from identity_credential where tenant_id in (
+    select tenant_id from identity_tenant where name like 'План %'
+);
+delete from identity_account where id in (
+    select ('0e0e0e0e-0001-4000-8000-' || lpad((tenant * 1000 + person)::text, 12, '0'))::uuid
+    from generate_series(1, 200) as tenant, generate_series(1, 100) as person
+);
+delete from identity_guardian_consent where tenant_id in (
+    select tenant_id from identity_tenant where name like 'План %'
+);
 delete from identity_guardianship where tenant_id in (
     select tenant_id from identity_tenant where name like 'План %'
 );
@@ -63,6 +88,55 @@ select ('0e0e0e0e-0000-4000-8000-' || lpad(tenant::text, 12, '0'))::uuid,
        ('0e0e0e0e-0001-4000-8000-' || lpad((tenant * 1000 + person + 1)::text, 12, '0'))::uuid
 from generate_series(1, 200) as tenant, generate_series(1, 99, 2) as person;
 
+-- Согласия опекунов: три уровня на каждую опекаемую пару, из них один
+-- отозванный. Главный вопрос к таблице — «что открыто этому опекуну про этого
+-- ученика», и задаётся он на КАЖДОМ обращении опекуна.
+--
+-- Отозванные строки в засеве не для полноты картины: индекс частичный
+-- (`where revoked_at is null`), и без отозванных строк «частичный» ничего бы не
+-- значило — он покрывал бы всю таблицу, и план ничего бы не доказывал.
+insert into identity_guardian_consent
+    (tenant_id, id, guardian_id, student_id, scope, granted_at, granted_by,
+     revoked_at, revoked_by)
+select ('0e0e0e0e-0000-4000-8000-' || lpad(tenant::text, 12, '0'))::uuid,
+       ('0e0e0e0e-0008-4000-8000-' ||
+        lpad((tenant * 10000 + person * 10 + level)::text, 12, '0'))::uuid,
+       ('0e0e0e0e-0001-4000-8000-' || lpad((tenant * 1000 + person)::text, 12, '0'))::uuid,
+       ('0e0e0e0e-0001-4000-8000-' || lpad((tenant * 1000 + person + 1)::text, 12, '0'))::uuid,
+       case level when 1 then 'schedule' when 2 then 'payments' else 'recordings' end,
+       now() - interval '1 year',
+       ('0e0e0e0e-0001-4000-8000-' || lpad((tenant * 1000 + person + 1)::text, 12, '0'))::uuid,
+       case when level = 3 then now() - interval '1 month' end,
+       case when level = 3
+            then ('0e0e0e0e-0001-4000-8000-' ||
+                  lpad((tenant * 1000 + person + 1)::text, 12, '0'))::uuid
+       end
+from generate_series(1, 200) as tenant, generate_series(1, 99, 2) as person,
+     generate_series(1, 3) as level;
+
+-- Учётные записи: по одной на человека, двадцать тысяч. Реестр общий на всю
+-- площадку, поэтому поиск по отпечатку почты обязан идти по уникальному
+-- индексу: он задаётся при каждом заведении и при каждом приглашении.
+insert into identity_account (id, email_digest, confirmed_at)
+select ('0e0e0e0e-0001-4000-8000-' || lpad((tenant * 1000 + person)::text, 12, '0'))::uuid,
+       md5('person-' || tenant || '-' || person || '@example.test') || md5('mail'),
+       now() - interval '1 day'
+from generate_series(1, 200) as tenant, generate_series(1, 100) as person;
+
+-- Приглашения с адресом: по три на арендатора. Вопрос «этому уже писали?»
+-- задаётся по разу на каждую строку вставленного списка из двадцати.
+insert into identity_one_time_token
+    (tenant_id, id, purpose, token_hash, role, invited_digest, created_at, expires_at)
+select ('0e0e0e0e-0000-4000-8000-' || lpad(tenant::text, 12, '0'))::uuid,
+       ('0e0e0e0e-0009-4000-8000-' || lpad((tenant * 100 + token)::text, 12, '0'))::uuid,
+       'invitation',
+       md5('invite-' || tenant || '-' || token) || md5('invite'),
+       'student',
+       md5('invited-' || tenant || '-' || token || '@example.test') || md5('mail'),
+       now() - interval '1 hour',
+       now() + interval '7 days'
+from generate_series(1, 200) as tenant, generate_series(1, 3) as token;
+
 -- Следы действий: двести пятьдесят на арендатора. Возраст распределён так, как
 -- он выглядит у системы, где уборка ДЕЙСТВИТЕЛЬНО ходит: свежих следов много,
 -- старше месяца — единицы. Ровно поэтому уборка обязана оставаться выборкой по
@@ -75,6 +149,59 @@ select ('0e0e0e0e-0000-4000-8000-' || lpad(tenant::text, 12, '0'))::uuid,
        now() - make_interval(days => case when effect % 50 = 0 then 31 + effect % 20
                                           else effect % 25 end)
 from generate_series(1, 200) as tenant, generate_series(1, 250) as effect;
+
+-- Журнал доступа: пять просмотров на каждую опекаемую пару. Смотрит опекун,
+-- смотрят ученика — то самое «чужое», ради которого журнал и заведён.
+--
+-- Объём здесь нужен по той же причине, что и везде: главный вопрос к журналу —
+-- «кто смотрел МОИ данные», и он обязан оставаться выборкой по одному ученику.
+-- На пятидесяти тысячах строк перебор журнала уже виден, а на пяти — нет.
+insert into identity_access_log (tenant_id, id, actor_id, subject_id, resource_kind, at)
+select ('0e0e0e0e-0000-4000-8000-' || lpad(tenant::text, 12, '0'))::uuid,
+       ('0e0e0e0e-0005-4000-8000-' ||
+        lpad((tenant * 10000 + person * 10 + look)::text, 12, '0'))::uuid,
+       ('0e0e0e0e-0001-4000-8000-' || lpad((tenant * 1000 + person)::text, 12, '0'))::uuid,
+       ('0e0e0e0e-0001-4000-8000-' || lpad((tenant * 1000 + person + 1)::text, 12, '0'))::uuid,
+       case look % 3 when 0 then 'recording' when 1 then 'transcript' else 'chat' end,
+       now() - make_interval(days => look)
+from generate_series(1, 200) as tenant, generate_series(1, 99, 2) as person,
+     generate_series(1, 5) as look;
+
+-- Пароль каждому: двадцать тысяч строк. Вход ищет хеш по почте, а почта живёт
+-- в другой таблице — значит, план проверяется на джойне, а не на одиночном
+-- чтении.
+insert into identity_credential (tenant_id, person_id, password_hash)
+select ('0e0e0e0e-0000-4000-8000-' || lpad(tenant::text, 12, '0'))::uuid,
+       ('0e0e0e0e-0001-4000-8000-' || lpad((tenant * 1000 + person)::text, 12, '0'))::uuid,
+       '$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHQ$aGFzaGhhc2hoYXNoaGFzaA'
+from generate_series(1, 200) as tenant, generate_series(1, 100) as person;
+
+-- Сессия каждому. САМАЯ ГОРЯЧАЯ ТАБЛИЦА СИСТЕМЫ: её читают на КАЖДОМ запросе
+-- любого человека, а не раз в занятие. Перебор здесь означает, что медленно
+-- становится всё сразу, и виноватого ищут где угодно, только не тут.
+insert into identity_session
+    (tenant_id, id, person_id, created_at, expires_at, user_agent_hash, ip_hash)
+select ('0e0e0e0e-0000-4000-8000-' || lpad(tenant::text, 12, '0'))::uuid,
+       ('0e0e0e0e-0006-4000-8000-' || lpad((tenant * 1000 + person)::text, 12, '0'))::uuid,
+       ('0e0e0e0e-0001-4000-8000-' || lpad((tenant * 1000 + person)::text, 12, '0'))::uuid,
+       now() - interval '1 day',
+       now() + make_interval(days => 1 + person % 30),
+       md5('agent-' || tenant || '-' || person) || md5('agent'),
+       md5('address-' || tenant) || md5('address')
+from generate_series(1, 200) as tenant, generate_series(1, 100) as person;
+
+-- Приглашения: по десять на арендатора. Ссылку ищут по отпечатку, и перебор
+-- здесь стоил бы чтения всех приглашений системы на каждый переход по ссылке.
+insert into identity_one_time_token
+    (tenant_id, id, purpose, token_hash, role, created_at, expires_at)
+select ('0e0e0e0e-0000-4000-8000-' || lpad(tenant::text, 12, '0'))::uuid,
+       ('0e0e0e0e-0007-4000-8000-' || lpad((tenant * 100 + token)::text, 12, '0'))::uuid,
+       'invitation',
+       md5('token-' || tenant || '-' || token) || md5('token'),
+       'student',
+       now() - interval '1 hour',
+       now() + interval '7 days'
+from generate_series(1, 200) as tenant, generate_series(1, 10) as token;
 
 -- Продуктовый поток: двести пятьдесят событий на арендатора. Возраст записей
 -- распределён так, как он выглядит у системы, где уборка ДЕЙСТВИТЕЛЬНО ходит:
@@ -108,7 +235,13 @@ from generate_series(1, 200) as tenant, generate_series(1, 250) as event;
 -- данные, а про воображаемые.
 analyze identity_tenant;
 analyze identity_person;
+analyze identity_account;
 analyze identity_role_assignment;
 analyze identity_guardianship;
+analyze identity_guardian_consent;
+analyze identity_access_log;
+analyze identity_credential;
+analyze identity_session;
+analyze identity_one_time_token;
 analyze jobs_effect;
 analyze observability_product_event;

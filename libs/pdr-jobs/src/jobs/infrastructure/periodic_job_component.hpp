@@ -13,6 +13,8 @@
 #include <userver/utils/statistics/writer.hpp>
 #include <userver/yaml_config/schema.hpp>
 
+#include "infrastructure/db/tenant_context.hpp"
+#include "infrastructure/db/unscoped_access.hpp"
 #include "infrastructure/postgres_tenant_aware_repository.hpp"
 #include "infrastructure/system_clock.hpp"
 #include "jobs/application/ports/job_lock.hpp"
@@ -83,7 +85,8 @@ private:
     JobName job_;
     infrastructure::SystemClock clock_;
     DynamicConfigJobSettings settings_;
-    userver::storages::postgres::ClusterPtr cluster_;
+    infrastructure::db::UnscopedAccess unscoped_;
+    infrastructure::db::TenantContext tenants_;
     infrastructure::PostgresTenantAwareRepository storage_;
     PostgresJobLedger ledger_;
     PostgresJobJournal journal_;

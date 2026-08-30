@@ -7,6 +7,7 @@
 
 #include <gtest/gtest.h>
 
+#include "builders/access_world.hpp"
 #include "builders/guardianship_builder.hpp"
 #include "events/identity/guardianship_revoked.hpp"
 #include "events/in_memory_bus.hpp"
@@ -29,6 +30,14 @@ public:
                                            const core::PersonId&,
                                            const core::PersonId&) const override {
         return active_;
+    }
+
+    std::vector<core::PersonId> GuardiansOf(const core::TenantId&,
+                                            const core::PersonId&) const override {
+        if (!active_.has_value()) {
+            return {};
+        }
+        return {active_->Guardian()};
     }
 
     void Save(const Guardianship& guardianship) override {
@@ -108,16 +117,14 @@ TEST_F(RevokeGuardianshipTest, SecondRevokeReturnsRefusalAndPublishesNothing) {
 }
 
 TEST_F(RevokeGuardianshipTest, ContractAnswersWhoMayActForWhom) {
-    const FakeGuardianships guardianships{Granted()};
-    const ContractService contract{guardianships};
+    testing::AccessWorld world;
+    world.guardianships.Establish(tenant_, guardian_, student_);
 
-    EXPECT_TRUE(contract.MayActFor(tenant_, guardian_, student_));
+    EXPECT_TRUE(world.contract.MayActFor(tenant_, guardian_, student_));
+    EXPECT_TRUE(world.contract.MayActFor(tenant_, student_, student_));
 
-    EXPECT_TRUE(contract.MayActFor(tenant_, student_, student_));
-
-    const FakeGuardianships without{std::nullopt};
-    const ContractService strict{without};
-    EXPECT_FALSE(strict.MayActFor(tenant_, guardian_, student_));
+    testing::AccessWorld without;
+    EXPECT_FALSE(without.contract.MayActFor(tenant_, guardian_, student_));
 }
 
 }  // namespace

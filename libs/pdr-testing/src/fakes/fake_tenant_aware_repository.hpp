@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -45,8 +46,19 @@ public:
     /// `delete` без `where`: сколько строк исчезло.
     std::size_t DeleteAll();
 
+    /// Что откатить, если из области вышли исключением.
+    ///
+    /// Настоящая область откатывается сама: не позвали `Commit` — транзакция
+    /// ушла назад целиком, вместе со всем, что в ней успели написать ДРУГИЕ
+    /// адаптеры. Фейк без этого зеленил бы ровно ту проверку, ради которой всё
+    /// написано: строка, оставшаяся после отказа, в проде не остаётся.
+    void OnRollback(std::function<void()> undo);
+
 private:
     friend class FakeTenantAwareRepository;
+
+    /// Откатить всё, о чём просили, в обратном порядке.
+    void Unwind();
 
     /// Закрыт намеренно: сессия появляется только внутри области. Отрицательный
     /// тест core.compile_fail.tenant_session_outside_scope стережёт это.
@@ -54,6 +66,7 @@ private:
 
     std::vector<FakeRow>& rows_;
     core::TenantId tenant_;
+    std::vector<std::function<void()>> undo_;
 };
 
 /// Единственный фейк порта арендатора. Свой в каждом тесте означал бы пять

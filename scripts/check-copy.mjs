@@ -59,9 +59,17 @@ const HASH_COMMENT = new Set([".py", ".yml", ".yaml", ".cmake"]);
 const DASH_COMMENT = new Set([".sql"]);
 const QUOTES = new Set(['"', "'", "`"]);
 
+/**
+ * Формы, в которых в дереве объявляется код отказа.
+ *
+ * Третья — код, объявленный отображением в HTTP: доменной ошибки у него нет, он
+ * рождается на границе (не прислали ключ повтора, тело не разобралось). Человек
+ * видит его так же, как любой другой, значит и текст ему нужен так же.
+ */
 const ERROR_SHAPES = [
   /core::Error\s*\{\s*core::ErrorKind::k\w+\s*,\s*"([a-z][a-z0-9_]*)"/g,
   /\bRefuse\s*\(\s*"([a-z][a-z0-9_]*)"/g,
+  /\bk\w*Code\s*=\s*"([a-z][a-z0-9_]*)"/g,
 ];
 const ERROR_SITE = /core::Error\s*\{/g;
 

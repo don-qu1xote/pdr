@@ -3,7 +3,6 @@
 #include <cstdint>
 #include <stdexcept>
 #include <string>
-#include <utility>
 
 #include <userver/storages/postgres/query.hpp>
 
@@ -15,6 +14,10 @@ namespace {
 /// Условия по tenant_id в запросе нет намеренно: арендатора отсекает RLS в базе.
 /// Забыть условие можно, обойти политику — нет; схема и политики заводятся
 /// задачами области DB.
+///
+/// Запрос идёт в транзакции области, то есть на мастере: чтение доменных данных
+/// живёт там, где объявлен арендатор. Реплика для него не годится — объявления
+/// на ней не было бы.
 const userver::storages::postgres::Query kFindByCode{
     "SELECT price_minor_units, currency_code FROM tariffs WHERE code = $1",
     userver::storages::postgres::Query::Name{"tariff_find_by_code"},
@@ -22,12 +25,12 @@ const userver::storages::postgres::Query kFindByCode{
 
 }  // namespace
 
-PostgresTariffRepository::PostgresTariffRepository(userver::storages::postgres::ClusterPtr cluster)
-    : cluster_{std::move(cluster)} {}
+PostgresTariffRepository::PostgresTariffRepository(
+    infrastructure::db::ScopedTenantContext& scope) noexcept
+    : scope_{scope} {}
 
 std::optional<Tariff> PostgresTariffRepository::FindByCode(const TariffCode& code) const {
-    const auto result = cluster_->Execute(
-        userver::storages::postgres::ClusterHostType::kSlave, kFindByCode, code.View());
+    const auto result = scope_.Session().Execute(kFindByCode, code.View());
     if (result.IsEmpty())
         return std::nullopt;
 

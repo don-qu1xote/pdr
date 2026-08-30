@@ -148,8 +148,9 @@ def domain_tables(root: Path) -> tuple[dict[str, model.Table], list[str]]:
     except model.MigrationError as error:
         return {}, [str(error)]
 
+    merged = model.merged_tables(migrations)
     for migration in migrations:
-        for table in migration.tables:
+        for table in (merged.get(item.name, item) for item in migration.tables):
             if any(column.name == TENANT_COLUMN for column in table.columns):
                 found[table.name] = table
     return found, []

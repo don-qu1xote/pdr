@@ -9,6 +9,7 @@
 add_library(pdr_core STATIC
     src/core/errors.cpp
     src/core/money.cpp
+    src/core/secrets.cpp
     src/core/types/ids.cpp
     src/core/types/time.cpp
 )
@@ -17,10 +18,13 @@ target_compile_features(pdr_core PUBLIC cxx_std_20)
 # Список зависимостей пуст, и это содержательный факт: домен собирается и
 # тестируется без единой внешней библиотеки.
 
-# Порты платформы — часы и генератор идентификаторов — только заголовки:
-# у слоя application здесь нет ни строчки реализации, и цель это показывает.
-add_library(pdr_application INTERFACE)
-target_link_libraries(pdr_application INTERFACE pdr_core)
+# Слой application платформы: порты (часы, генератор идентификаторов, источник
+# секретов) и один сценарий — проверка секретов при старте. Она здесь, а не в
+# infrastructure, потому что правило «без секрета не поднимаемся» не зависит от
+# того, откуда секреты пришли: файл, окружение или заглушка проверки.
+add_library(pdr_application STATIC src/application/verify_secrets.cpp)
+target_include_directories(pdr_application PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_link_libraries(pdr_application PUBLIC pdr_core)
 
 # Настоящие часы и настоящий генератор идентификаторов. userver им не нужен,
 # поэтому цель собирается везде: подменить часы в тесте можно, а вот собрать
@@ -40,9 +44,33 @@ target_link_libraries(pdr_infrastructure PUBLIC pdr_core pdr_application)
 # с именем в политиках миграции.
 # userver ищет корневой CMakeLists — один раз на весь проект.
 if(userver_FOUND)
-    add_library(pdr_postgres STATIC src/infrastructure/postgres_tenant_aware_repository.cpp)
+    add_library(pdr_postgres STATIC
+        src/infrastructure/db/tenant_context.cpp
+        src/infrastructure/db/tenant_context_component.cpp
+        src/infrastructure/db/unscoped_access.cpp
+        src/infrastructure/postgres_tenant_aware_repository.cpp
+    )
     target_include_directories(pdr_postgres PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_link_libraries(pdr_postgres PUBLIC pdr_core pdr_application userver::postgresql)
+endif()
+
+# Секреты из штатного secdist. Отдельная цель по той же причине, что pdr_crypto:
+# она требует userver, а pdr_infrastructure линкуют contract-тесты.
+if(userver_FOUND)
+    add_library(pdr_secrets STATIC src/infrastructure/secdist/secdist_secret_source.cpp)
+    target_include_directories(pdr_secrets PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_link_libraries(pdr_secrets PUBLIC pdr_core pdr_application userver::core)
+endif()
+
+# Настоящая случайность для секретов. Отдельная цель, а не часть
+# pdr_infrastructure: криптографический источник берётся у userver
+# (crypto::GenerateRandomBlock), а pdr_infrastructure линкуют contract-тесты,
+# которые собираются и без него. Своего перемешивания байтов в дереве нет и не
+# будет — ADR-0013.
+if(userver_FOUND)
+    add_library(pdr_crypto STATIC src/infrastructure/crypto_secret_generator.cpp)
+    target_include_directories(pdr_crypto PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_link_libraries(pdr_crypto PUBLIC pdr_core pdr_application userver::core)
 endif()
 
 if(PDR_BUILD_TESTS)
@@ -51,21 +79,42 @@ if(PDR_BUILD_TESTS)
     pdr_unit_test_sources(
         tests/errors_test.cpp
         tests/ids_test.cpp
+        tests/secrets_test.cpp
         tests/tenant_scope_test.cpp
         tests/time_test.cpp
     )
     pdr_unit_test_libraries(pdr_core pdr_application)
 
+    # УРОВЕНЬ CONTRACT на настоящем источнике случайности. Цель собирается
+    # только там, где есть userver: криптографический источник берётся у него.
+    if(userver_FOUND)
+        pdr_adapter_test_sources(tests/crypto_secret_generator_test.cpp)
+        pdr_adapter_test_libraries(pdr_crypto pdr_testing)
+    endif()
+
     # Отрицательные тесты: эти цели ОБЯЗАНЫ не собираться. Без них «перепутать
-    # нельзя» и «сессию не получить мимо области» — обещания, а не свойства.
+    # нельзя», «сессию не получить мимо области» и «соединение не унести из
+    # области» — обещания, а не свойства.
     # Цели исключены из ALL, тест собирает их отдельно и ждёт провала.
     # Через двоеточие — с чем линковать: сессия хранилища живёт в оснастке
     # тестов, остальным случаям хватает ядра.
-    foreach(case IN ITEMS ids_person_as_tenant:pdr_core
-                          ids_implicit_to_string:pdr_core
-                          ids_implicit_to_int:pdr_core
-                          config_in_core:pdr_core
-                          tenant_session_outside_scope:pdr_testing)
+    set(compile_fail_cases ids_person_as_tenant:pdr_core
+                           ids_implicit_to_string:pdr_core
+                           ids_implicit_to_int:pdr_core
+                           config_in_core:pdr_core
+                           secret_string_to_log:pdr_core
+                           tenant_session_outside_scope:pdr_testing)
+
+    # Случаи про НАСТОЯЩУЮ область соединения добавляются только там, где есть
+    # userver. Без него они не собрались бы из-за ненайденных заголовков, то
+    # есть прошли бы по неправильной причине, а отрицательный тест, проходящий
+    # не за то, хуже отсутствующего.
+    if(userver_FOUND)
+        list(APPEND compile_fail_cases tenant_scope_without_tenant:pdr_postgres
+                                       tenant_scope_stashed:pdr_postgres)
+    endif()
+
+    foreach(case IN LISTS compile_fail_cases)
         string(REPLACE ":" ";" parts "${case}")
         list(GET parts 0 name)
         list(GET parts 1 needs)
