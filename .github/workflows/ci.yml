@@ -243,6 +243,17 @@ jobs:
           python3 scripts/check_personal_data.py --selftest
           python3 scripts/check_personal_data.py
 
+      # Седьмой раздел в шаблоне запроса, чеклист «я протестировал», шаблон,
+      # разошедшийся со сборкой тела, и пропавшее правило комментариев роняют
+      # сборку здесь. Сливаем мы фазами: запрос без формы — это стена, которую
+      # читающий пролистывает и одобряет не читая.
+      - name: Правила запроса на слияние
+        run: |
+          set -eu
+          python3 scripts/check_pr_rules.py --selftest
+          python3 scripts/check_pr_rules.py
+          python3 scripts/pr_body.py --selftest
+
       - name: Долги первого сервиса собраны в одном списке
         run: |
           set -eu
