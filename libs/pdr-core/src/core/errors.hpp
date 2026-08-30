@@ -1,5 +1,7 @@
 #pragma once
 
+#include <array>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <stdexcept>
@@ -18,9 +20,29 @@ enum class ErrorKind : std::uint8_t {
     kNotFound,    ///< того, о чём спрашивают, нет
     kConflict,  ///< состояние не позволяет: слот занят, связь уже отозвана
     kForbidden,  ///< роль не даёт права на это действие
+
+    /// ГРАНИЦА СПИСКА, а не род отказа.
+    ///
+    /// Она здесь ради одной проверки: у каждого рода обязан быть свой ответ
+    /// HTTP, и проверить это можно только обойдя список целиком. Обход идёт по
+    /// `kEveryErrorKind`, а согласие списка с перечислением сверяет
+    /// static_assert: завели род и забыли про список — не собирается.
+    kBoundary,
 };
 
 std::string_view Name(ErrorKind kind) noexcept;
+
+/// Все роды отказа подряд. Единственный способ обойти их целиком.
+inline constexpr std::array<ErrorKind, 4> kEveryErrorKind{
+    ErrorKind::kValidation,
+    ErrorKind::kNotFound,
+    ErrorKind::kConflict,
+    ErrorKind::kForbidden,
+};
+
+static_assert(kEveryErrorKind.size() == static_cast<std::size_t>(ErrorKind::kBoundary),
+              "род отказа заведён, а в kEveryErrorKind его нет: обход пропустит его, и "
+              "«у каждого рода есть свой ответ HTTP» станет ложью");
 
 /// Ожидаемый отказ — значение, которое возвращают.
 ///

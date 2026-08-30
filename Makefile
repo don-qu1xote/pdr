@@ -229,6 +229,8 @@ test:
 	python3 scripts/check_guardian_notice.py
 	python3 scripts/check_adult_student.py --selftest
 	python3 scripts/check_adult_student.py
+	python3 scripts/check_http_form.py --selftest
+	python3 scripts/check_http_form.py
 	python3 scripts/check_product_events.py --selftest
 	python3 scripts/check_product_events.py
 	python3 scripts/check_glossary.py --selftest

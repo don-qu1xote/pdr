@@ -85,6 +85,8 @@ std::string_view Name(DenyReason reason) noexcept {
             return "too_young";
         case DenyReason::kNoPolicy:
             return "no_policy";
+        case DenyReason::kBoundary:
+            break;
     }
     return "no_policy";
 }

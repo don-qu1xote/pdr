@@ -32,6 +32,7 @@ constexpr std::uint8_t Rank(DenyReason reason) noexcept {
         case DenyReason::kForeignTenant:
             return 6;
         case DenyReason::kNoPolicy:
+        case DenyReason::kBoundary:
             return 7;
     }
     return 7;

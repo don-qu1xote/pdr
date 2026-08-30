@@ -12,6 +12,8 @@ std::string_view Name(ErrorKind kind) noexcept {
             return "conflict";
         case ErrorKind::kForbidden:
             return "forbidden";
+        case ErrorKind::kBoundary:
+            break;
     }
     return "validation";
 }

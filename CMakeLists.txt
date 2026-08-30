@@ -189,5 +189,9 @@ if(PDR_BUILD_TESTS)
         add_executable(pdr_adapter_tests ${adapter_sources})
         target_link_libraries(pdr_adapter_tests PRIVATE ${adapter_libraries} userver::utest)
         add_test(NAME adapter COMMAND pdr_adapter_tests)
+
+        # Схемы тел запросов читаются файлами, а не вкомпилированы: путь до
+        # дерева нужен затем, чтобы прогон нашёл их из любого каталога сборки.
+        target_compile_definitions(pdr_adapter_tests PRIVATE PDR_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
     endif()
 endif()

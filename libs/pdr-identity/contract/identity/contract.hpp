@@ -130,9 +130,33 @@ enum class DenyReason : std::uint8_t {
     /// завёл действие и не связал его с политикой. Значение по умолчанию —
     /// запрет, и о нём сообщают как о поломке.
     kNoPolicy,
+
+    /// ГРАНИЦА СПИСКА, а не причина.
+    ///
+    /// Она здесь ради одной проверки: у каждой причины обязан быть свой ответ
+    /// HTTP, и проверить это можно только обойдя список целиком. Обход идёт по
+    /// `kEveryDenyReason`, а согласие списка с перечислением сверяет
+    /// static_assert.
+    kBoundary,
 };
 
 std::string_view Name(DenyReason reason) noexcept;
+
+/// Все причины подряд. Единственный способ обойти их целиком.
+inline constexpr std::array<DenyReason, 8> kEveryDenyReason{
+    DenyReason::kAllowed,
+    DenyReason::kForeignTenant,
+    DenyReason::kRoleMissing,
+    DenyReason::kNotYours,
+    DenyReason::kScopeMissing,
+    DenyReason::kStudentGrewUp,
+    DenyReason::kTooYoung,
+    DenyReason::kNoPolicy,
+};
+
+static_assert(kEveryDenyReason.size() == static_cast<std::size_t>(DenyReason::kBoundary),
+              "причина отказа заведена, а в kEveryDenyReason её нет: обход пропустит её, и "
+              "«у каждой причины есть свой ответ HTTP» станет ложью");
 
 /// Решение: можно или нет и почему.
 struct PolicyDecision final {

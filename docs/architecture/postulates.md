@@ -32,6 +32,12 @@ ctest, либо пометка «намерение».
 | Права решаются в одном месте, а не в хендлерах | `libs/pdr-identity/contract/identity/contract.hpp` | `libs/pdr-identity/tests/policy_registry_test.cpp` |
 | У каждого действия есть политика, иначе не собирается прогон | `libs/pdr-identity/src/identity/application/policies/policy_set.cpp` | `libs/pdr-identity/tests/policy_registry_test.cpp` |
 | Отказ несёт причину, а не «нельзя» | `libs/pdr-identity/contract/identity/contract.hpp` | `libs/pdr-identity/tests/policies_test.cpp` |
+| Отказ отдаётся одной формой: problem+json по RFC 9457 | `libs/pdr-http/src/infrastructure/http/problem.cpp` | `libs/pdr-http/tests/problem_test.cpp`, `scripts/check_http_form.py` |
+| Доменная ошибка отображается в статус в ОДНОМ месте | `libs/pdr-http/src/infrastructure/http/error_mapping.cpp` | `libs/pdr-http/tests/error_mapping_test.cpp`, `scripts/check_http_form.py` |
+| След запроса возвращается человеку и не бывает глобальным | `libs/pdr-http/src/infrastructure/http/request_id.hpp` | `libs/pdr-http/tests/request_id_test.cpp`, `scripts/check_http_form.py` |
+| Заголовки безопасности стоят на всех ответах, включая отказы | `libs/pdr-http/src/infrastructure/http/security_headers.hpp` | `libs/pdr-http/tests/authorized_handler_test.cpp` |
+| Тело запроса проверяется схемой, и отказ называет поле | `libs/pdr-http/src/infrastructure/http/request_schema.cpp` | `libs/pdr-http/tests/request_schema_test.cpp` |
+| В хендлере нет бизнес-логики: он зовёт сценарий и всё | `libs/pdr-http/src/infrastructure/http/authorized_handler.hpp` | `libs/pdr-http/tests/authorized_handler_test.cpp` |
 | Действие без политики запрещено и объявлено поломкой | `libs/pdr-identity/src/identity/application/ports/configuration_faults.hpp` | `libs/pdr-identity/tests/policy_registry_test.cpp` |
 | Матрица прав собрана из кода, а не написана руками | `libs/pdr-identity/src/identity/application/policies/matrix.cpp` | `libs/pdr-identity/tests/permissions_matrix_test.cpp` |
 | Супер-администратора не существует | `docs/architecture/permissions.md` | `libs/pdr-identity/tests/policies_test.cpp` |

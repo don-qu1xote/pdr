@@ -9,6 +9,7 @@ flowchart RL
         component["TenantContextComponent<br/>тонкий компонент userver"]
         door["db::TenantContext → ScopedTenantContext<br/>единственная дверь к соединениям"]
         adapter["PostgresTariffRepository<br/>обычный класс"]
+        handler["http::AuthorizedHandler<br/>форма запроса и отказа"]
     end
 
     subgraph testing["pdr-testing — только в тестах"]
@@ -31,9 +32,18 @@ flowchart RL
     usecase --> port
     usecase --> domain
     port --> domain
+    handler --> usecase
+    handler --> port
 ```
 
 Стрелка — «знает о». Наружу не идёт ни одна.
+
+`http::AuthorizedHandler` стоит в `infrastructure` не по расположению файла, а
+по существу: он знает про запрос, про JSON и про статусы — то есть про
+транспорт. Предметных правил у него нет ни одного, и появиться им там нельзя:
+хендлер зовёт сценарий и отдаёт то, что тот вернул
+([http.md](http.md)). Живёт он в `libs/pdr-http` — форма одна на все контексты,
+и заводить её в каждом означало бы завести столько же разных форм.
 
 Это граница по вертикали — внутри одного контекста. Граница по горизонтали,
 между контекстами, и правило владения таблицами — в
