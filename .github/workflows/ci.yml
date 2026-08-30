@@ -495,6 +495,7 @@ jobs:
               "identity_role_assignment",
               "identity_guardianship",
               "identity_access_log",
+              "identity_consent",
               "observability_product_event",
           }
           assert set(parts) == expected, f"состав выгрузки разошёлся: {sorted(parts)}"

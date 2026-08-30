@@ -147,6 +147,7 @@ def seed(database: live.Database) -> None:
     database.owner(f"""
 delete from observability_product_event where tenant_id = '{EXPORT_TENANT}';
 delete from identity_access_log where tenant_id = '{EXPORT_TENANT}';
+delete from identity_consent where tenant_id = '{EXPORT_TENANT}';
 delete from identity_guardianship where tenant_id = '{EXPORT_TENANT}';
 delete from identity_role_assignment where tenant_id = '{EXPORT_TENANT}';
 delete from identity_person where tenant_id = '{EXPORT_TENANT}';
@@ -174,7 +175,13 @@ insert into identity_access_log
     ('{EXPORT_TENANT}', '0d0d0d0d-0000-4000-8000-00000000f001',
      '0d0d0d0d-0000-4000-8000-00000000a001',
      '0d0d0d0d-0000-4000-8000-00000000a002',
-     'recording', now() - interval '30 minutes');
+      'recording', now() - interval '30 minutes');
+insert into identity_consent
+    (tenant_id, id, subject_id, given_by, kind, version, action) values
+    ('{EXPORT_TENANT}', '0d0d0d0d-0000-4000-8000-0000000000a3',
+     '0d0d0d0d-0000-4000-8000-00000000a002',
+     '0d0d0d0d-0000-4000-8000-00000000a001',
+     'processing', 1, 'sign_up_checkbox');
 insert into observability_product_event
     (tenant_id, id, type, version, actor_role, occurred_at, recorded_at, fields) values
     ('{TENANT_A}', '0d0d0d0d-0000-4000-8000-00000000e001',
