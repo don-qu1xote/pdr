@@ -38,10 +38,29 @@ std::size_t FakeTenantSession::DeleteAll() {
     return count;
 }
 
+void FakeTenantSession::OnRollback(std::function<void()> undo) {
+    undo_.push_back(std::move(undo));
+}
+
+void FakeTenantSession::Unwind() {
+    for (auto step = undo_.rbegin(); step != undo_.rend(); ++step) {
+        (*step)();
+    }
+    undo_.clear();
+}
+
 void FakeTenantAwareRepository::Run(const core::TenantId& tenant, const Work& work) {
     ++declarations_;
+
+    auto before = rows_;
     FakeTenantSession session{rows_, tenant};
-    work(session);
+    try {
+        work(session);
+    } catch (...) {
+        session.Unwind();
+        rows_ = std::move(before);
+        throw;
+    }
 }
 
 }  // namespace pdr::testing

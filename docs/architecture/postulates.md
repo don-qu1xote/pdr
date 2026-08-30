@@ -38,6 +38,11 @@ ctest, либо пометка «намерение».
 | Заголовки безопасности стоят на всех ответах, включая отказы | `libs/pdr-http/src/infrastructure/http/security_headers.hpp` | `libs/pdr-http/tests/authorized_handler_test.cpp` |
 | Тело запроса проверяется схемой, и отказ называет поле | `libs/pdr-http/src/infrastructure/http/request_schema.cpp` | `libs/pdr-http/tests/request_schema_test.cpp` |
 | В хендлере нет бизнес-логики: он зовёт сценарий и всё | `libs/pdr-http/src/infrastructure/http/authorized_handler.hpp` | `libs/pdr-http/tests/authorized_handler_test.cpp` |
+| Ключ повтора обязателен на всех меняющих обращениях | `libs/pdr-http/src/core/idempotency.hpp` | `libs/pdr-http/tests/authorized_handler_test.cpp` |
+| Повтор с тем же ключом и телом операцию не выполняет | `libs/pdr-http/src/infrastructure/http/postgres_idempotency_keys.cpp` | `libs/pdr-http/tests/authorized_handler_test.cpp`, `scripts/check_idempotency.py` |
+| Ключ и операция — одна транзакция: полработы не остаётся | `libs/pdr-http/src/infrastructure/http/authorized_handler.hpp` | `scripts/check_idempotency.py` |
+| Одновременный повтор ждёт в базе, а не в мьютексе процесса | `db/migrations/V010__idempotency.sql` | `scripts/check_idempotency.py` |
+| Тело запроса хранится отпечатком, а не целиком | `libs/pdr-http/src/infrastructure/http/fingerprint.cpp` | `libs/pdr-http/tests/idempotency_test.cpp` |
 | Действие без политики запрещено и объявлено поломкой | `libs/pdr-identity/src/identity/application/ports/configuration_faults.hpp` | `libs/pdr-identity/tests/policy_registry_test.cpp` |
 | Матрица прав собрана из кода, а не написана руками | `libs/pdr-identity/src/identity/application/policies/matrix.cpp` | `libs/pdr-identity/tests/permissions_matrix_test.cpp` |
 | Супер-администратора не существует | `docs/architecture/permissions.md` | `libs/pdr-identity/tests/policies_test.cpp` |

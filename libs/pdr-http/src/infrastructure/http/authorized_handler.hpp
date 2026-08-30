@@ -8,11 +8,16 @@
 #include <userver/formats/json/value.hpp>
 #include <userver/server/http/http_status.hpp>
 
+#include "application/ports/clock.hpp"
+#include "application/ports/idempotency_keys.hpp"
 #include "application/ports/tenant_aware_repository.hpp"
 #include "core/errors.hpp"
+#include "core/idempotency.hpp"
 #include "core/types/ids.hpp"
 #include "identity/contract.hpp"
 #include "infrastructure/http/error_mapping.hpp"
+#include "infrastructure/http/fingerprint.hpp"
+#include "infrastructure/http/idempotency.hpp"
 #include "infrastructure/http/problem.hpp"
 #include "infrastructure/http/request_id.hpp"
 #include "infrastructure/http/request_schema.hpp"
@@ -78,6 +83,7 @@ template<class Request, class Session>
 class AuthorizedHandler {
 public:
     using Database = application::ports::TenantAwareRepository<Session>;
+    using Keys = pdr::http::ports::IdempotencyKeys<Session>;
 
     AuthorizedHandler(const AuthorizedHandler&) = delete;
     AuthorizedHandler& operator=(const AuthorizedHandler&) = delete;
@@ -115,15 +121,25 @@ public:
             return Refuse(response, AsProblem(decision, occasion));
         }
 
-        auto done = database_.InTenant(caller.tenant, [&](Session& session) {
-            return Run(Call{caller, body.Value(), request_id, session});
-        });
-        if (!done.HasValue()) {
-            return Refuse(response, AsProblem(done.Failure(), occasion));
+        if (!pdr::http::Mutating(Translate(request.GetMethod()))) {
+            return Answer(
+                response, Plain(caller, body.Value(), request_id), occasion, std::nullopt);
         }
 
-        response.SetHeader(std::string{"Content-Type"}, std::string{"application/json"});
-        return userver::formats::json::ToString(done.Value());
+        const auto key =
+            pdr::http::IdempotencyKey::Parse(request.GetHeader(std::string{kIdempotencyKeyHeader}));
+        if (!key.HasValue()) {
+            return Refuse(response, KeyRequired(kIdempotencyKeyHeader, occasion));
+        }
+
+        return Answer(response,
+                      Guarded(caller,
+                              body.Value(),
+                              request_id,
+                              key.Value(),
+                              FingerprintOf(request.RequestBody())),
+                      occasion,
+                      key.Value());
     }
 
 protected:
@@ -139,10 +155,16 @@ protected:
     AuthorizedHandler(const Callers& callers,
                       Database& database,
                       const identity::Contract& permissions,
+                      Keys& keys,
+                      const application::ports::Clock& clock,
+                      pdr::http::KeyLifetime lifetime,
                       RequestSchema schema) noexcept
         : callers_{callers},
           database_{database},
           permissions_{permissions},
+          keys_{keys},
+          clock_{clock},
+          lifetime_{lifetime},
           schema_{std::move(schema)} {}
 
     /// Чего эта ручка хочет. Спрашивается у политики, а не решается здесь.
@@ -157,6 +179,127 @@ protected:
     virtual core::Result<userver::formats::json::Value> Run(const Call& call) const = 0;
 
 private:
+    /// Чем кончилась область арендатора: что отдавать и выполнялась ли операция.
+    ///
+    /// Один тип на оба пути — меняющий и нет, — чтобы ответ собирался в одном
+    /// месте. Хендлер, у которого два места сборки ответа, однажды забудет
+    /// заголовок в одном из них.
+    struct Served final {
+        pdr::http::ClaimOutcome outcome{pdr::http::ClaimOutcome::kTaken};
+        pdr::http::SavedAnswer answer;
+    };
+
+    /// Отказ, доведённый до конца области арендатора.
+    ///
+    /// Область завершается коммитом, если работа вернулась обычным путём
+    /// (`PostgresTenantAwareRepository::Run`), — и для подавляющего большинства
+    /// работ это правильно. Здесь другой случай: отказавшая операция обязана
+    /// унести с собой И строку ключа. Иначе ключ остаётся занятым, а человек не
+    /// может повторить, даже когда причина отказа исчезла: «слот занят»
+    /// залипает на сутки.
+    ///
+    /// ИСКЛЮЧЕНИЕ ЗДЕСЬ НЕ СИГНАЛ ОБ ОШИБКЕ, А СПОСОБ ОТКАТИТЬ ТРАНЗАКЦИЮ.
+    /// Другого у области нет: не позвали `Commit` — значит откат. Ловится оно
+    /// на месте, в той же функции, что и бросается, и наружу не выходит; отказ
+    /// снова становится значением сразу за границей области.
+    struct Rollback final {
+        core::Error refusal;
+    };
+
+    /// Обращение, которое ничего не меняет: ключ ему не нужен.
+    core::Result<Served> Plain(const Caller& caller,
+                               const userver::formats::json::Value& body,
+                               const std::string& request_id) const {
+        try {
+            return database_.InTenant(caller.tenant, [&](Session& session) {
+                return Served{pdr::http::ClaimOutcome::kTaken,
+                              Produce(Call{caller, body, request_id, session})};
+            });
+        } catch (const Rollback& rolled) {
+            return rolled.refusal;
+        }
+    }
+
+    /// Обращение, которое меняет состояние.
+    ///
+    /// ОДНА ТРАНЗАКЦИЯ НА ВСЁ: занять ключ, выполнить операцию, записать ответ.
+    /// Отдельная транзакция под ключ даёт ровно ту дырку, ради закрытия которой
+    /// всё написано, — упали между ними, и либо операция прошла без ключа
+    /// (повтор выполнит её второй раз), либо ключ занят без операции (повтор не
+    /// выполнит её никогда). Здесь падение уносит и то и другое, и клиент
+    /// повторяет с чистого места.
+    core::Result<Served> Guarded(const Caller& caller,
+                                 const userver::formats::json::Value& body,
+                                 const std::string& request_id,
+                                 const pdr::http::IdempotencyKey& key,
+                                 const pdr::http::RequestFingerprint& fingerprint) const {
+        const auto expires_at = lifetime_.ExpiresFrom(clock_.Now());
+
+        try {
+            return database_.InTenant(caller.tenant, [&](Session& session) {
+                const auto claim =
+                    Or(keys_.Take(session, caller.tenant, key, fingerprint, expires_at));
+                if (claim.outcome != pdr::http::ClaimOutcome::kTaken) {
+                    return Served{claim.outcome, claim.answer};
+                }
+
+                const auto answer = Produce(Call{caller, body, request_id, session});
+                Or(keys_.Complete(session, caller.tenant, key, answer));
+                return Served{pdr::http::ClaimOutcome::kTaken, answer};
+            });
+        } catch (const Rollback& rolled) {
+            return rolled.refusal;
+        }
+    }
+
+    /// Позвать сценарий и превратить его ответ в сохраняемый.
+    pdr::http::SavedAnswer Produce(const Call& call) const {
+        auto produced = Run(call);
+        if (!produced.HasValue()) {
+            throw Rollback{produced.Failure()};
+        }
+        return pdr::http::SavedAnswer{kOk, userver::formats::json::ToString(produced.Value())};
+    }
+
+    /// Значение или откат. Отказ внутри области не возвращается наружу
+    /// значением: возвращённое значение — это коммит.
+    template<class T>
+    static T Or(const core::Result<T>& result) {
+        if (!result.HasValue()) {
+            throw Rollback{result.Failure()};
+        }
+        return result.Value();
+    }
+
+    static void Or(const core::Result<void>& result) {
+        if (!result.HasValue()) {
+            throw Rollback{result.Failure()};
+        }
+    }
+
+    /// Сборка ответа — ОДНО место на все пути.
+    template<class Response>
+    std::string Answer(Response& response,
+                       const core::Result<Served>& served,
+                       const Occasion& occasion,
+                       const std::optional<pdr::http::IdempotencyKey>& key) const {
+        if (!served.HasValue()) {
+            return Refuse(response, AsProblem(served.Failure(), occasion));
+        }
+        if (served.Value().outcome == pdr::http::ClaimOutcome::kInFlight) {
+            return Refuse(response,
+                          KeyInFlight(key.has_value() ? key->Value() : std::string{}, occasion));
+        }
+
+        response.SetStatus(
+            static_cast<userver::server::http::HttpStatus>(served.Value().answer.status));
+        response.SetHeader(std::string{"Content-Type"}, std::string{"application/json"});
+        if (served.Value().outcome == pdr::http::ClaimOutcome::kReplay) {
+            response.SetHeader(std::string{kReplayedHeader}, std::string{"true"});
+        }
+        return served.Value().answer.body;
+    }
+
     template<class Response>
     static std::string Refuse(Response& response, const Problem& problem) {
         response.SetStatus(static_cast<userver::server::http::HttpStatus>(problem.status));
@@ -164,9 +307,14 @@ private:
         return Render(problem);
     }
 
+    static constexpr int kOk = 200;
+
     const Callers& callers_;
     Database& database_;
     const identity::Contract& permissions_;
+    Keys& keys_;
+    const application::ports::Clock& clock_;
+    pdr::http::KeyLifetime lifetime_;
     RequestSchema schema_;
 };
 

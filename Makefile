@@ -20,9 +20,10 @@ PG_ENV = set -a; . ./$(ENV_FILE); set +a; \
 	       PGPASSWORD=$$POSTGRES_PASSWORD PGDATABASE=$$POSTGRES_DB;
 
 .DEFAULT_GOAL := help
-.PHONY: help up down test test-unit test-isolation test-jobs test-plans fmt fmt-check \
+.PHONY: help up down test test-unit test-isolation test-jobs test-idempotency test-plans fmt fmt-check \
         comments comments-fix hooks logs migrate migrate-verify migrate-status schema-doc \
         product-events-lock product-events-export product-events-prune \
+        idempotency-prune \
         account-export account-delete practice-queue ps check-env permissions-lock
 
 help:
@@ -33,6 +34,7 @@ help:
 	@echo "  make test-unit   только unit-прогон: без базы, без докера, за миллисекунды"
 	@echo "  make test-isolation   проверить изоляцию арендаторов на живой базе"
 	@echo "  make test-jobs   проверить одиночные задания на живой базе"
+	@echo "  make test-idempotency  проверить защиту от повтора на живой базе"
 	@echo "  make test-plans  снять планы горячих запросов на живой базе"
 	@echo "  make fmt         привести C++ к .clang-format"
 	@echo "  make fmt-check   проверить формат, ничего не меняя (та же цель в CI и в хуке)"
@@ -47,6 +49,7 @@ help:
 	@echo "  make product-events-lock     пересобрать снимок опубликованных схем событий"
 	@echo "  make product-events-export OUT=<файл>   выгрузить продуктовый поток в CSV"
 	@echo "  make product-events-prune DAYS=<дней>   убрать записи старше срока"
+	@echo "  make idempotency-prune                  убрать просроченные ключи повтора"
 	@echo "  make account-export TENANT=<uuid> OUT=<файл>   полная выгрузка аккаунта"
 	@echo "  make account-delete TENANT=<uuid>              удалить практику целиком"
 	@echo "  make practice-queue                            кто ждёт разбора публикации"
@@ -106,6 +109,12 @@ test-isolation: check-env
 # требуется поднятая установка; unit-часть механизма гоняется без базы (ctest).
 test-jobs: check-env
 	@$(PG_ENV) python3 scripts/check_jobs.py
+
+# Идемпотентность: повтор с тем же ключом операцию не выполняет, одновременный
+# повтор ждёт. Проверять на фейке недостаточно — весь смысл в том, что делает
+# база, когда два обращения приходят одновременно на разные реплики.
+test-idempotency: check-env
+	@$(PG_ENV) python3 scripts/check_idempotency.py
 
 # Планы горячих запросов на живой базе. Два шага, и первый обязателен: на
 # пустой базе любой план — перебор, и он правильный. Засев повторяем, поэтому
@@ -195,6 +204,13 @@ product-events-prune: check-env
 	}
 	@$(PG_ENV) psql --no-psqlrc -v ON_ERROR_STOP=1 -tA -v days=$(DAYS) \
 		-f db/observability/prune.sql
+
+# Уборка просроченных ключей идемпотентности. Под ролью МИГРАЦИЙ и по всем
+# практикам сразу: построчная защита отвечает на вопрос «чьи это данные», а у
+# уборки такого вопроса нет — она удаляет по сроку.
+idempotency-prune:
+	@$(PG_ENV) psql --no-psqlrc -v ON_ERROR_STOP=1 -tA -f db/http/prune.sql
+	@echo "просроченные ключи убраны"
 
 ps: check-env
 	$(COMPOSE) ps

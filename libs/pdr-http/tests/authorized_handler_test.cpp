@@ -1,19 +1,28 @@
 #include "infrastructure/http/authorized_handler.hpp"
 
+#include <atomic>
+#include <chrono>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
+#include <userver/engine/async.hpp>
+#include <userver/engine/sleep.hpp>
 #include <userver/formats/json/serialize.hpp>
 #include <userver/formats/json/value_builder.hpp>
 #include <userver/utest/utest.hpp>
 
 #include "builders/identifiers.hpp"
+#include "fake_idempotency_keys.hpp"
+#include "fakes/fake_clock.hpp"
 #include "fakes/fake_tenant_aware_repository.hpp"
 
 namespace pdr::infrastructure::http {
 namespace {
 
+using pdr::http::testing::FakeIdempotencyKeys;
+using pdr::testing::FakeClock;
 using pdr::testing::FakeTenantAwareRepository;
 using pdr::testing::FakeTenantSession;
 using pdr::testing::Numbered;
@@ -30,6 +39,11 @@ const std::string kSchemaFile =
 
 const std::string kGoodBody =
     R"({"student_id": "s-1", "starts_at": "2026-09-01T10:00:00Z", "minutes": 45})";
+
+const std::string kOtherBody =
+    R"({"student_id": "s-2", "starts_at": "2026-09-01T10:00:00Z", "minutes": 45})";
+
+constexpr std::string_view kKey = "idempotency-0a1b2c3d";
 
 /// Двойник ответа: ровно те методы, которыми пользуется хендлер.
 class Answer final {
@@ -64,6 +78,19 @@ public:
         return *this;
     }
 
+    Ask& Changing(pdr::http::Method method) {
+        method_ = method;
+        return *this;
+    }
+
+    Ask& WithKey(std::string_view key) {
+        return WithHeader(std::string{kIdempotencyKeyHeader}, std::string{key});
+    }
+
+    pdr::http::Method GetMethod() const noexcept {
+        return method_;
+    }
+
     const std::string& GetHeader(const std::string& name) const {
         return Found(headers_, name);
     }
@@ -95,6 +122,7 @@ private:
     std::map<std::string, std::string> cookies_;
     std::string body_{kGoodBody};
     std::string path_{"/lessons"};
+    pdr::http::Method method_{pdr::http::Method::kGet};
     const std::string nothing_;
     mutable Answer answer_;
 };
@@ -155,11 +183,16 @@ public:
     BookingHandler(const Callers& callers,
                    Database& database,
                    const identity::Contract& permissions,
+                   Keys& keys,
+                   const application::ports::Clock& clock,
+                   pdr::http::KeyLifetime lifetime,
                    RequestSchema schema)
-        : AuthorizedHandler{callers, database, permissions, std::move(schema)} {}
+        : AuthorizedHandler{
+              callers, database, permissions, keys, clock, lifetime, std::move(schema)} {}
 
-    mutable int ran{0};
+    mutable std::atomic<int> ran{0};
     std::optional<core::Error> refuse;
+    core::Instant::Duration takes{};
 
 private:
     identity::Action Wants() const override {
@@ -173,6 +206,9 @@ private:
 
     core::Result<userver::formats::json::Value> Run(const Call& call) const override {
         ++ran;
+        if (takes.count() != 0) {
+            userver::engine::SleepFor(takes);
+        }
         if (refuse.has_value()) {
             return *refuse;
         }
@@ -189,7 +225,13 @@ private:
 struct World final {
     World()
         : schema{RequestSchema::FromFile(kSchemaFile)},
-          handler{callers, database, permissions, Schema()} {}
+          handler{callers, database, permissions, keys, clock, Lifetime(), Schema()} {}
+
+    static pdr::http::KeyLifetime Lifetime() {
+        const auto composed = pdr::http::KeyLifetime::Compose(24);
+        EXPECT_TRUE(composed.HasValue());
+        return composed.Value();
+    }
 
     RequestSchema Schema() const {
         EXPECT_TRUE(schema.HasValue());
@@ -203,9 +245,18 @@ struct World final {
     Knows callers;
     Decides permissions;
     FakeTenantAwareRepository database;
+    FakeIdempotencyKeys keys;
+    FakeClock clock;
     core::Result<RequestSchema> schema;
     BookingHandler handler;
 };
+
+/// Меняющее обращение с ключом: короче, чем писать это в каждой проверке.
+Ask Changing(std::string_view key = kKey, std::string body = kGoodBody) {
+    Ask ask;
+    ask.Changing(pdr::http::Method::kPost).WithKey(key).WithBody(std::move(body));
+    return ask;
+}
 
 }  // namespace
 
@@ -407,6 +458,168 @@ UTEST(AuthorizedHandler, AGoodAnswerIsNotAProblem) {
     world.Serve(ask);
 
     EXPECT_EQ(ask.GetHttpResponse().headers.at("Content-Type"), "application/json");
+}
+
+/// ОБЯЗАТЕЛЬНЫЙ ТЕСТ ЗАДАЧИ: ключ обязателен на всех меняющих обращениях.
+/// Отсутствие — отказ, а НЕ «тихо выполнить»: тихо выполнить и есть двойное
+/// списание по оборванной связи.
+UTEST(Idempotent, EveryChangingRequestNeedsAKeyAndRefusalIsNotSilentSuccess) {
+    for (const auto method : {pdr::http::Method::kPost,
+                              pdr::http::Method::kPut,
+                              pdr::http::Method::kPatch,
+                              pdr::http::Method::kDelete}) {
+        World world;
+        Ask ask;
+        ask.Changing(method);
+
+        const auto body = world.Serve(ask);
+
+        EXPECT_EQ(ask.GetHttpResponse().status, 400) << pdr::http::Name(method);
+        EXPECT_EQ(body["type"].As<std::string>(), "urn:pdr:error:idempotency_key_required")
+            << pdr::http::Name(method);
+        EXPECT_EQ(world.handler.ran.load(), 0)
+            << pdr::http::Name(method) << ": операция выполнена без ключа";
+        EXPECT_TRUE(world.database.RowsBypassingPolicy().empty()) << pdr::http::Name(method);
+    }
+}
+
+/// Читающему обращению ключ не нужен: требовать его значило бы ломать GET ради
+/// защиты от повтора, которого у чтения не бывает.
+UTEST(Idempotent, AReadingRequestNeedsNoKey) {
+    World world;
+    Ask ask;
+
+    world.Serve(ask);
+
+    EXPECT_EQ(ask.GetHttpResponse().status, 200);
+    EXPECT_EQ(world.handler.ran.load(), 1);
+    EXPECT_EQ(world.keys.Rows(), 0U) << "чтение заняло ключ";
+}
+
+/// Негодный ключ — тот же отказ, что и отсутствующий: «1» столкнётся с чужим в
+/// первый же день и превратит защиту в отказ постороннему человеку.
+UTEST(Idempotent, AKeyTooShortToBeUniqueIsAsGoodAsNoKey) {
+    World world;
+    Ask ask = Changing("1");
+
+    const auto body = world.Serve(ask);
+
+    EXPECT_EQ(ask.GetHttpResponse().status, 400);
+    EXPECT_EQ(body["type"].As<std::string>(), "urn:pdr:error:idempotency_key_required");
+    EXPECT_EQ(world.handler.ran.load(), 0);
+}
+
+/// ОБЯЗАТЕЛЬНЫЙ ТЕСТ ЗАДАЧИ: повтор не создаёт вторую сущность.
+UTEST(Idempotent, ARepeatReturnsTheSavedAnswerAndCreatesNothingSecond) {
+    World world;
+    Ask first = Changing();
+    const auto once = world.Serve(first);
+
+    Ask again = Changing();
+    const auto twice = world.Serve(again);
+
+    EXPECT_EQ(world.handler.ran.load(), 1) << "операция выполнена дважды";
+    EXPECT_EQ(world.database.RowsBypassingPolicy().size(), 1U) << "заведена вторая сущность";
+    EXPECT_EQ(twice, once) << "повтор ответил не тем, чем ответили в первый раз";
+    EXPECT_EQ(again.GetHttpResponse().status, 200);
+    EXPECT_EQ(again.GetHttpResponse().headers.at(std::string{kReplayedHeader}), "true");
+    EXPECT_EQ(first.GetHttpResponse().headers.count(std::string{kReplayedHeader}), 0U)
+        << "первый ответ помечен сохранённым";
+}
+
+/// ОБЯЗАТЕЛЬНЫЙ ТЕСТ ЗАДАЧИ: тот же ключ с другим телом — 409. Это ошибка
+/// клиента, а не повтор, и отвечать на неё сохранённым ответом нельзя: он про
+/// другой запрос.
+UTEST(Idempotent, TheSameKeyWithAChangedBodyIsAClientMistake) {
+    World world;
+    Ask first = Changing();
+    world.Serve(first);
+
+    Ask other = Changing(kKey, kOtherBody);
+    const auto body = world.Serve(other);
+
+    EXPECT_EQ(other.GetHttpResponse().status, 409);
+    EXPECT_EQ(body["type"].As<std::string>(), "urn:pdr:error:idempotency_key_reused");
+    EXPECT_EQ(world.handler.ran.load(), 1) << "операция выполнена по чужому ключу";
+    EXPECT_EQ(world.database.RowsBypassingPolicy().size(), 1U);
+}
+
+UTEST(Idempotent, ADifferentKeyIsADifferentRequest) {
+    World world;
+    Ask first = Changing("idempotency-first-11");
+    Ask second = Changing("idempotency-second-2");
+
+    world.Serve(first);
+    world.Serve(second);
+
+    EXPECT_EQ(world.handler.ran.load(), 2);
+    EXPECT_EQ(world.database.RowsBypassingPolicy().size(), 2U);
+}
+
+/// ГЛАВНЫЙ ТЕСТ ЗАДАЧИ: два одинаковых обращения ОДНОВРЕМЕННО, в разных
+/// сопрограммах. Сущность обязана появиться ровно одна.
+///
+/// Мьютекс в процессе для этого не годится и запрещён: реплик бывает больше
+/// одной, и мьютекс одной про другую не знает. Здесь его нет — атомарность даёт
+/// хранилище ключей, как в базе её даёт первичный ключ.
+UTEST_MT(Idempotent, TwoAtOnceCreateExactlyOneThing, 2) {
+    World world;
+    world.handler.takes = std::chrono::milliseconds{50};
+
+    Ask left = Changing();
+    Ask right = Changing();
+
+    auto first = userver::engine::AsyncNoSpan([&] { return world.handler.Serve(left); });
+    auto second = userver::engine::AsyncNoSpan([&] { return world.handler.Serve(right); });
+    first.Get();
+    second.Get();
+
+    EXPECT_EQ(world.database.RowsBypassingPolicy().size(), 1U)
+        << "одновременный повтор завёл вторую сущность — ровно то, ради чего всё написано";
+    EXPECT_EQ(world.keys.Taken(), 1) << "ключ заняли дважды";
+    EXPECT_EQ(world.handler.ran.load(), 1) << "операция выполнена параллельно сама с собой";
+
+    const std::set<int> answered{left.GetHttpResponse().status, right.GetHttpResponse().status};
+    EXPECT_EQ(answered, (std::set<int>{200, 409}))
+        << "ответы «" << left.GetHttpResponse().status << "» и «" << right.GetHttpResponse().status
+        << "»: второму обязаны сказать повторить";
+}
+
+/// ОБЯЗАТЕЛЬНЫЙ ТЕСТ ЗАДАЧИ: отказ операции не оставляет несогласованного
+/// состояния. Ключ и операция — одна область, поэтому откатывается либо всё,
+/// либо ничего, и повтор начинает с чистого места.
+UTEST(Idempotent, AFailedOperationLeavesNeitherKeyNorEntityBehind) {
+    World world;
+    world.handler.refuse =
+        core::Error{core::ErrorKind::kConflict, "slot_already_taken", "это время занято"};
+
+    Ask failing = Changing();
+    const auto refused = world.Serve(failing);
+
+    EXPECT_EQ(failing.GetHttpResponse().status, 409);
+    EXPECT_EQ(refused["type"].As<std::string>(), "urn:pdr:error:slot_already_taken");
+    EXPECT_TRUE(world.database.RowsBypassingPolicy().empty());
+
+    world.handler.refuse.reset();
+    Ask retried = Changing();
+    world.Serve(retried);
+
+    EXPECT_EQ(retried.GetHttpResponse().status, 200)
+        << "отказ залип на ключе: человек не может повторить, даже когда слот освободился";
+    EXPECT_EQ(world.database.RowsBypassingPolicy().size(), 1U);
+}
+
+/// Ключ занимается ПОСЛЕ политики: неопознанный и тот, кому нельзя, ключей не
+/// занимают вовсе — иначе чужой ключ можно занять, не имея права ни на что.
+UTEST(Idempotent, ARefusedRequestTakesNoKey) {
+    World world;
+    world.permissions.answer = identity::Denied(identity::DenyReason::kNotYours);
+
+    Ask ask = Changing();
+    world.Serve(ask);
+
+    EXPECT_EQ(ask.GetHttpResponse().status, 403);
+    EXPECT_EQ(world.keys.Rows(), 0U) << "отказ политики занял ключ";
 }
 
 }  // namespace pdr::infrastructure::http

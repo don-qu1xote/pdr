@@ -58,4 +58,19 @@ Problem Unidentified(const core::Error& error, const Occasion& occasion);
 /// до правил домена дело не дошло вовсе.
 Problem Malformed(const core::Error& error, std::string_view field, const Occasion& occasion);
 
+/// Ключ идемпотентности не прислан там, где он обязателен, или прислан негодный.
+/// 400: обращение не выполняется вовсе, потому что «тихо выполнить» — это и
+/// есть двойное списание по оборванной связи.
+Problem KeyRequired(std::string_view header, const Occasion& occasion);
+
+/// Тот же ключ, пока первый запрос ещё выполняется. 409 с просьбой повторить:
+/// параллельно операция не выполняется НИКОГДА, а держать соединение открытым в
+/// ожидании чужой транзакции значит копить их на каждой реплике.
+Problem KeyInFlight(std::string_view key, const Occasion& occasion);
+
+/// Тот же ключ с ДРУГИМ телом отдельной функции не требует: домен отвечает
+/// отказом `idempotency_key_reused` рода `kConflict`, и общая таблица
+/// превращает его в 409 сама. Это ошибка клиента, а не повтор, и сохранённым
+/// ответом на неё не отвечают — он про другой запрос.
+
 }  // namespace pdr::infrastructure::http

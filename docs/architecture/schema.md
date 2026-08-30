@@ -4,7 +4,7 @@
      правка переживёт ровно до следующей пересборки. Изменить схему — значит
      написать новую миграцию. -->
 
-Собрано из миграций: 9. Таблиц: 17.
+Собрано из миграций: 10. Таблиц: 18.
 
 Правила, которым подчиняется каждая колонка, — в
 [migrations.md](migrations.md). Как устроена изоляция арендаторов и почему у
@@ -12,6 +12,43 @@
 отсутствие политики роняет сборку (`scripts/check_rls.py`).
 
 ## Таблицы
+
+### http_idempotency_key
+
+Ключ идемпотентности клиента: отпечаток тела и сохранённый ответ. Повтор с тем же ключом и тем же телом операцию не выполняет.
+
+Заведена миграцией `V010__idempotency.sql`.
+
+| Колонка | Тип | Определение |
+| --- | --- | --- |
+| `tenant_id` | `uuid` | uuid not null |
+| `key` | `text` | text not null |
+| `request_fingerprint` | `text` | text not null |
+| `state` | `text` | text not null |
+| `response_status` | `integer` | integer |
+| `response_body` | `text` | text |
+| `created_at` | `timestamptz` | timestamptz not null default now() |
+| `expires_at` | `timestamptz` | timestamptz not null |
+
+Ограничения:
+
+* `constraint http_idempotency_key_pk primary key (tenant_id, key)`
+* `constraint http_idempotency_key_not_blank check (length(btrim(key)) > 0)`
+* `constraint http_idempotency_key_fits check (length(key) between 8 and 255)`
+* `constraint http_idempotency_key_fingerprint_is_sha256 check (request_fingerprint ~ )`
+* `constraint http_idempotency_key_state_known check (state in ( , ))`
+* `constraint http_idempotency_key_completed_has_an_answer check ( (state = and response_status is not null and response_body is not null and response_status between 100 and 599) or (state = and response_status is null and response_body is null) )`
+* `constraint http_idempotency_key_expires_after_created check (expires_at > created_at)`
+
+Индексы:
+
+* `http_idempotency_key_by_age` — обычный, `(expires_at)`
+
+Построчная защита включена и форсирована.
+
+Политики:
+
+* `http_idempotency_key_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
 
 ### identity_access_log
 
@@ -554,3 +591,4 @@
 1. `V007__guardian_access.sql` — identity_guardian_consent
 1. `V008__practice_and_accounts.sql` — identity_account, identity_signup_attempt
 1. `V009__consent_basis.sql` — без новых таблиц
+1. `V010__idempotency.sql` — http_idempotency_key

@@ -15,13 +15,23 @@ if(NOT userver_FOUND)
 endif()
 
 add_library(pdr_http STATIC
+    src/core/idempotency.cpp
     src/infrastructure/http/error_mapping.cpp
+    src/infrastructure/http/fingerprint.cpp
+    src/infrastructure/http/idempotency.cpp
     src/infrastructure/http/problem.cpp
     src/infrastructure/http/request_id.cpp
     src/infrastructure/http/request_schema.cpp
 )
 target_include_directories(pdr_http PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_link_libraries(pdr_http PUBLIC pdr_core pdr_application pdr_identity userver::core)
+
+# Адаптер ключей к Postgres — отдельной целью: сама форма собирается без
+# драйвера базы, и проверяется она на фейке. Цель нужна тому, кто поднимает
+# сервис, а не тому, кто проверяет форму.
+add_library(pdr_http_postgres STATIC src/infrastructure/http/postgres_idempotency_keys.cpp)
+target_include_directories(pdr_http_postgres PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+target_link_libraries(pdr_http_postgres PUBLIC pdr_http pdr_postgres userver::postgresql)
 
 if(PDR_BUILD_TESTS)
     # УРОВЕНЬ CONTRACT/ADAPTER. Unit-прогону эти проверки не по силам и не по
@@ -34,6 +44,7 @@ if(PDR_BUILD_TESTS)
     pdr_adapter_test_sources(
         tests/authorized_handler_test.cpp
         tests/error_mapping_test.cpp
+        tests/idempotency_test.cpp
         tests/problem_test.cpp
         tests/request_id_test.cpp
         tests/request_schema_test.cpp

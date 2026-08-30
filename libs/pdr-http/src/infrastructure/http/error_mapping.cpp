@@ -2,6 +2,8 @@
 
 #include <string>
 
+#include "infrastructure/http/idempotency.hpp"
+
 namespace pdr::infrastructure::http {
 namespace {
 
@@ -16,6 +18,8 @@ constexpr int kOk = 200;
 
 constexpr std::string_view kUnidentifiedCode = "not_identified";
 constexpr std::string_view kMalformedCode = "request_malformed";
+constexpr std::string_view kKeyRequiredCode = "idempotency_key_required";
+constexpr std::string_view kKeyInFlightCode = "idempotency_key_in_flight";
 
 Problem Build(std::string_view code,
               std::string_view title,
@@ -130,6 +134,26 @@ Problem Malformed(const core::Error& error, std::string_view field, const Occasi
         problem.field = std::string{field};
     }
     return problem;
+}
+
+Problem KeyRequired(std::string_view header, const Occasion& occasion) {
+    return Build(kKeyRequiredCode,
+                 "Нужен ключ повтора",
+                 kBadRequest,
+                 "заголовок " + std::string{header} +
+                     " обязателен: без него повтор по "
+                     "оборванной связи выполнит операцию второй раз",
+                 occasion);
+}
+
+Problem KeyInFlight(std::string_view key, const Occasion& occasion) {
+    return Build(kKeyInFlightCode,
+                 "Тот же запрос уже выполняется",
+                 kConflict,
+                 "ключ «" + std::string{key} +
+                     "» занят запросом, который ещё идёт. "
+                     "Повторите через несколько секунд: параллельно операция не выполняется",
+                 occasion);
 }
 
 }  // namespace pdr::infrastructure::http
