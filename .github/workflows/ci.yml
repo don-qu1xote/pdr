@@ -480,12 +480,11 @@ jobs:
           }
           EOF
 
-      - name: Поднять и применить миграции
-        run: make up ENV_PROFILE=ci
+      - name: Поднять инфраструктуру
+        run: make up-core ENV_PROFILE=ci
 
-      - name: Логи scheduling при ошибке
-        if: failure()
-        run: docker compose --env-file deploy/env/ci.env -f deploy/docker-compose.yml logs scheduling
+      - name: Применить миграции
+        run: make migrate ENV_PROFILE=ci
 
       # Второй прогон обязан ничего не применять: повтор идемпотентен.
       - name: Повтор ничего не меняет
@@ -496,6 +495,13 @@ jobs:
 
       - name: Сверка сумм
         run: make migrate-verify ENV_PROFILE=ci
+
+      - name: Поднять приложение
+        run: make up-app ENV_PROFILE=ci
+
+      - name: Логи scheduling при ошибке
+        if: failure()
+        run: docker compose --env-file deploy/env/ci.env -f deploy/docker-compose.yml logs scheduling
 
       # Политика, написанная правильно, и политика, работающая правильно, —
       # разные утверждения. Между ними помещается роль-суперпользователь,
@@ -654,8 +660,11 @@ jobs:
           }
           EOF
 
-      - name: Поднять и применить миграции
-        run: make up ENV_PROFILE=ci
+      - name: Поднять инфраструктуру
+        run: make up-core ENV_PROFILE=ci
+
+      - name: Применить миграции
+        run: make migrate ENV_PROFILE=ci
 
       - name: Логи scheduling при ошибке
         if: failure()

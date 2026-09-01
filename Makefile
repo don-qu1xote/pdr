@@ -20,7 +20,7 @@ PG_ENV = set -a; . ./$(ENV_FILE); set +a; \
 	       PGPASSWORD=$$POSTGRES_PASSWORD PGDATABASE=$$POSTGRES_DB;
 
 .DEFAULT_GOAL := help
-.PHONY: help up down test test-unit test-isolation test-jobs test-idempotency test-plans fmt fmt-check \
+.PHONY: help up up-core up-app down test test-unit test-isolation test-jobs test-idempotency test-plans fmt fmt-check \
         comments comments-fix hooks logs migrate migrate-verify migrate-status schema-doc \
         product-events-lock product-events-export product-events-prune \
         idempotency-prune \
@@ -66,6 +66,23 @@ check-env:
 		exit 1; \
 	}
 
+# up-core: postgres и ml. Без приложения — для CI, где миграции применяются
+# отдельным шагом между up-core и up-app (docs/adr/0007-local-without-fake-production.md).
+up-core: check-env
+	$(COMPOSE) up --detach --wait postgres ml
+	@echo "инфраструктура поднята. Миграции: make migrate. Затем: make up-app"
+
+# up-app: приложение (scheduling). Запускается после миграций.
+up-app: check-env
+	$(COMPOSE) up --detach --wait scheduling
+	@echo "приложение поднято. Что дальше:"
+	@echo "    make ps      посмотреть состояние"
+	@echo "    make logs    посмотреть логи"
+	@echo "    make down    погасить"
+
+# up: всё сразу — локальная разработка. Миграции применяются после старта всех
+# сервисов; heartbeat-job может упасть, если jobs_run ещё нет. В CI используйте
+# up-core → migrate → up-app.
 up: check-env
 	$(COMPOSE) up --detach --wait
 	@set -a; . ./$(ENV_FILE); set +a; \
