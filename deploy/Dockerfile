@@ -46,6 +46,7 @@ COPY services/scheduling/configs/config_vars.yaml /etc/pdr/config_vars.yaml
 COPY services/scheduling/configs/dynamic_config_fallback.json \
      /etc/pdr/dynamic_config_fallback.json
 COPY libs/pdr-identity/schemas/sign_in.json /etc/pdr/schemas/sign_in.json
+COPY docs/api/openapi.yaml /etc/pdr/openapi.yaml
 
 # Процесс работает не от root: контейнер и так запускается с read_only и без
 # добавочных возможностей, и последнее, чего ему не хватает, — своего

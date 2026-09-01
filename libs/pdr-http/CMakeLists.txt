@@ -24,6 +24,7 @@ add_library(pdr_http STATIC
     src/infrastructure/http/idempotency.cpp
     src/infrastructure/http/middlewares/links.cpp
     src/infrastructure/http/middlewares/pipeline.cpp
+    src/infrastructure/http/openapi_document.cpp
     src/infrastructure/http/problem.cpp
     src/infrastructure/http/request_id.cpp
     src/infrastructure/http/request_schema.cpp

@@ -6,6 +6,7 @@
 #include <userver/components/component.hpp>
 #include <userver/formats/json/serialize.hpp>
 #include <userver/formats/json/value_builder.hpp>
+#include <userver/http/content_type.hpp>
 #include <userver/logging/log.hpp>
 #include <userver/server/http/http_request.hpp>
 #include <userver/server/http/http_status.hpp>
@@ -37,6 +38,8 @@ std::string ReadinessHandler::HandleRequestThrow(
     const userver::server::http::HttpRequest& request,
     userver::server::request::RequestContext& context) const {
     static_cast<void>(context);
+
+    request.GetHttpResponse().SetContentType(userver::http::content_type::kApplicationJson);
 
     userver::formats::json::ValueBuilder answer{userver::formats::json::Type::kObject};
 

@@ -19,7 +19,7 @@ PASSWORD = 'correct-horse-battery'
 
 
 def address(path=''):
-    return f'/cabinet/{TENANT}/sign-in{path}'
+    return f'/api/v1/cabinet/{TENANT}/sign-in{path}'
 
 
 @pytest.fixture
@@ -95,7 +95,7 @@ async def test_body_is_checked_against_the_schema(service_client, practice):
 
 async def test_unknown_cabinet_is_not_a_way_in(service_client):
     response = await service_client.post(
-        '/cabinet/не-адрес/sign-in',
+        '/api/v1/cabinet/не-адрес/sign-in',
         json={'email': EMAIL, 'password': PASSWORD},
         headers={'Idempotency-Key': f'sign-in-{uuid.uuid4()}'},
     )

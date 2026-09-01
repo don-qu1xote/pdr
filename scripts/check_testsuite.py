@@ -58,6 +58,8 @@ build-userver и venv-utest — такие же каталоги сборки, �
 
 TOOLING_DIRS = ("scripts",)
 
+TESTS_DIR = "tests"
+
 PLUGIN = "pytest_userver"
 
 WAIVER = re.compile(r"#\s*контур-ok:\s*(\S.*)$")
@@ -165,7 +167,12 @@ def strip_comments_and_strings(text: str) -> str:
 
 
 def python_files(root: Path) -> Iterator[Path]:
-    """Файлы тестов контура: test_*.py и conftest.py, кроме инструментов."""
+    """Код контура: всё, что лежит под каталогом tests, кроме инструментов.
+
+    Не только `test_*.py` и `conftest.py`: общая оснастка и вспомогательные
+    модули набора — тот же контур, и запреты на них те же. Иначе свой стенд
+    переезжает в соседний файл, и правило перестаёт что-либо значить.
+    """
     for path in sorted(root.rglob("*.py")):
         parts = path.relative_to(root).parts
         if any(part in SKIPPED_DIRS or part.startswith(".") for part in parts):
@@ -174,7 +181,7 @@ def python_files(root: Path) -> Iterator[Path]:
             continue
         if parts and parts[0] in TOOLING_DIRS:
             continue
-        if path.name == "conftest.py" or path.name.startswith("test_"):
+        if TESTS_DIR in parts or path.name == "conftest.py" or path.name.startswith("test_"):
             yield path
 
 
@@ -315,6 +322,12 @@ SELFTEST_FILES = {
         "async def test_chat(service_client):\n"
         "    assert await service_client.get('/ping')\n"
     ),
+    "tests/contour.py": (
+        "import subprocess\n"
+        "\n"
+        "def start_it_myself():\n"
+        "    return subprocess.Popen(['./pdr_main'])\n"
+    ),
     "scripts/check_something.py": (
         "import subprocess\n"
         "\n"
@@ -338,6 +351,7 @@ SELFTEST_EXPECTED = {
     ("services/main/tests/test_sleep.py", "блокирующий sleep"),
     ("services/main/tests/test_sleep.py", "sleep вместо ожидания"),
     ("services/chat/tests", "плагин не подключён"),
+    ("tests/contour.py", "свой стенд"),
 }
 
 SELFTEST_CLEAN = (

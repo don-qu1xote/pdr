@@ -98,6 +98,7 @@ problem+json — это по определению отказ.
 | `password_min_length_above_max` | то же |
 | `password_hash_not_argon2id` | разбор строки из хранилища: человек такого не вводит |
 | `password_hashing_failed` | библиотека счёта хеша отказала — это поломка, а не действие человека |
+| `openapi_document_unreadable` | спецификация не прочиталась при старте: сервис не поднимается вовсе, и показывать код некому |
 | `throttle_window_not_positive` | пороги перебора в динамическом конфиге |
 | `throttle_limit_too_low` | то же |
 | `throttle_address_below_account` | то же: связь между двумя порогами |

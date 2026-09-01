@@ -181,10 +181,20 @@ components_manager:
             throttling_enabled: false
             cluster: postgres-pdr
 
+        # Спецификация внешнего контура. Отдаётся с того же порта, что и сами
+        # ручки: инструмент, порождающий типы, ходит туда же, куда потом пойдёт
+        # клиент, и не может прочитать спецификацию не того процесса.
+        handler-openapi:
+            path: /api/v1/openapi.json
+            method: GET
+            task_processor: main-task-processor
+            throttling_enabled: false
+            document: $openapi-document
+
         # ЕДИНСТВЕННЫЙ маршрут: адрес, метод и то, какую операцию звать.
         # Наследник HttpHandlerBase в сервисе один, а маршрутов — сколько нужно.
         handler-sign-in:
-            path: /cabinet/{tenant}/sign-in
+            path: /api/v1/cabinet/{tenant}/sign-in
             method: POST
             task_processor: main-task-processor
             operation: identity-sign-in

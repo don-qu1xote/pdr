@@ -152,6 +152,15 @@ jobs:
           python3 scripts/check_http_form.py --selftest
           python3 scripts/check_http_form.py
 
+      # Ручка, поднятая и не описанная, и описанная, но снятая, роняют сборку
+      # здесь. Спецификация — источник правды для клиентов, и состав её ручек
+      # обязан совпадать с тем, что сервис действительно поднимает.
+      - name: Состав ручек и спецификация не расходятся
+        run: |
+          set -eu
+          python3 scripts/check_openapi.py --selftest
+          python3 scripts/check_openapi.py
+
       # Событие без вопроса, вопрос без события, продуктовое число без вопроса,
       # поле, именующее человека, и поле, пропавшее из уже опубликованной версии
       # схемы, роняют сборку здесь.
@@ -575,7 +584,14 @@ jobs:
       - name: Контур первого процесса
         run: |
           su pdrtest -c 'ctest --test-dir build-service --output-on-failure \
-            -R testsuite-pdr_scheduling_service'
+            -R "^testsuite-pdr_scheduling_service$"'
+
+      # Настоящие ответы сервиса против схем из docs/api/openapi.yaml. Без этого
+      # набора спецификация устаревает за две недели — это происходит всегда.
+      - name: Ответы сходятся со спецификацией
+        run: |
+          su pdrtest -c 'ctest --test-dir build-service --output-on-failure \
+            -R testsuite-pdr_scheduling_service-openapi'
 
   plans:
     name: "Живая база: планы горячих запросов"

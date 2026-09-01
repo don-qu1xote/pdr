@@ -32,6 +32,7 @@ add_executable(pdr_scheduling_service
     src/scheduling_service/authorized_route.cpp
     src/scheduling_service/health_handler.cpp
     src/scheduling_service/heartbeat_job.cpp
+    src/scheduling_service/openapi_handler.cpp
     src/scheduling_service/readiness_handler.cpp
     src/scheduling_service/secrets_guard.cpp
 )
@@ -63,6 +64,26 @@ if(PDR_BUILD_TESTS AND USERVER_FEATURE_TESTSUITE)
     userver_testsuite_add_simple(
         SERVICE_TARGET pdr_scheduling_service
         PYTEST_ARGS "--service-binary=${CMAKE_CURRENT_BINARY_DIR}/pdr_scheduling_service"
+                    "-p" "no:cacheprovider"
+    )
+
+    # СВЕРКА С КОНТРАКТОМ — отдельным набором и на том же процессе.
+    #
+    # Отдельным не ради изоляции, а ради предмета: сценарии проверяют, что сервис
+    # делает что нужно, а этот — что он отвечает так, как обещано клиенту.
+    # Спецификация, которую никто не сверяет с работающим процессом, устаревает
+    # за две недели, и это происходит всегда.
+    userver_testsuite_add_simple(
+        SERVICE_TARGET pdr_scheduling_service
+        TEST_SUFFIX openapi
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/tests/contract/openapi_conformance"
+        REQUIREMENTS "${CMAKE_SOURCE_DIR}/tests/contract/openapi_conformance/requirements.txt"
+        PYTEST_ARGS "--service-binary=${CMAKE_CURRENT_BINARY_DIR}/pdr_scheduling_service"
+                    "--service-config=${CMAKE_CURRENT_SOURCE_DIR}/configs/static_config.yaml"
+                    "--service-source-dir=${CMAKE_CURRENT_SOURCE_DIR}"
+                    "--service-secdist=${CMAKE_CURRENT_SOURCE_DIR}/configs/secdist.json"
+                    "--config-fallback=${CMAKE_CURRENT_SOURCE_DIR}/configs/dynamic_config_fallback.json"
+                    "--service-config-vars=${CMAKE_CURRENT_SOURCE_DIR}/configs/config_vars.yaml"
                     "-p" "no:cacheprovider"
     )
 endif()

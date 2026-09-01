@@ -16,6 +16,7 @@
 #include "scheduling_service/authorized_route.hpp"
 #include "scheduling_service/health_handler.hpp"
 #include "scheduling_service/heartbeat_job.hpp"
+#include "scheduling_service/openapi_handler.hpp"
 #include "scheduling_service/readiness_handler.hpp"
 #include "scheduling_service/secrets_guard.hpp"
 
@@ -67,6 +68,7 @@ int main(int argc, char* argv[]) {
             .Append<pdr::scheduling_service::HeartbeatJob>()
             .Append<pdr::scheduling_service::HealthHandler>()
             .Append<pdr::scheduling_service::ReadinessHandler>()
+            .Append<pdr::scheduling_service::OpenApiHandler>()
             .Append<pdr::scheduling_service::AuthorizedRoute>("handler-sign-in");
 
     return userver::utils::DaemonMain(argc, argv, components);
