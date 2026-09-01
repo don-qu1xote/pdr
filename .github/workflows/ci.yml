@@ -456,6 +456,11 @@ jobs:
       - name: Профиль ci
         run: cp deploy/env/ci.env.example deploy/env/ci.env
 
+      # Секреты: в CI настоящих нет, но файл обязан лежать на месте — иначе
+      # Docker монтирует пустой каталог, а SecretsGuard падает при старте.
+      - name: Секреты
+        run: cp deploy/secrets/secrets.json.example deploy/secrets/secrets.json
+
       - name: Поднять и применить миграции
         run: make up ENV_PROFILE=ci
 
@@ -603,6 +608,9 @@ jobs:
 
       - name: Профиль ci
         run: cp deploy/env/ci.env.example deploy/env/ci.env
+
+      - name: Секреты
+        run: cp deploy/secrets/secrets.json.example deploy/secrets/secrets.json
 
       - name: Поднять и применить миграции
         run: make up ENV_PROFILE=ci
