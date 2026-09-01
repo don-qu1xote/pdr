@@ -8,6 +8,7 @@
 #include <userver/components/component_context.hpp>
 #include <userver/dist_lock/dist_locked_worker.hpp>
 #include <userver/rcu/rcu.hpp>
+#include <userver/testsuite/tasks.hpp>
 #include <userver/utils/periodic_task.hpp>
 #include <userver/utils/statistics/entry.hpp>
 #include <userver/utils/statistics/writer.hpp>
@@ -16,7 +17,7 @@
 #include "infrastructure/db/tenant_context.hpp"
 #include "infrastructure/db/unscoped_access.hpp"
 #include "infrastructure/postgres_tenant_aware_repository.hpp"
-#include "infrastructure/system_clock.hpp"
+#include "infrastructure/userver_clock.hpp"
 #include "jobs/application/ports/job_lock.hpp"
 #include "jobs/application/run_periodic_job.hpp"
 #include "jobs/contract.hpp"
@@ -72,10 +73,27 @@ private:
         const userver::dist_lock::DistLockedWorker& worker_;
     };
 
+    /// Блокировка, которая всегда при себе.
+    ///
+    /// Нужна ровно контуру: под ним процесс один, распределять нечего, а прогон
+    /// обязан случиться по требованию и сразу. Что блокировка работает,
+    /// проверяется на живой базе двумя процессами (scripts/check_jobs.py), и
+    /// подменять ту проверку этой было бы подменой предмета.
+    class LockOfTestsuite final : public ports::JobLock {
+    public:
+        bool IsHeld() const override {
+            return true;
+        }
+    };
+
     struct Watched final {
         std::optional<RunRecord> last;
         bool enabled{false};
     };
+
+    /// Один прогон по требованию контура. Ставит след и производит действие —
+    /// ровно то же, что делает воркер, только без ожидания периода.
+    void RunOnce();
 
     void Work();
     void Watch();
@@ -83,7 +101,7 @@ private:
 
     PeriodicJob& work_;
     JobName job_;
-    infrastructure::SystemClock clock_;
+    infrastructure::UserverClock clock_;
     DynamicConfigJobSettings settings_;
     infrastructure::db::UnscopedAccess unscoped_;
     infrastructure::db::TenantContext tenants_;
@@ -94,6 +112,8 @@ private:
     userver::rcu::Variable<Watched> watched_;
     std::unique_ptr<userver::dist_lock::DistLockedWorker> worker_;
     std::optional<LockOfWorker> lock_;
+    LockOfTestsuite by_request_;
+    userver::testsuite::TestsuiteTasks& tasks_;
     userver::utils::PeriodicTask watch_;
     userver::utils::statistics::Entry statistics_;
 };

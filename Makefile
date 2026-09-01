@@ -235,6 +235,8 @@ test:
 	python3 scripts/check_migrations.py
 	python3 scripts/check_rls.py --selftest
 	python3 scripts/check_rls.py
+	python3 scripts/check_uuid_reads.py --selftest
+	python3 scripts/check_uuid_reads.py
 	python3 scripts/check_testsuite.py --selftest
 	python3 scripts/check_testsuite.py
 	python3 scripts/check_handmade.py --selftest

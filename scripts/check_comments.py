@@ -76,6 +76,7 @@ PRAGMAS = (
     "shellcheck",
     "syntax=",
     "штатное-ok:",
+    "контур-ok:",
 )
 
 CODING = re.compile(r"coding[:=]\s*[-\w.]+")
@@ -104,7 +105,14 @@ BUILD_NAMES = {"Makefile", "makefile", "GNUmakefile", "CMakeLists.txt", "Dockerf
 SHELL_SHEBANG = re.compile(r"^#!.*\b(sh|bash|zsh|dash)\b")
 PYTHON_SHEBANG = re.compile(r"^#!.*\bpython")
 
-SKIP_DIRS = {".git", "build", "node_modules", "__pycache__", ".venv", "dist"}
+SKIP_DIRS = {".git", "node_modules", "__pycache__", "dist"}
+
+SKIP_PREFIXES = ("build", "venv", ".venv")
+"""Каталоги сборки и виртуальные окружения — по приставке, а не по точному имени.
+
+build-userver и venv-utest — такие же каталоги сборки, как build и .venv, а
+внутри у них чужой код, который нашего правила не читал.
+"""
 
 
 class CommentError(Exception):
@@ -476,7 +484,10 @@ def sources(root: Path) -> Iterable[Path]:
     for path in sorted(root.rglob("*")):
         if not path.is_file():
             continue
-        if any(part in SKIP_DIRS for part in path.relative_to(root).parts):
+        parts = path.relative_to(root).parts
+        if any(part in SKIP_DIRS for part in parts):
+            continue
+        if any(part.startswith(SKIP_PREFIXES) for part in parts):
             continue
         yield path
 

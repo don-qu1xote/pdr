@@ -16,14 +16,14 @@ using infrastructure::db::AsTimestamptz;
 using infrastructure::db::Timestamptz;
 
 const userver::storages::postgres::Query kByMail{
-    "SELECT id, email_digest, confirmed_at, confirmation_digest, confirmation_expires_at, "
-    "created_at FROM identity_account WHERE email_digest = $1",
+    "SELECT id::text AS id, email_digest, confirmed_at, confirmation_digest, "
+    "confirmation_expires_at, created_at FROM identity_account WHERE email_digest = $1",
     userver::storages::postgres::Query::Name{"identity_account_by_mail"},
 };
 
 const userver::storages::postgres::Query kById{
-    "SELECT id, email_digest, confirmed_at, confirmation_digest, confirmation_expires_at, "
-    "created_at FROM identity_account WHERE id = $1::uuid",
+    "SELECT id::text AS id, email_digest, confirmed_at, confirmation_digest, "
+    "confirmation_expires_at, created_at FROM identity_account WHERE id = $1::uuid",
     userver::storages::postgres::Query::Name{"identity_account_by_id"},
 };
 

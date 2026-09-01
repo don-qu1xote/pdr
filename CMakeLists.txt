@@ -119,6 +119,21 @@ function(pdr_adapter_test_libraries)
     set_property(GLOBAL APPEND PROPERTY PDR_ADAPTER_TEST_LIBRARIES ${ARGN})
 endfunction()
 
+# Проверки адаптеров на ЖИВОЙ БАЗЕ: contract-набор хранилища против настоящего
+# адаптера и продуктовый поток в настоящей таблице. Базу поднимает и гасит
+# штатный testsuite (userver_add_utest DATABASES postgresql) — своего стенда не
+# бывает (ADR-0012). Цель заводится только там, где есть userver и его контур.
+function(pdr_live_test_sources)
+    foreach(source IN LISTS ARGN)
+        set_property(GLOBAL APPEND PROPERTY PDR_LIVE_TEST_SOURCES
+                     "${CMAKE_CURRENT_SOURCE_DIR}/${source}")
+    endforeach()
+endfunction()
+
+function(pdr_live_test_libraries)
+    set_property(GLOBAL APPEND PROPERTY PDR_LIVE_TEST_LIBRARIES ${ARGN})
+endfunction()
+
 # userver ищется РОВНО ОДИН РАЗ и здесь.
 #
 # Это не стиль, а требование: импортированные цели, которые создаёт
@@ -201,15 +216,36 @@ if(PDR_BUILD_TESTS)
         # оно приходит не от конкретного теста, а от их количества, и потому
         # выглядит как «сломался случайный тест».
         #
-        # Двадцать кадров хватает, чтобы прочитать любой отчёт ASan, и не
-        # хватает, чтобы упереться: проверено прогоном в три круга. Меньше
-        # диагностики, чем по умолчанию, но она есть, — а падающий прогон не
-        # даёт никакой.
+        # Двадцати кадров ОКАЗАЛОСЬ МАЛО. С ними прогон падает примерно один
+        # раз из четырёх — и это худший вид красноты: цель не «сломана», а
+        # «иногда сломана», и разбирать её начинают с невиновного изменения.
+        # Пяти кадров хватает: падение не воспроизводится, а прочитать по ним
+        # отчёт ASan всё ещё можно — он показывает место обращения, а не только
+        # длинную дорогу к нему.
         set_tests_properties(adapter PROPERTIES
-                             ENVIRONMENT "ASAN_OPTIONS=malloc_context_size=20")
+                             ENVIRONMENT "ASAN_OPTIONS=malloc_context_size=5")
 
         # Схемы тел запросов читаются файлами, а не вкомпилированы: путь до
         # дерева нужен затем, чтобы прогон нашёл их из любого каталога сборки.
         target_compile_definitions(pdr_adapter_tests PRIVATE PDR_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+    endif()
+
+    get_property(live_sources GLOBAL PROPERTY PDR_LIVE_TEST_SOURCES)
+    get_property(live_libraries GLOBAL PROPERTY PDR_LIVE_TEST_LIBRARIES)
+
+    if(live_sources AND userver_FOUND AND USERVER_FEATURE_TESTSUITE)
+        add_executable(pdr_live_tests ${live_sources})
+        target_link_libraries(pdr_live_tests
+                              PRIVATE ${live_libraries} userver::utest
+                                      userver::postgresql-utest)
+
+        # Базу поднимает и гасит штатный контур, а не conftest и не docker
+        # compose. Адрес её при этом он не сообщает: `ClusterLocal` ждёт
+        # POSTGRES_TEST_DSN, а окружение прогона его не несёт — поэтому строка
+        # собирается здесь из того, чем контур поднимает базу по умолчанию.
+        userver_add_utest(NAME pdr_live_tests DATABASES postgresql
+                          TEST_ENV
+                          "POSTGRES_TEST_DSN=postgresql://testsuite@localhost:15433/postgres"
+                          "ASAN_OPTIONS=malloc_context_size=5")
     endif()
 endif()

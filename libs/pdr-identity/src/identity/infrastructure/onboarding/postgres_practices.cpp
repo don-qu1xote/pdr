@@ -21,7 +21,8 @@ const userver::storages::postgres::Query kOpen{
 };
 
 const userver::storages::postgres::Query kFind{
-    "SELECT tenant_id, visibility, created_at, visibility_asked_at, visibility_decided_at, "
+    "SELECT tenant_id::text AS tenant_id, visibility, created_at, visibility_asked_at, "
+    "visibility_decided_at, "
     "visibility_refusal FROM identity_tenant WHERE tenant_id = $1::uuid",
     userver::storages::postgres::Query::Name{"identity_tenant_visibility"},
 };

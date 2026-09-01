@@ -14,11 +14,16 @@ if(NOT userver_FOUND)
     return()
 endif()
 
+# Звенья конвейера запроса лежат здесь же, а не в сервисе: форма одна на всю
+# систему, и разложенная по процессам она перестаёт быть одной.
 add_library(pdr_http STATIC
     src/core/idempotency.cpp
+    src/infrastructure/http/dynamic_config_key_lifetime.cpp
     src/infrastructure/http/error_mapping.cpp
     src/infrastructure/http/fingerprint.cpp
     src/infrastructure/http/idempotency.cpp
+    src/infrastructure/http/middlewares/links.cpp
+    src/infrastructure/http/middlewares/pipeline.cpp
     src/infrastructure/http/problem.cpp
     src/infrastructure/http/request_id.cpp
     src/infrastructure/http/request_schema.cpp

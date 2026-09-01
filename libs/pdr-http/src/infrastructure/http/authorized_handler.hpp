@@ -1,8 +1,10 @@
 #pragma once
 
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 #include <userver/formats/json/serialize.hpp>
 #include <userver/formats/json/value.hpp>
@@ -56,12 +58,59 @@ protected:
     Callers() = default;
 };
 
-/// Базовый хендлер: ФОРМА ЗАДАНА ЗДЕСЬ И ОДИН РАЗ.
+/// ЧТО КОНВЕЙЕР УЖЕ СДЕЛАЛ ЗА РУЧКУ.
 ///
-/// Порядок шагов — разобрать, опознать, открыть область арендатора, спросить
-/// политику, позвать сценарий, отдать ответ — не выбирается наследником. Он
-/// заполняет три вопроса: чего хочет, над чем и что позвать; всё остальное уже
-/// решено, и решено одинаково для всех ручек. Иначе через полгода одна ручка
+/// Звенья штатного конвейера (`server::middlewares`) отрабатывают до того, как
+/// запрос дойдёт сюда, и складывают сделанное в `RequestContext`. Форма берёт
+/// это готовым и не повторяет работу: след запроса не считается второй раз,
+/// тело не разбирается второй раз, заголовок ключа не читается второй раз.
+///
+/// Своего конвейера в дереве нет и не будет: у штатного есть то, чего у своего
+/// не бывает, — звенья настраиваются ПО КАЖДОЙ РУЧКЕ через статический конфиг,
+/// а в комплекте уже идут трассировка, дедлайны, распаковка и учёт (ADR-0013).
+///
+/// ЧТО В ЗВЕНО НЕ ВЫНЕСЕНО. Занятие ключа повтора и открытие области арендатора
+/// остаются здесь, и по одной и той же причине: и то и другое обязано лежать
+/// внутри ОДНОЙ транзакции с самой операцией. Звено работает снаружи неё —
+/// значит, звеном это выражается только неправильно.
+struct Prepared final {
+    std::string request_id;
+
+    /// Сырое тело запроса. Схему по нему сверяет форма: схема — знание ручки,
+    /// а не конвейера.
+    std::string body;
+
+    /// Ключ повтора, если он прислан и разобрался. Обязателен ли он — решает
+    /// форма по методу: у звена нет причины знать, какой метод что меняет.
+    std::optional<pdr::http::IdempotencyKey> key;
+};
+
+/// Что ручка просит добавить к УСПЕШНОМУ ответу, кроме тела.
+///
+/// Законный случай ровно один — cookie входа. Сессию выдаёт сервер, и положить
+/// её в тело значит попросить клиента самому сделать её недоступной скрипту, а
+/// он не сможет: `HttpOnly` ставится только заголовком.
+///
+/// Статуса здесь не бывает: его выбирает форма по таблице `error_mapping.cpp`,
+/// и второго места, где он выбирается, в проекте нет. Повтор по тому же ключу
+/// эти заголовки не воспроизводит — сохраняются тело и статус, а выданная
+/// сессия у клиента уже есть с первого раза.
+using Handed = std::vector<std::pair<std::string, std::string>>;
+
+/// Кого пустили — или готовый отказ.
+///
+/// Отказ здесь уже в форме ответа, а не доменной ошибкой: «кто ты» и «тебе
+/// нельзя» — разные новости и разные ответы (401 и 403), и родом `core::Error`
+/// это не выражается.
+struct Admission final {
+    std::optional<Caller> caller;
+    Problem refusal;
+};
+
+/// ФОРМА ЗАПРОСА: ПОРЯДОК ШАГОВ ЗАДАН ЗДЕСЬ И ОДИН РАЗ.
+///
+/// Разобрать, пустить, открыть область арендатора, позвать сценарий, отдать
+/// ответ — не выбирается наследником. Иначе через полгода одна ручка
 /// спрашивает политику до открытия области, другая после, третья забывает
 /// заголовки безопасности на пути отказа, и это выясняется по жалобе.
 ///
@@ -69,6 +118,12 @@ protected:
 /// application и отдаёт то, что он вернул. Если в наследнике появляется `if`
 /// про предметную область — правило забыли положить в core, и чинится это там,
 /// а не здесь.
+///
+/// НАСЛЕДНИКОВ У САМОЙ ФОРМЫ РОВНО ДВА, и оба живут в этом файле:
+/// `AuthorizedHandler` — обычный случай, и `DoorHandler` — вход. Третьего не
+/// заводят: «кого пускать» решает форма, а не ручка, и ручка, решающая это
+/// сама, — дырка в правах, а не гибкость. Второй `DoorHandler` в дереве ловит
+/// `scripts/check_http_form.py`.
 ///
 /// Два параметра шаблона вместо своего слоя поверх userver:
 ///
@@ -80,66 +135,75 @@ protected:
 ///     область (`db::ScopedTenantContext`) сам; на проде это транзакция
 ///     Postgres, в проверке — фейковая сессия с той же политикой.
 template<class Request, class Session>
-class AuthorizedHandler {
+class ServedHandler {
 public:
     using Database = application::ports::TenantAwareRepository<Session>;
     using Keys = pdr::http::ports::IdempotencyKeys<Session>;
 
-    AuthorizedHandler(const AuthorizedHandler&) = delete;
-    AuthorizedHandler& operator=(const AuthorizedHandler&) = delete;
+    ServedHandler(const ServedHandler&) = delete;
+    ServedHandler& operator=(const ServedHandler&) = delete;
 
-    virtual ~AuthorizedHandler() = default;
+    virtual ~ServedHandler() = default;
 
-    /// Весь путь запроса. Возвращает тело ответа и проставляет статус и
-    /// заголовки в ответе запроса.
-    std::string Serve(Request& request) const {
+    /// Весь путь запроса, когда конвейер уже отработал. Возвращает тело ответа
+    /// и проставляет статус и заголовки в ответе запроса.
+    std::string Serve(const Request& request, const Prepared& done) const {
         auto& response = request.GetHttpResponse();
         ApplySecurityHeaders(response);
+        response.SetHeader(std::string{kRequestIdHeader}, done.request_id);
 
-        const std::string request_id = RequestIdOf(request);
-        response.SetHeader(std::string{kRequestIdHeader}, request_id);
-
-        const Occasion occasion{request.GetRequestPath(), request_id};
+        const Occasion occasion{request.GetRequestPath(), done.request_id};
 
         std::string field;
-        const auto body = schema_.Parse(request.RequestBody(), field);
+        const auto body = schema_.Parse(done.body, field);
         if (!body.HasValue()) {
             return Refuse(response, Malformed(body.Failure(), field, occasion));
         }
 
-        const auto where = callers_.Where();
-        const auto who = callers_.Identify(request.GetCookie(std::string{where.cookie}),
-                                           request.GetHeader(std::string{where.header}));
-        if (!who.HasValue()) {
-            return Refuse(response, Unidentified(who.Failure(), occasion));
+        const auto admitted = Admit(request, body.Value(), occasion);
+        if (!admitted.caller.has_value()) {
+            return Refuse(response, admitted.refusal);
         }
-        const Caller& caller = who.Value();
-
-        const auto decision =
-            permissions_.Decide(caller.tenant, caller.actor, Wants(), About(caller, body.Value()));
-        if (!decision.allowed) {
-            return Refuse(response, AsProblem(decision, occasion));
-        }
+        const Caller& caller = *admitted.caller;
 
         if (!pdr::http::Mutating(Translate(request.GetMethod()))) {
-            return Answer(
-                response, Plain(caller, body.Value(), request_id), occasion, std::nullopt);
+            return Answer(response,
+                          Plain(request, caller, body.Value(), done.request_id),
+                          occasion,
+                          std::nullopt);
         }
 
-        const auto key =
-            pdr::http::IdempotencyKey::Parse(request.GetHeader(std::string{kIdempotencyKeyHeader}));
-        if (!key.HasValue()) {
+        if (!done.key.has_value()) {
             return Refuse(response, KeyRequired(kIdempotencyKeyHeader, occasion));
         }
 
         return Answer(response,
-                      Guarded(caller,
+                      Guarded(request,
+                              caller,
                               body.Value(),
-                              request_id,
-                              key.Value(),
-                              FingerprintOf(request.RequestBody())),
+                              done.request_id,
+                              *done.key,
+                              FingerprintOf(done.body)),
                       occasion,
-                      key.Value());
+                      done.key);
+    }
+
+    /// Тот же путь БЕЗ конвейера: ручка собирает `Prepared` сама.
+    ///
+    /// Остаётся ради проверки хендлера без поднятого сервиса — она даёт форму
+    /// за миллисекунды и без базы, и это правильно. В живом процессе зовётся
+    /// перегрузка выше: мимо этой проходит всё, что даёт конвейер, — дедлайны,
+    /// распаковка, учёт.
+    std::string Serve(const Request& request) const {
+        Prepared done{RequestIdOf(request), std::string{request.RequestBody()}, std::nullopt};
+
+        const auto key =
+            pdr::http::IdempotencyKey::Parse(request.GetHeader(std::string{kIdempotencyKeyHeader}));
+        if (key.HasValue()) {
+            done.key = key.Value();
+        }
+
+        return Serve(request, done);
     }
 
 protected:
@@ -150,30 +214,37 @@ protected:
         const userver::formats::json::Value& body;
         const std::string& request_id;
         Session& session;
+
+        /// Куда сложить заголовки успешного ответа. Пусто у всех ручек, кроме
+        /// двери: ей нужно выдать cookie сессии.
+        Handed& handed;
+
+        /// Часы — портом, а не системным временем: сценарий, спрашивающий
+        /// «сейчас» у операционной системы, не проверяется на протухание.
+        const application::ports::Clock& clock;
+
+        /// Сам запрос — ради транспортных фактов, которых в разобранном теле
+        /// нет и быть не может: чем и откуда пришли, какое удостоверение
+        /// принесли. ТЕЛО ОТСЮДА НЕ ЧИТАЮТ: оно уже разобрано и лежит в `body`,
+        /// а второй разбор — это второй набор правил.
+        const Request& request;
     };
 
-    AuthorizedHandler(const Callers& callers,
-                      Database& database,
-                      const identity::Contract& permissions,
-                      Keys& keys,
-                      const application::ports::Clock& clock,
-                      pdr::http::KeyLifetime lifetime,
-                      RequestSchema schema) noexcept
-        : callers_{callers},
-          database_{database},
-          permissions_{permissions},
+    ServedHandler(Database& database,
+                  Keys& keys,
+                  const application::ports::Clock& clock,
+                  pdr::http::KeyLifetime lifetime,
+                  RequestSchema schema) noexcept
+        : database_{database},
           keys_{keys},
           clock_{clock},
           lifetime_{lifetime},
           schema_{std::move(schema)} {}
 
-    /// Чего эта ручка хочет. Спрашивается у политики, а не решается здесь.
-    virtual identity::Action Wants() const = 0;
-
-    /// Над чем. Собирается из уже разобранного тела и из того, кто пришёл;
-    /// хождений в базу здесь нет — до области арендатора ещё не дошли.
-    virtual identity::Resource About(const Caller& caller,
-                                     const userver::formats::json::Value& body) const = 0;
+    /// КОГО ПУСКАТЬ. Решает форма — один из двух её наследников, — а не ручка.
+    virtual Admission Admit(const Request& request,
+                            const userver::formats::json::Value& body,
+                            const Occasion& occasion) const = 0;
 
     /// Позвать сценарий. ЕДИНСТВЕННОЕ, что хендлер делает, — и он тут зовёт.
     virtual core::Result<userver::formats::json::Value> Run(const Call& call) const = 0;
@@ -187,6 +258,7 @@ private:
     struct Served final {
         pdr::http::ClaimOutcome outcome{pdr::http::ClaimOutcome::kTaken};
         pdr::http::SavedAnswer answer;
+        Handed handed;
     };
 
     /// Отказ, доведённый до конца области арендатора.
@@ -207,13 +279,16 @@ private:
     };
 
     /// Обращение, которое ничего не меняет: ключ ему не нужен.
-    core::Result<Served> Plain(const Caller& caller,
+    core::Result<Served> Plain(const Request& request,
+                               const Caller& caller,
                                const userver::formats::json::Value& body,
                                const std::string& request_id) const {
         try {
             return database_.InTenant(caller.tenant, [&](Session& session) {
-                return Served{pdr::http::ClaimOutcome::kTaken,
-                              Produce(Call{caller, body, request_id, session})};
+                Served served{};
+                served.answer = Produce(
+                    Call{caller, body, request_id, session, served.handed, clock_, request});
+                return served;
             });
         } catch (const Rollback& rolled) {
             return rolled.refusal;
@@ -228,7 +303,8 @@ private:
     /// (повтор выполнит её второй раз), либо ключ занят без операции (повтор не
     /// выполнит её никогда). Здесь падение уносит и то и другое, и клиент
     /// повторяет с чистого места.
-    core::Result<Served> Guarded(const Caller& caller,
+    core::Result<Served> Guarded(const Request& request,
+                                 const Caller& caller,
                                  const userver::formats::json::Value& body,
                                  const std::string& request_id,
                                  const pdr::http::IdempotencyKey& key,
@@ -240,12 +316,14 @@ private:
                 const auto claim =
                     Or(keys_.Take(session, caller.tenant, key, fingerprint, expires_at));
                 if (claim.outcome != pdr::http::ClaimOutcome::kTaken) {
-                    return Served{claim.outcome, claim.answer};
+                    return Served{claim.outcome, claim.answer, Handed{}};
                 }
 
-                const auto answer = Produce(Call{caller, body, request_id, session});
-                Or(keys_.Complete(session, caller.tenant, key, answer));
-                return Served{pdr::http::ClaimOutcome::kTaken, answer};
+                Served served{};
+                served.answer = Produce(
+                    Call{caller, body, request_id, session, served.handed, clock_, request});
+                Or(keys_.Complete(session, caller.tenant, key, served.answer));
+                return served;
             });
         } catch (const Rollback& rolled) {
             return rolled.refusal;
@@ -294,6 +372,9 @@ private:
         response.SetStatus(
             static_cast<userver::server::http::HttpStatus>(served.Value().answer.status));
         response.SetHeader(std::string{"Content-Type"}, std::string{"application/json"});
+        for (const auto& [name, value] : served.Value().handed) {
+            response.SetHeader(name, value);
+        }
         if (served.Value().outcome == pdr::http::ClaimOutcome::kReplay) {
             response.SetHeader(std::string{kReplayedHeader}, std::string{"true"});
         }
@@ -309,13 +390,116 @@ private:
 
     static constexpr int kOk = 200;
 
-    const Callers& callers_;
     Database& database_;
-    const identity::Contract& permissions_;
     Keys& keys_;
     const application::ports::Clock& clock_;
     pdr::http::KeyLifetime lifetime_;
     RequestSchema schema_;
+};
+
+/// ОБЫЧНАЯ РУЧКА: пришедшего опознают, политику спрашивают.
+///
+/// Наследник заполняет три вопроса — чего хочет, над чем и что позвать; всё
+/// остальное уже решено, и решено одинаково для всех ручек.
+template<class Request, class Session>
+class AuthorizedHandler : public ServedHandler<Request, Session> {
+    using Form = ServedHandler<Request, Session>;
+
+public:
+    using Database = typename Form::Database;
+    using Keys = typename Form::Keys;
+
+protected:
+    using Call = typename Form::Call;
+
+    AuthorizedHandler(const Callers& callers,
+                      Database& database,
+                      const identity::Contract& permissions,
+                      Keys& keys,
+                      const application::ports::Clock& clock,
+                      pdr::http::KeyLifetime lifetime,
+                      RequestSchema schema) noexcept
+        : Form{database, keys, clock, lifetime, std::move(schema)},
+          callers_{callers},
+          permissions_{permissions} {}
+
+    /// Чего эта ручка хочет. Спрашивается у политики, а не решается здесь.
+    virtual identity::Action Wants() const = 0;
+
+    /// Над чем. Собирается из уже разобранного тела и из того, кто пришёл;
+    /// хождений в базу здесь нет — до области арендатора ещё не дошли.
+    virtual identity::Resource About(const Caller& caller,
+                                     const userver::formats::json::Value& body) const = 0;
+
+private:
+    Admission Admit(const Request& request,
+                    const userver::formats::json::Value& body,
+                    const Occasion& occasion) const final {
+        const auto where = callers_.Where();
+        const auto who = callers_.Identify(request.GetCookie(std::string{where.cookie}),
+                                           request.GetHeader(std::string{where.header}));
+        if (!who.HasValue()) {
+            return Admission{std::nullopt, Unidentified(who.Failure(), occasion)};
+        }
+
+        const Caller& caller = who.Value();
+        const auto decision =
+            permissions_.Decide(caller.tenant, caller.actor, Wants(), About(caller, body));
+        if (!decision.allowed) {
+            return Admission{std::nullopt, AsProblem(decision, occasion)};
+        }
+
+        return Admission{caller, Problem{}};
+    }
+
+    const Callers& callers_;
+    const identity::Contract& permissions_;
+};
+
+/// ДВЕРЬ. Имя нарочно подозрительное: тут не спрашивают политику.
+///
+/// Наследник у неё ровно один на всю систему — вход. Требовать удостоверение у
+/// того, кто пришёл ЗА удостоверением, значит не пускать никого никогда:
+/// сессии у этого запроса ещё нет, её создаёт он сам.
+///
+/// Арендатор при этом известен и обязателен — он из адреса кабинета, а не из
+/// cookie: почта уникальна ВНУТРИ арендатора, и «войти вообще» не выражается.
+/// Человека же нет: им пришедший станет по итогу этого самого запроса, поэтому
+/// `Caller::actor` у двери пуст, и читать его сценарию нечего.
+///
+/// Второй наследник ловится `scripts/check_http_form.py`: дверь, заведённая
+/// «на время» у второй ручки, — это ручка без прав, о которой никто не помнит.
+template<class Request, class Session>
+class DoorHandler : public ServedHandler<Request, Session> {
+    using Form = ServedHandler<Request, Session>;
+
+public:
+    using Database = typename Form::Database;
+    using Keys = typename Form::Keys;
+
+protected:
+    using Call = typename Form::Call;
+
+    using Form::Form;
+
+    /// Чей это кабинет. Отказ означает, что адрес не называет арендатора —
+    /// и до сценария дело не доходит.
+    virtual core::Result<core::TenantId> Where(const Request& request) const = 0;
+
+private:
+    Admission Admit(const Request& request,
+                    const userver::formats::json::Value& body,
+                    const Occasion& occasion) const final {
+        static_cast<void>(body);
+
+        const auto tenant = Where(request);
+        if (!tenant.HasValue()) {
+            return Admission{std::nullopt, Unidentified(tenant.Failure(), occasion)};
+        }
+
+        return Admission{Caller{tenant.Value(), core::PersonId::FromBytes(core::IdBytes{})},
+                         Problem{}};
+    }
 };
 
 }  // namespace pdr::infrastructure::http

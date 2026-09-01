@@ -14,6 +14,7 @@
 #include <userver/logging/log.hpp>
 #include <userver/storages/postgres/component.hpp>
 #include <userver/storages/postgres/dist_lock_strategy.hpp>
+#include <userver/testsuite/testsuite_support.hpp>
 #include <userver/tracing/span.hpp>
 #include <userver/utils/statistics/labels.hpp>
 #include <userver/utils/statistics/storage.hpp>
@@ -87,7 +88,8 @@ PeriodicJobComponentBase::PeriodicJobComponentBase(
       storage_{tenants_},
       ledger_{storage_},
       journal_{unscoped_},
-      runner_{ledger_, journal_, clock_} {
+      runner_{ledger_, journal_, clock_},
+      tasks_{context.FindComponent<userver::components::TestsuiteSupport>().GetTestsuiteTasks()} {
     const auto settings = SettingsOf(settings_, job_);
     const auto lock_settings = AsLockSettings(settings);
 
@@ -114,6 +116,9 @@ PeriodicJobComponentBase::PeriodicJobComponentBase(
 }
 
 PeriodicJobComponentBase::~PeriodicJobComponentBase() {
+    if (tasks_.IsEnabled()) {
+        tasks_.UnregisterTask(job_.Value());
+    }
     statistics_.Unregister();
     watch_.Stop();
     worker_->Stop();
@@ -126,7 +131,37 @@ void PeriodicJobComponentBase::OnAllComponentsLoaded() {
                  {std::chrono::duration_cast<std::chrono::milliseconds>(settings.Period()),
                   {userver::utils::PeriodicTask::Flags::kChaotic}},
                  [this] { Watch(); });
+
+    if (tasks_.IsEnabled()) {
+        tasks_.RegisterTask(job_.Value(), [this] { RunOnce(); });
+        return;
+    }
+
     worker_->Start();
+}
+
+/// ПОД КОНТУРОМ ЗАДАНИЕ ХОДИТ ПО ТРЕБОВАНИЮ, А НЕ ПО РАСПИСАНИЮ.
+///
+/// Воркер, крутящийся сам по себе, выполняет работу ПОСРЕДИ проверки: набор
+/// просит прогон, а след по этому ключу уже поставлен — и точка контроля не
+/// срабатывает. Тест при этом не «иногда падает», а падает по-разному в разные
+/// дни, потому что зависит от того, кто успел первым.
+///
+/// Поэтому под контуром запускается только наблюдающее занятие (метрики), а
+/// рабочее зовёт сам набор. Что блокировка работает и что двое не сделают одно
+/// действие дважды, проверяется на живой базе двумя процессами
+/// (scripts/check_jobs.py) — это другой вопрос и другая проверка.
+void PeriodicJobComponentBase::RunOnce() {
+    const auto settings = settings_.For(job_);
+    if (!settings.HasValue()) {
+        throw std::runtime_error{"jobs: " + settings.Failure().Detail()};
+    }
+
+    auto span = userver::tracing::Span::MakeRootSpan(job_.Value());
+    const auto record = runner_.Execute(job_, settings.Value(), work_, by_request_);
+    span.AddTag("jobs_outcome", std::string{Name(record.Result())});
+    span.AddTag("jobs_produced", record.Produced());
+    span.AddTag("jobs_repeated", record.Repeated());
 }
 
 void PeriodicJobComponentBase::Work() {

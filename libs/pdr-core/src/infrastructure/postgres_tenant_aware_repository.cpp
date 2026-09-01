@@ -8,7 +8,7 @@ PostgresTenantAwareRepository::PostgresTenantAwareRepository(db::TenantContext& 
 void PostgresTenantAwareRepository::Run(const core::TenantId& tenant, const Work& work) {
     auto scope = context_.Open(tenant);
 
-    work(scope.Session());
+    work(scope);
 
     scope.Commit();
 }

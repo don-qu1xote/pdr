@@ -11,6 +11,7 @@ add_library(pdr_jobs STATIC
     src/jobs/core/job_name.cpp
     src/jobs/core/job_settings.cpp
     src/jobs/core/run_record.cpp
+    src/jobs/core/system_tenant.cpp
 )
 target_include_directories(pdr_jobs
     PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/contract"
@@ -31,8 +32,11 @@ if(userver_FOUND)
     )
     target_include_directories(pdr_jobs_infrastructure
                                PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    # pdr_infrastructure — настоящие часы: механизм заданий спрашивает время у
+    # порта, а реализацию порта берёт отсюда.
     target_link_libraries(pdr_jobs_infrastructure
-                          PUBLIC pdr_jobs pdr_postgres userver::postgresql)
+                          PUBLIC pdr_jobs pdr_postgres pdr_infrastructure pdr_clock
+                                 userver::postgresql)
 endif()
 
 if(PDR_BUILD_TESTS)

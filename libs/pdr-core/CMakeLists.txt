@@ -54,6 +54,15 @@ if(userver_FOUND)
     target_link_libraries(pdr_postgres PUBLIC pdr_core pdr_application userver::postgresql)
 endif()
 
+# Часы, которые умеет двигать контур. Отдельная цель, а не часть
+# pdr_infrastructure: та обязана собираться БЕЗ userver (джоба
+# domain-without-userver), а подмена времени — штатный механизм userver.
+if(userver_FOUND)
+    add_library(pdr_clock STATIC src/infrastructure/userver_clock.cpp)
+    target_include_directories(pdr_clock PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_link_libraries(pdr_clock PUBLIC pdr_core pdr_application userver::core)
+endif()
+
 # Секреты из штатного secdist. Отдельная цель по той же причине, что pdr_crypto:
 # она требует userver, а pdr_infrastructure линкуют contract-тесты.
 if(userver_FOUND)
@@ -88,8 +97,16 @@ if(PDR_BUILD_TESTS)
     # УРОВЕНЬ CONTRACT на настоящем источнике случайности. Цель собирается
     # только там, где есть userver: криптографический источник берётся у него.
     if(userver_FOUND)
-        pdr_adapter_test_sources(tests/crypto_secret_generator_test.cpp)
-        pdr_adapter_test_libraries(pdr_crypto pdr_testing)
+        pdr_adapter_test_sources(tests/crypto_secret_generator_test.cpp
+                                 tests/userver_clock_test.cpp)
+        pdr_adapter_test_libraries(pdr_crypto pdr_clock pdr_testing)
+
+        # ВТОРАЯ ИНСТАНЦИАЦИЯ contract-набора хранилища — против настоящего
+        # адаптера и живой базы. Первая гоняется на фейке и не требует ничего;
+        # до появления процесса вторая была недостижима, потому что набор идёт
+        # в сопрограммах userver.
+        pdr_live_test_sources(tests/postgres_repository_contract_test.cpp)
+        pdr_live_test_libraries(pdr_postgres pdr_testing)
     endif()
 
     # Отрицательные тесты: эти цели ОБЯЗАНЫ не собираться. Без них «перепутать

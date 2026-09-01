@@ -87,6 +87,7 @@ if(userver_FOUND)
         src/identity/infrastructure/access/postgres_access_journal.cpp
         src/identity/infrastructure/access/postgres_birth_dates.cpp
         src/identity/infrastructure/access/postgres_guardian_consents.cpp
+        src/identity/infrastructure/access/postgres_guardianships.cpp
         src/identity/infrastructure/access/postgres_role_repository.cpp
         src/identity/infrastructure/audit/postgres_access_log.cpp
         src/identity/infrastructure/onboarding/postgres_accounts.cpp
@@ -98,7 +99,9 @@ if(userver_FOUND)
         src/identity/infrastructure/auth/postgres_one_time_tokens.cpp
         src/identity/infrastructure/auth/postgres_participant_directory.cpp
         src/identity/infrastructure/auth/postgres_session_store.cpp
+        src/identity/infrastructure/auth/offloaded_password_hasher.cpp
         src/identity/infrastructure/auth/sha256_digests.cpp
+        src/identity/infrastructure/component/permissions_component.cpp
     )
     # PUBLIC, а не PRIVATE: цель проверок адаптеров (pdr_adapter_tests) включает
     # заголовки отсюда. Наружу это ничего не открывает — чужой контекст с этой
@@ -107,7 +110,8 @@ if(userver_FOUND)
     target_include_directories(pdr_identity_infrastructure
                                PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_link_libraries(pdr_identity_infrastructure
-                          PUBLIC pdr_identity pdr_postgres pdr_crypto userver::postgresql)
+                          PUBLIC pdr_identity pdr_postgres pdr_crypto pdr_infrastructure
+                                 pdr_clock userver::postgresql)
 
     # Argon2id — отдельной целью, потому что ей нужна libargon2, а её в системе
     # может не быть. Своей схемы хеширования паролей в дереве нет и не будет:
@@ -129,6 +133,25 @@ if(userver_FOUND)
                               PUBLIC pdr_identity PRIVATE "${PDR_ARGON2_LIBRARY}")
     else()
         message(STATUS "pdr: libargon2 не найдена, счёт паролей пропущен")
+    endif()
+
+    # Транспорт контекста: опознание пришедшего и ручка входа.
+    #
+    # Отдельная цель, потому что она зависит от формы HTTP (pdr_http), а форма
+    # зависит от публичного контракта identity. Цикла тут нет: контракт не знает
+    # ни про форму, ни про эту цель. Собирается только со счётом паролей — вход
+    # без него не бывает, а подменять Argon2id «чем-нибудь попроще» запрещено
+    # (ADR-0013).
+    if(TARGET pdr_identity_passwords)
+        add_library(pdr_identity_http STATIC
+            src/identity/infrastructure/http/session_callers.cpp
+            src/identity/infrastructure/http/sign_in_operation.cpp
+        )
+        target_include_directories(pdr_identity_http
+                                   PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+        target_link_libraries(pdr_identity_http
+                              PUBLIC pdr_identity_infrastructure pdr_identity_passwords
+                                     pdr_http pdr_http_postgres pdr_crypto)
     endif()
 endif()
 

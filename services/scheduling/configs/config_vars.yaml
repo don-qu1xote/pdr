@@ -1,0 +1,22 @@
+# Значения статического конфига, зависящие от развёртки.
+#
+# Тестовый профиль отличается ОДНОЙ переменной: контур ставит testsuite-enabled
+# в true сам (pytest_userver, хук userver_config_testsuite). В рабочем профиле
+# она false, и ручка управления прогоном не поднимается вовсе.
+# Адрес слушателей. Написан явно, а не оставлен на умолчание userver («::»):
+# умолчание требует IPv6, а он есть не во всяком контейнере — и сервис падает
+# на создании сокета, а не на настройке.
+listen-address: 0.0.0.0
+server-port: 8080
+monitor-port: 8081
+secdist-path: /etc/pdr/secrets.json
+dynamic-config-defaults: /etc/pdr/dynamic_config_fallback.json
+dynamic-config-cache: /var/cache/pdr/dynamic_config.json
+sign-in-schema: /etc/pdr/schemas/sign_in.json
+dump-root: /var/cache/pdr/dumps
+testsuite-enabled: false
+
+# Доставка значений без перезапуска. В установке выключена: сервера конфигов
+# в ней нет. Контур включает её сам и подсовывает свой источник.
+dynamic-config-updates: false
+dynamic-config-url: http://localhost:8083/configs

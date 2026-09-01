@@ -15,7 +15,8 @@ using infrastructure::db::AsTimestamptz;
 using infrastructure::db::Timestamptz;
 
 const userver::storages::postgres::Query kActiveFor{
-    "SELECT id, scope, basis, granted_by, granted_at, expires_at "
+    "SELECT id::text AS id, scope, basis, granted_by::text AS granted_by, granted_at, "
+    "expires_at "
     "FROM identity_guardian_consent "
     "WHERE guardian_id = $1::uuid AND student_id = $2::uuid AND revoked_at IS NULL",
     userver::storages::postgres::Query::Name{"identity_guardian_consent_active"},

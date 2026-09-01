@@ -47,7 +47,14 @@ import tempfile
 from pathlib import Path
 from typing import Iterator, Sequence
 
-SKIPPED_DIRS = frozenset({".git", "build", "out", "node_modules", "_deps", "__pycache__", "venv"})
+SKIPPED_DIRS = frozenset({".git", "out", "node_modules", "_deps", "__pycache__"})
+
+SKIPPED_PREFIXES = ("build", "venv", ".venv")
+"""Каталоги сборки и окружений — по приставке, а не по точному имени.
+
+build-userver и venv-utest — такие же каталоги сборки, как build и venv, а внутри
+у них чужие тесты, которые про наш контур ничего не знают и знать не обязаны.
+"""
 
 TOOLING_DIRS = ("scripts",)
 
@@ -162,6 +169,8 @@ def python_files(root: Path) -> Iterator[Path]:
     for path in sorted(root.rglob("*.py")):
         parts = path.relative_to(root).parts
         if any(part in SKIPPED_DIRS or part.startswith(".") for part in parts):
+            continue
+        if any(part.startswith(SKIPPED_PREFIXES) for part in parts):
             continue
         if parts and parts[0] in TOOLING_DIRS:
             continue
@@ -312,6 +321,13 @@ SELFTEST_FILES = {
         "def main():\n"
         "    subprocess.run(['psql', '-c', 'select 1'])\n"
     ),
+    "build-userver/venv-utest/site-packages/aiohttp/test_utils.py": (
+        "import socket\n"
+        "\n"
+        "def test_someone_elses():\n"
+        "    server = socket.socket()\n"
+        "    server.bind(('', 0))\n"
+    ),
 }
 
 SELFTEST_EXPECTED = {
@@ -328,6 +344,7 @@ SELFTEST_CLEAN = (
     "services/main/tests/test_good.py",
     "services/main/tests/test_talks_about_it.py",
     "scripts/check_something.py",
+    "build-userver",
 )
 
 
@@ -373,8 +390,14 @@ def selftest() -> int:
             print("самопроверка: пустое дерево объявлено нарушением", file=sys.stderr)
             return 1
 
-        if checked != len(SELFTEST_FILES) - len(TOOLING_DIRS):
-            print(f"самопроверка: проверено {checked} файлов", file=sys.stderr)
+        expected = sum(
+            1
+            for name in SELFTEST_FILES
+            if not name.startswith(TOOLING_DIRS)
+            and not name.startswith(SKIPPED_PREFIXES)
+        )
+        if checked != expected:
+            print(f"самопроверка: проверено {checked} файлов из {expected}", file=sys.stderr)
             return 1
 
     print(f"Самопроверка пройдена: {len(SELFTEST_EXPECTED)} нарушений найдено там, где они "

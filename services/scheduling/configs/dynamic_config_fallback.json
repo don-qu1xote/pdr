@@ -1,0 +1,30 @@
+{
+  "PDR_PERIODIC_JOBS": {
+    "heartbeat-job": {
+      "lock": "heartbeat",
+      "period_ms": 60000,
+      "attempt_ms": 30000,
+      "silence_allowed_ms": 300000,
+      "enabled": true
+    }
+  },
+  "PDR_IDEMPOTENCY": {"lifetime_hours": 24},
+  "PDR_PRODUCT_EVENTS": {"enabled": true, "retention_days": 730},
+  "PDR_SELF_ACCOUNT_AGE": 14,
+  "PDR_OWN_PAYMENTS_AGE": 16,
+  "PDR_MAJORITY_AGE": 18,
+  "PDR_GUARDIAN_HANDOVER_DAYS": 30,
+  "PDR_SIGN_IN_RULES": {
+    "memory_kib": 65536,
+    "iterations": 3,
+    "parallelism": 1,
+    "min_length": 10
+  },
+  "PDR_LOGIN_THROTTLE": {"window_minutes": 15, "per_account": 5, "per_address": 20},
+  "PDR_SIGNUP_THROTTLE": {"window_minutes": 60, "per_address": 5},
+  "PDR_AUTH_LIFETIMES": {
+    "session_hours": 720,
+    "invitation_hours": 168,
+    "password_reset_minutes": 60
+  }
+}

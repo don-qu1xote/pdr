@@ -2,10 +2,9 @@
 
 #include <string>
 
-#include <userver/storages/postgres/transaction.hpp>
-
 #include "application/ports/tenant_aware_repository.hpp"
 #include "core/types/ids.hpp"
+#include "infrastructure/db/tenant_context.hpp"
 #include "jobs/application/ports/job_ledger.hpp"
 #include "jobs/core/job_name.hpp"
 
@@ -25,7 +24,7 @@ namespace pdr::jobs {
 class PostgresJobLedger final : public ports::JobLedger {
 public:
     using Storage =
-        application::ports::TenantAwareRepository<userver::storages::postgres::Transaction>;
+        application::ports::TenantAwareRepository<infrastructure::db::ScopedTenantContext>;
 
     explicit PostgresJobLedger(Storage& storage) noexcept;
 

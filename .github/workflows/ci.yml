@@ -266,6 +266,15 @@ jobs:
           python3 scripts/check_testsuite.py --selftest
           python3 scripts/check_testsuite.py
 
+      # Колонка uuid, выбранная адаптером как есть, роняет сборку здесь — а не
+      # первый живой запрос пятисоткой. Драйвер отказывается отдавать uuid
+      # строкой в рантайме, и ни компилятор, ни unit-прогон этого не видят.
+      - name: Идентификаторы читаются текстом
+        run: |
+          set -eu
+          python3 scripts/check_uuid_reads.py --selftest
+          python3 scripts/check_uuid_reads.py
+
   migrations:
     name: Миграции, изоляция и документ схемы
     runs-on: ubuntu-latest
@@ -519,6 +528,54 @@ jobs:
       - name: Погасить вместе с томами
         if: always()
         run: make down ENV_PROFILE=ci VOLUMES=1
+
+  service:
+    name: "Первый процесс: контур и живая база"
+    runs-on: ubuntu-latest
+    needs: [changes, unit]
+    if: needs.changes.outputs.cpp == 'true' || needs.changes.outputs.deploy == 'true'
+    # Образ тот же, что в ярусе 3: сервис — это и есть userver, и собрать его
+    # без него нельзя. Ярус всё-таки второй, а не третий: это уже не «собирается
+    # ли адаптер», а «работает ли процесс», и узнавать это раз в пуш поздно.
+    container:
+      image: ghcr.io/userver-framework/ubuntu-22.04-userver:latest
+      options: --security-opt seccomp=unconfined
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      # Счёт паролей и сервер базы. Без первого не собирается вход (цель
+      # пропускается конфигурацией, а не подменяется — ADR-0013); без второго
+      # штатному контуру нечего поднимать: в образе есть только клиент.
+      - name: Библиотека счёта паролей и сервер базы
+        run: |
+          set -eu
+          apt-get update -qq --allow-releaseinfo-change
+          apt-get install -y -qq libargon2-dev postgresql-14
+
+      # Штатный контур отказывается работать от root, и правильно делает.
+      - name: Пользователь для прогона
+        run: |
+          set -eu
+          useradd --create-home --uid 2000 pdrtest
+          chown -R pdrtest "$GITHUB_WORKSPACE"
+
+      - name: Конфигурация и сборка процесса
+        run: |
+          set -eu
+          cmake -S . -B build-service -DCMAKE_BUILD_TYPE=Debug
+          cmake --build build-service --target pdr_scheduling_service pdr_live_tests --parallel
+          chown -R pdrtest build-service
+
+      # Contract-набор хранилища ВТОРОЙ раз — против настоящего адаптера, и
+      # продуктовый поток в настоящей таблице. Базу поднимает и гасит контур.
+      - name: Настоящий адаптер на живой базе
+        run: su pdrtest -c 'ctest --test-dir build-service --output-on-failure -R pdr_live_tests'
+
+      # Ручки состояния, задание с точкой контроля, вход сквозь все слои.
+      - name: Контур первого процесса
+        run: |
+          su pdrtest -c 'ctest --test-dir build-service --output-on-failure \
+            -R testsuite-pdr_scheduling_service'
 
   plans:
     name: "Живая база: планы горячих запросов"

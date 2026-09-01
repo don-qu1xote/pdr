@@ -18,10 +18,23 @@ target_include_directories(pdr_observability
 )
 target_link_libraries(pdr_observability PUBLIC pdr_core PRIVATE pdr_application)
 
-# Слоя infrastructure здесь пока нет: адаптер, кладущий запись в
-# observability_product_event, появится вместе с первым сервисом
-# (docs/architecture/first-service.md). Таблица и выгрузка уже есть — они не
-# требуют процесса, а адаптер требует.
+# Адаптер, кладущий запись в observability_product_event, и компонент, который
+# отдаёт контракт контекста процессу. Собирается только там, где есть userver:
+# без него контекст остаётся собираемым и проверяемым целиком, кроме этого слоя.
+if(userver_FOUND)
+    add_library(pdr_observability_infrastructure STATIC
+        src/observability/infrastructure/dynamic_config_stream_settings.cpp
+        src/observability/infrastructure/postgres_product_event_stream.cpp
+        src/observability/infrastructure/product_events_component.cpp
+    )
+    # PUBLIC, а не PRIVATE: цель проверок адаптеров включает заголовки отсюда.
+    # Наружу это ничего не открывает — чужой контекст с этой целью не линкуется.
+    target_include_directories(pdr_observability_infrastructure
+                               PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_link_libraries(pdr_observability_infrastructure
+                          PUBLIC pdr_observability pdr_postgres pdr_infrastructure
+                                 pdr_clock userver::postgresql)
+endif()
 
 if(PDR_BUILD_TESTS)
     pdr_unit_test_sources(tests/product_event_test.cpp)
@@ -37,4 +50,11 @@ if(PDR_BUILD_TESTS)
              COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}"
                      --target pdr_compile_fail_person_in_product_event --config $<CONFIG>)
     set_tests_properties(unit.compile_fail.person_in_product_event PROPERTIES WILL_FAIL TRUE)
+
+    # Адаптер потока на ЖИВОЙ базе: строка доходит до таблицы, вид значения не
+    # теряется, а ограничение обезличивания отвергает то же, что домен.
+    if(userver_FOUND)
+        pdr_live_test_sources(tests/postgres_product_event_stream_test.cpp)
+        pdr_live_test_libraries(pdr_observability_infrastructure)
+    endif()
 endif()

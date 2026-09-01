@@ -1,0 +1,254 @@
+# Статический конфиг первого процесса ПДР.
+#
+# НАБОР КОМПОНЕНТОВ ПОЛНЫЙ, А НЕ МИНИМАЛЬНЫЙ: production-контур userver описан
+# перечнем, и взять из него половину значит через полгода добирать вторую на
+# живом сервисе (docs/architecture/first-service.md).
+components_manager:
+    coro_pool:
+        initial_size: 500
+        max_size: 5000
+
+    task_processors:
+        # ТРИ ПРОЦЕССОРА ЗАДАЧ, и это не запас на будущее.
+        #
+        # Основной обслуживает запросы. Блокирующая работа в нём — залипший
+        # поток и невидимая метрикам задержка у всех остальных: пока поток
+        # считает Argon2id или ждёт файл, он не отдаёт ответы никому.
+        main-task-processor:
+            worker_threads: 4
+
+        # Блокирующее: файлы, счёт хеша пароля, разрешение имён.
+        fs-task-processor:
+            worker_threads: 2
+
+        # Служебное. Отдельный процессор затем, чтобы служебные ручки отвечали
+        # и тогда, когда основной занят целиком: перегруженный сервис — ровно
+        # тот случай, когда метрики нужны больше всего.
+        monitor-task-processor:
+            thread_name: mon-worker
+            worker_threads: 1
+
+    default_task_processor: main-task-processor
+
+    components:
+        # ЖУРНАЛ В JSON — НАСТРОЙКОЙ, А НЕ КОДОМ. Требование PDR-OBS-01
+        # закрывается штатным components::Logging; своего сериализатора записи
+        # в дереве нет и не будет (ADR-0013).
+        logging:
+            fs-task-processor: fs-task-processor
+            loggers:
+                default:
+                    file_path: '@stderr'
+                    level: info
+                    overflow_behavior: discard
+                    format: json
+
+        # ОДИН ЛИСТЕНЕР ДЛЯ ЛЮДЕЙ, ВТОРОЙ ДЛЯ СЛУЖБЫ.
+        #
+        # Служебные ручки не должны быть доступны снаружи ни при какой ошибке в
+        # балансере: отдельный порт делает это свойством развёртки, а не
+        # надеждой на правильный список маршрутов.
+        server:
+            listener:
+                address: $listen-address
+                port: $server-port
+                task_processor: main-task-processor
+            listener-monitor:
+                address: $listen-address
+                port: $monitor-port
+                task_processor: monitor-task-processor
+
+        # КОНВЕЙЕР ЗАПРОСА — ШТАТНЫЙ. Свои звенья дописываются в конец
+        # штатного, а не заменяют его: трассировка, дедлайны, распаковка и учёт
+        # уже там (ADR-0013).
+        default-server-middleware-pipeline-builder:
+            append:
+                - pdr-security-headers
+                - pdr-request-id
+                - pdr-request-body
+                - pdr-idempotency-key
+
+        # ДИНАМИЧЕСКИЕ ЗНАЧЕНИЯ. Умолчания живут в коде — на них сервис
+        # поднимается, даже когда источник недоступен; файл рядом хранит их
+        # снимок, а fs-cache-path — последнее доставленное значение, чтобы
+        # перезапуск не откатывал настройку на умолчание.
+        dynamic-config:
+            defaults-path: $dynamic-config-defaults
+            fs-cache-path: $dynamic-config-cache
+            updates-enabled: $dynamic-config-updates
+
+        # ОБНОВЛЯТОР ЕСТЬ, но в установке выключен: сервера конфигов в ней не
+        # существует, и включать доставку неоткуда. Выключен он ОДНОЙ
+        # переменной, а не отсутствием компонента, — иначе «доставить значение
+        # без перезапуска» осталось бы непроверенным до появления сервера.
+        # Контур включает его и подсовывает свой источник, поэтому смена
+        # значения на живом сервисе проверяется уже сейчас.
+        dynamic-config-client:
+            load-enabled: $dynamic-config-updates
+            config-url: $dynamic-config-url
+            http-retries: 5
+            http-timeout: 20s
+            service-name: pdr-scheduling
+
+        dynamic-config-client-updater:
+            load-enabled: $dynamic-config-updates
+            config-settings: false
+            first-update-fail-ok: true
+            full-update-interval: 1m
+            update-interval: 5s
+
+        testsuite-support: {}
+
+        # Ограничение повторяющихся записей: одна и та же ошибка в цикле
+        # заполняет диск быстрее, чем на неё успевают посмотреть.
+        logging-configurator:
+            limited-logging-enable: true
+            limited-logging-interval: 1s
+
+        # Куда штатные кэши складывают снимки. Кэшей у процесса пока нет, но
+        # компонент идёт в общем списке, и корень ему нужен заранее: иначе
+        # первый же кэш придётся заводить вместе с развёрткой.
+        dump-configurator:
+            dump-root: $dump-root
+
+        auth-checker-settings: {}
+
+        http-client: {}
+        dns-client:
+            fs-task-processor: fs-task-processor
+
+        # СЕКРЕТЫ ФАЙЛОМ, А НЕ ОКРУЖЕНИЕМ: переменные видны в /proc и попадают
+        # в дампы процесса. missing-ok: false — старт без файла обязан падать,
+        # а не «работать как будто нормально».
+        secdist:
+            provider: default-secdist-provider
+            update-period: 10s
+        # Опция environment-secrets-key здесь НЕ ЗАДАНА намеренно: она
+        # возвращает секреты в окружение, от которого мы уходим. Её отсутствие
+        # сторожит scripts/check_secrets.py.
+        default-secdist-provider:
+            config: $secdist-path
+            missing-ok: false
+
+        postgres-pdr:
+            dbalias: pdr
+            blocking_task_processor: fs-task-processor
+            dns_resolver: async
+            min_pool_size: 1
+            max_pool_size: 8
+            max_queue_size: 200
+
+        # Единственная дверь к соединениям для доменных данных.
+        tenant-context: {}
+
+        # Секреты проверяются ДО того, как сервис начнёт слушать порт.
+        secrets-guard: {}
+
+        identity-permissions: {}
+        identity-callers: {}
+        identity-sign-in:
+            schema: $sign-in-schema
+            counting-task-processor: fs-task-processor
+
+        observability-product-events: {}
+
+        # ПЕРВОЕ НАСТОЯЩЕЕ ЗАДАНИЕ. Имя блокировки, период и отведённое время
+        # лежат в динамическом конфиге PDR_PERIODIC_JOBS под именем компонента.
+        heartbeat-job:
+            cluster: postgres-pdr
+            table: jobs_lock
+            task-processor: main-task-processor
+
+        # ШТАТНЫЙ ping остаётся на месте: /health и /readiness написаны ПОВЕРХ
+        # него, а не вместо (ADR-0013).
+        handler-ping:
+            path: /ping
+            method: GET
+            task_processor: main-task-processor
+            throttling_enabled: false
+            url_trailing_slash: strict-match
+
+        handler-health:
+            path: /health
+            method: GET
+            task_processor: main-task-processor
+            throttling_enabled: false
+
+        handler-readiness:
+            path: /readiness
+            method: GET
+            task_processor: main-task-processor
+            throttling_enabled: false
+            cluster: postgres-pdr
+
+        # ЕДИНСТВЕННЫЙ маршрут: адрес, метод и то, какую операцию звать.
+        # Наследник HttpHandlerBase в сервисе один, а маршрутов — сколько нужно.
+        handler-sign-in:
+            path: /cabinet/{tenant}/sign-in
+            method: POST
+            task_processor: main-task-processor
+            operation: identity-sign-in
+
+        # СЛУЖЕБНЫЕ РУЧКИ. Каждая нужна ровно в тот час, когда её некогда
+        # дописывать.
+        handler-server-monitor:
+            path: /service/monitor
+            method: GET
+            task_processor: monitor-task-processor
+            monitor-handler: true
+        handler-dynamic-debug-log:
+            path: /service/log/dynamic-debug
+            method: GET,PUT,DELETE
+            task_processor: monitor-task-processor
+            monitor-handler: true
+        handler-log-level:
+            path: /service/log-level/{level}
+            method: GET,PUT
+            task_processor: monitor-task-processor
+            monitor-handler: true
+        handler-inspect-requests:
+            path: /service/inspect-requests
+            method: GET
+            task_processor: monitor-task-processor
+            monitor-handler: true
+        handler-jemalloc:
+            path: /service/jemalloc/prof/{command}
+            method: POST
+            task_processor: monitor-task-processor
+            monitor-handler: true
+        handler-dns-client-control:
+            path: /service/dnsclient/{command}
+            method: POST
+            task_processor: monitor-task-processor
+            monitor-handler: true
+        handler-on-log-rotate:
+            path: /service/on-log-rotate/
+            method: POST
+            task_processor: monitor-task-processor
+            monitor-handler: true
+        handler-implicit-http-options:
+            as_fallback: implicit-http-options
+            method: OPTIONS
+            task_processor: main-task-processor
+
+        # ПОД ПЕРЕГРУЗКОЙ сервис отвечает 429 ЧАСТИ запросов и продолжает
+        # обслуживать остальные. Без этого перегрузка кладёт всё целиком.
+        congestion-control: {}
+
+        # Технические метрики и системные счётчики процесса.
+        statistics-storage: {}
+        system-statistics-collector:
+            fs-task-processor: fs-task-processor
+
+        # ТОЛЬКО ПОД ТЕСТОВЫМ ПРОФИЛЕМ. Значение приходит из config_vars: в
+        # рабочем профиле там false, а контур ставит true сам. Ручка управления
+        # прогоном на живом сервисе — это чужой доступ к подмене времени и
+        # конфигов.
+        tests-control:
+            load-enabled: $testsuite-enabled
+            path: /tests/{action}
+            method: POST
+            task_processor: main-task-processor
+            testpoint-timeout: 10s
+            testpoint-url: $mockserver/testpoint
+            throttling_enabled: false

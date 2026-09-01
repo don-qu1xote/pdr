@@ -12,6 +12,8 @@ std::string_view Name(UnscopedReason reason) noexcept {
             return "schema_migration";
         case UnscopedReason::kPlatformWideIdentity:
             return "platform_wide_identity";
+        case UnscopedReason::kReadinessProbe:
+            return "readiness_probe";
         case UnscopedReason::kOperatorExport:
             return "operator_export";
     }

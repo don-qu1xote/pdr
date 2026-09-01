@@ -23,7 +23,14 @@
   ставится один раз до всякой развилки;
 * сделать след запроса глобальным. Изменяемая переменная уровня файла или
   `thread_local` под именем со словом request/trace — это ровно тот способ,
-  которым след протекает между запросами; задача называет его прямо.
+  которым след протекает между запросами; задача называет его прямо;
+* завести ВТОРУЮ ДВЕРЬ. `DoorHandler` — форма для запроса, у которого сессии ещё
+  нет: она не спрашивает политику. Наследник у неё ровно один на систему — вход.
+  Второй означает ручку без прав, о которой через полгода никто не помнит;
+* завести ВТОРОЙ МАРШРУТ-НАСЛЕДНИК. Наследник `HttpHandlerBase`, который зовёт
+  форму, в процессе ровно один: маршрутов сколько угодно, а места, где решают,
+  что делать с запросом, — одно. Два таких наследника расходятся в первый же
+  месяц: один спросит политику до открытия области арендатора, другой после.
 
 Схемы тел проверяются заодно: `schemas/*.json` обязан быть разбираемым JSON со
 свойствами — схема, которую разберут только в проде, ничем не лучше её
@@ -54,6 +61,13 @@ REQUEST_ID = HTTP / "request_id.hpp"
 
 SOURCES = ("*.hpp", "*.cpp")
 SCHEMAS = "schemas"
+
+SERVICES = Path("services")
+SKIPPED_DIRS = frozenset({".git", "out", "node_modules", "_deps", "__pycache__"})
+SKIPPED_PREFIXES = ("build", "venv", ".venv")
+
+DOOR_HEIR = re.compile(r"public\s+(?:\w+::)*DoorHandler\s*<")
+CALLS_THE_FORM = re.compile(r"\.Serve\s*\(\s*request")
 
 MEMBERS = ("type", "title", "status", "detail", "instance", "request_id")
 
@@ -202,6 +216,68 @@ def check_request_id(root: Path) -> list[str]:
     return violations
 
 
+def tree_sources(root: Path) -> list[Path]:
+    """Исходники всего дерева, кроме каталогов сборки и окружений."""
+    found: list[Path] = []
+    for pattern in SOURCES:
+        for path in sorted(root.rglob(pattern)):
+            parts = path.relative_to(root).parts
+            if any(part in SKIPPED_DIRS or part.startswith(".") for part in parts):
+                continue
+            if any(part.startswith(SKIPPED_PREFIXES) for part in parts):
+                continue
+            found.append(path)
+    return found
+
+
+def check_one_door(root: Path) -> list[str]:
+    """Дверь одна: наследник формы, которая не спрашивает политику."""
+    heirs = [
+        path.relative_to(root)
+        for path in tree_sources(root)
+        if path.relative_to(root) != HANDLER and DOOR_HEIR.search(code_of(path.read_text(
+            encoding="utf-8", errors="replace"
+        )))
+    ]
+    if len(heirs) <= 1:
+        return []
+
+    names = ", ".join(str(path) for path in heirs)
+    return [
+        f"дверей стало {len(heirs)}: {names}. `DoorHandler` не спрашивает политику, и "
+        f"наследник у неё ровно один — вход. Второй — это ручка без прав"
+    ]
+
+
+def check_one_route(root: Path) -> list[str]:
+    """Форму в процессе зовут из одного места.
+
+    Считаются файлы, а не классы: объявление наследника и его тело лежат в
+    разных файлах, и по одному файлу «наследник, зовущий форму» не собрать.
+    Место вызова при этом ровно одно и там же, где наследник, — по нему и
+    считаем.
+    """
+    violations: list[str] = []
+    services = root / SERVICES
+    if not services.is_dir():
+        return violations
+
+    for service in sorted(entry for entry in services.iterdir() if entry.is_dir()):
+        callers = [
+            path.relative_to(root)
+            for path in tree_sources(service)
+            if CALLS_THE_FORM.search(code_of(path.read_text(encoding="utf-8", errors="replace")))
+        ]
+        if len(callers) > 1:
+            names = ", ".join(str(path) for path in callers)
+            violations.append(
+                f"{service.relative_to(root)}: форму зовут из {len(callers)} мест: {names}. "
+                f"Маршрутов сколько угодно, а место, где решают, что делать с запросом, — одно: "
+                f"второе разойдётся с первым в первый же месяц"
+            )
+    return violations
+
+
 def check_schemas(root: Path) -> tuple[list[str], int]:
     """Схемы тел разбираются здесь, а не в проде."""
     violations = []
@@ -229,6 +305,8 @@ def check(root: Path) -> tuple[list[str], int]:
     violations.extend(check_one_format(root))
     violations.extend(check_security(root))
     violations.extend(check_request_id(root))
+    violations.extend(check_one_door(root))
+    violations.extend(check_one_route(root))
     schemas, counted = check_schemas(root)
     violations.extend(schemas)
     return violations, counted
@@ -250,6 +328,16 @@ SELFTEST_TREE = {
     HTTP / "cancel_lesson_handler.cpp": '/// Своего формата тут нет: ни "error", ни "message".\n',
     Path("libs/pdr-http/tests/schemas/broken.json"): "{ это не json\n",
     Path("libs/pdr-http/tests/schemas/empty.json"): '{"type": "object"}\n',
+    Path("libs/pdr-identity/src/identity/infrastructure/http/sign_in.hpp"):
+        "class SignInDoor final : public infrastructure::http::DoorHandler<Request, Session> {};\n",
+    Path("libs/pdr-billing/src/billing/infrastructure/http/pay.hpp"):
+        "class PayDoor final : public infrastructure::http::DoorHandler<Request, Session> {};\n",
+    Path("services/main/src/route.cpp"):
+        "std::string Route::Handle() const { return form_.Serve(request, done); }\n",
+    Path("services/main/src/second_route.cpp"):
+        "std::string Another::Handle() const { return form_.Serve(request, done); }\n",
+    Path("services/main/src/health.hpp"):
+        "class Health final : public server::handlers::HttpHandlerBase {};\n",
 }
 
 SELFTEST_EXPECTED = (
@@ -262,6 +350,8 @@ SELFTEST_EXPECTED = (
     "берут как есть",
     "не разбирается как JSON",
     "нет properties",
+    "дверей стало 2",
+    "форму зовут из 2 мест",
 )
 
 
@@ -287,6 +377,8 @@ def selftest() -> int:
             return 1
 
         (root / HTTP / "book_lesson_handler.cpp").unlink()
+        (root / "libs/pdr-billing/src/billing/infrastructure/http/pay.hpp").unlink()
+        (root / "services/main/src/second_route.cpp").unlink()
         (root / REQUEST_ID).write_text(
             "bool IsUsableRequestId(std::string_view) noexcept;\n", encoding="utf-8"
         )
@@ -294,8 +386,11 @@ def selftest() -> int:
         if any("cancel_lesson_handler" in line for line in clean):
             print("самопроверка: комментарий о запрете объявлен нарушением", file=sys.stderr)
             return 1
+        if any("health.hpp" in line for line in clean):
+            print("самопроверка: ручка состояния объявлена вторым маршрутом", file=sys.stderr)
+            return 1
         for fragment in ("назван мимо таблицы", "второй формат", "лежит глобально",
-                         "берут как есть"):
+                         "берут как есть", "дверей стало", "форму зовут из"):
             if any(fragment in line for line in clean):
                 print(f"самопроверка: чистый файл объявлен нарушением «{fragment}»",
                       file=sys.stderr)

@@ -26,6 +26,13 @@ system_clock::now() и подобное. Часы приходят портом 
 библиотеки (libs/pdr-core, libs/pdr-events, libs/pdr-testing) не зависят от
 контекстов вовсе: зависимость направлена в одну сторону.
 
+ТРЕТЬЯ ГРАНИЦА — ПРОЦЕСС (services/). Процесс СОБИРАЕТ контексты, а не лезет в
+них: ему видны их публичные контракты и сборочный слой — <контекст>/infrastructure/**,
+где живут компоненты и адаптеры. Ядро и сценарии чужого контекста (core/,
+application/) для него не существуют, и это не формальность: сборка сценария из
+адаптеров — знание самого контекста, а доменных правил в services/ не бывает
+вовсе (docs/architecture/first-service.md).
+
 Каталоги compile_fail/ пропускаются: в них лежит заведомо неправильный код,
 который обязан не собираться, и проверяет его компилятор.
 
@@ -57,6 +64,16 @@ LAYERS = ("core", "application", "infrastructure")
 LIBRARY_PREFIX = "pdr-"
 PLATFORM_LIBRARIES = frozenset({"pdr-core", "pdr-events", "pdr-testing"})
 CONTRACT_HEADER = "contract.hpp"
+
+SERVICES_ROOT = "services"
+TESTS_DIR = "tests"
+
+ASSEMBLY_LAYER = "infrastructure"
+"""Слой чужого контекста, который процессу виден: компоненты и адаптеры.
+
+`core` и `application` в него не входят намеренно: сборка сценария из адаптеров —
+знание самого контекста, а доменных правил в процессе не бывает вовсе.
+"""
 
 PQ_ROOTS = frozenset({"pqxx", "libpq"})
 PQ_HEADERS = frozenset({"libpq-fe.h", "libpq-events.h", "postgres_fe.h"})
@@ -215,6 +232,15 @@ def discover_modules(root: Path) -> dict[str, Path]:
     return modules
 
 
+def is_process(path: Path, root: Path) -> bool:
+    """Файл принадлежит процессу: лежит в services/."""
+    try:
+        parts = path.relative_to(root).parts
+    except ValueError:
+        return False
+    return bool(parts) and parts[0] == SERVICES_ROOT
+
+
 def owning_library(path: Path, root: Path) -> str | None:
     """Имя каталога в libs/, которому принадлежит файл, если он оттуда."""
     try:
@@ -247,8 +273,17 @@ def pool_uses(text: str) -> Iterator[tuple[int, str]]:
 
 
 def near_the_pool(path: Path) -> bool:
-    """Файл лежит в infrastructure/db — единственном месте, где пул уместен."""
+    """Где пул соединений упоминать можно.
+
+    В `infrastructure/db` — там живут обе двери к базе. И в наборах: contract-набор
+    хранилища обязан взять НАСТОЯЩИЙ кластер, иначе проверять открытие области не
+    на чем. Запрет написан ради рабочего кода — «взять соединение и забыть
+    объявить арендатора» должно быть нечем НА ПРОДЕ; набор, который делает это
+    нарочно, и есть доказательство, что дверь работает.
+    """
     parts = path.parts
+    if TESTS_DIR in parts:
+        return True
     return any(parts[index : index + 2] == POOL_HOME for index in range(len(parts)))
 
 
@@ -333,6 +368,15 @@ def check_file(path: Path, display: Path, root: Path, modules: dict[str, Path]) 
 
         context = parts[0] if parts else ""
         if context not in modules or context == own_module:
+            continue
+        if is_process(path, root):
+            if include == f"{context}/{CONTRACT_HEADER}" or ASSEMBLY_LAYER in parts[:-1]:
+                continue
+            violations.append(
+                f"{display}:{number}: процесс собирает контексты, а не лезет в них: у "
+                f"{context} ему видны \"{context}/{CONTRACT_HEADER}\" и сборочный слой "
+                f"{context}/{ASSEMBLY_LAYER}/, но не ядро и не сценарии: {directive}"
+            )
             continue
         if library in PLATFORM_LIBRARIES:
             violations.append(
@@ -456,6 +500,18 @@ SELFTEST_FILES = {
     "libs/pdr-beta/contract/beta/contract.hpp": "#pragma once\n",
     "libs/pdr-beta/contract/beta/extra.hpp": "#pragma once\n",
     "libs/pdr-core/src/core/platform.cpp": '#include "alpha/contract.hpp"\n',
+    "services/main/src/main.cpp": (
+        '#include "alpha/contract.hpp"\n'
+        '#include "alpha/infrastructure/component/alpha_component.hpp"\n'
+    ),
+    "services/main/src/wiring.cpp": (
+        '#include "alpha/application/book_lesson.hpp"\n'
+        '#include "alpha/core/thing.hpp"\n'
+    ),
+    "libs/pdr-core/tests/pool_contract_test.cpp": (
+        '#include <userver/storages/postgres/cluster.hpp>\n'
+        'using Pool = userver::storages::postgres::ClusterPtr;\n'
+    ),
 }
 
 SELFTEST_EXPECTED = {
@@ -471,6 +527,8 @@ SELFTEST_EXPECTED = {
     ("libs/pdr-core/src/core/platform.cpp", 1),
     ("libs/pdr-alpha/src/alpha/infrastructure/direct_pool.cpp", 1),
     ("libs/pdr-alpha/src/alpha/infrastructure/direct_pool.cpp", 3),
+    ("services/main/src/wiring.cpp", 1),
+    ("services/main/src/wiring.cpp", 2),
 }
 
 SELFTEST_EXPECTED_WITHOUT_LINE = {"libs/pdr-beta/contract/beta/extra.hpp"}

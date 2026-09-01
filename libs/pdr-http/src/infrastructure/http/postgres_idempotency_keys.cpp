@@ -53,12 +53,12 @@ const userver::storages::postgres::Query kComplete{
 }  // namespace
 
 core::Result<pdr::http::Claim> PostgresIdempotencyKeys::Take(
-    userver::storages::postgres::Transaction& session,
+    db::ScopedTenantContext& session,
     const core::TenantId& tenant,
     const pdr::http::IdempotencyKey& key,
     const pdr::http::RequestFingerprint& fingerprint,
     core::Instant expires_at) {
-    const auto result = session.Execute(
+    const auto result = session.Session().Execute(
         kClaim, tenant.ToString(), key.Value(), fingerprint.Value(), AsTimestamptz(expires_at));
     if (result.IsEmpty()) {
         throw std::runtime_error{"http_idempotency_key: занятие ключа не вернуло строки"};
@@ -89,13 +89,12 @@ core::Result<pdr::http::Claim> PostgresIdempotencyKeys::Take(
                                                    row["response_body"].As<std::string>()}};
 }
 
-core::Result<void> PostgresIdempotencyKeys::Complete(
-    userver::storages::postgres::Transaction& session,
-    const core::TenantId& tenant,
-    const pdr::http::IdempotencyKey& key,
-    const pdr::http::SavedAnswer& answer) {
-    const auto result =
-        session.Execute(kComplete, tenant.ToString(), key.Value(), answer.status, answer.body);
+core::Result<void> PostgresIdempotencyKeys::Complete(db::ScopedTenantContext& session,
+                                                     const core::TenantId& tenant,
+                                                     const pdr::http::IdempotencyKey& key,
+                                                     const pdr::http::SavedAnswer& answer) {
+    const auto result = session.Session().Execute(
+        kComplete, tenant.ToString(), key.Value(), answer.status, answer.body);
     if (result.RowsAffected() != 1) {
         throw std::runtime_error{"http_idempotency_key: закрывать нечего — строка занята не нами"};
     }

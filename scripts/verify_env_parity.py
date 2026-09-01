@@ -50,6 +50,8 @@ PROFILE_DIFFERENCES = {
     "ENV_PROFILE": "имя профиля отличает проект в docker",
     "POSTGRES_PASSWORD": "пароль базы задаётся на месте",
     "POSTGRES_PORT": "порт занят чужим процессом чаще, чем хотелось бы",
+    "SCHEDULING_PORT": "тот же случай: порт сервиса занят чужим процессом",
+    "SCHEDULING_IMAGE": "тег образа несёт имя профиля, иначе профили затирают друг друга",
 }
 
 COMPARED_FIELDS = ("image", "command", "entrypoint")

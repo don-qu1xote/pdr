@@ -23,7 +23,8 @@ const userver::storages::postgres::Query kIssue{
 };
 
 const userver::storages::postgres::Query kFind{
-    "SELECT id, purpose, role, person_id, invited_digest, created_at, expires_at, used_at "
+    "SELECT id::text AS id, purpose, role, person_id::text AS person_id, invited_digest, "
+    "created_at, expires_at, used_at "
     "FROM identity_one_time_token WHERE token_hash = $1",
     userver::storages::postgres::Query::Name{"identity_one_time_token_find"},
 };
@@ -31,7 +32,7 @@ const userver::storages::postgres::Query kFind{
 /// Кого уже позвали. Условия по арендатору в запросе нет: его добавляет
 /// построчная защита, и чужого приглашения этот вопрос не покажет.
 const userver::storages::postgres::Query kLiveInvitation{
-    "SELECT id, token_hash, role, created_at, expires_at "
+    "SELECT id::text AS id, token_hash, role, created_at, expires_at "
     "FROM identity_one_time_token "
     "WHERE purpose = 'invitation' AND invited_digest = $1 AND used_at IS NULL "
     "AND expires_at > $2 LIMIT 1",
