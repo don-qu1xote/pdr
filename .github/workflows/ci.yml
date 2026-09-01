@@ -459,7 +459,26 @@ jobs:
       # Секреты: в CI настоящих нет, но файл обязан лежать на месте — иначе
       # Docker монтирует пустой каталог, а SecretsGuard падает при старте.
       - name: Секреты
-        run: cp deploy/secrets/secrets.json.example deploy/secrets/secrets.json
+        run: |
+          cat > deploy/secrets/secrets.json <<'EOF'
+          {
+            "pdr": {
+              "postgres_dsn": "postgresql://pdr:ci-not-a-secret@127.0.0.1:5432/pdr"
+            },
+            "postgresql_settings": {
+              "databases": {
+                "pdr": [
+                  {
+                    "shard_number": 0,
+                    "hosts": [
+                      "postgresql://pdr:ci-not-a-secret@127.0.0.1:5432/pdr"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+          EOF
 
       - name: Поднять и применить миграции
         run: make up ENV_PROFILE=ci
@@ -610,7 +629,26 @@ jobs:
         run: cp deploy/env/ci.env.example deploy/env/ci.env
 
       - name: Секреты
-        run: cp deploy/secrets/secrets.json.example deploy/secrets/secrets.json
+        run: |
+          cat > deploy/secrets/secrets.json <<'EOF'
+          {
+            "pdr": {
+              "postgres_dsn": "postgresql://pdr:ci-not-a-secret@127.0.0.1:5432/pdr"
+            },
+            "postgresql_settings": {
+              "databases": {
+                "pdr": [
+                  {
+                    "shard_number": 0,
+                    "hosts": [
+                      "postgresql://pdr:ci-not-a-secret@127.0.0.1:5432/pdr"
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+          EOF
 
       - name: Поднять и применить миграции
         run: make up ENV_PROFILE=ci
