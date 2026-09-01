@@ -483,6 +483,10 @@ jobs:
       - name: Поднять и применить миграции
         run: make up ENV_PROFILE=ci
 
+      - name: Логи scheduling при ошибке
+        if: failure()
+        run: docker compose --env-file deploy/env/ci.env -f deploy/docker-compose.yml logs scheduling
+
       # Второй прогон обязан ничего не применять: повтор идемпотентен.
       - name: Повтор ничего не меняет
         run: |
@@ -652,6 +656,10 @@ jobs:
 
       - name: Поднять и применить миграции
         run: make up ENV_PROFILE=ci
+
+      - name: Логи scheduling при ошибке
+        if: failure()
+        run: docker compose --env-file deploy/env/ci.env -f deploy/docker-compose.yml logs scheduling
 
       # Потерянный индекс не даёт ни ошибки, ни красного теста — только время
       # ответа, и только там, где данных много, то есть не у разработчика.
