@@ -463,7 +463,7 @@ jobs:
           cat > deploy/secrets/secrets.json <<'EOF'
           {
             "pdr": {
-              "postgres_dsn": "postgresql://pdr:ci-not-a-secret@127.0.0.1:5432/pdr"
+              "postgres_dsn": "postgresql://pdr:ci-not-a-secret@postgres:5432/pdr"
             },
             "postgresql_settings": {
               "databases": {
@@ -471,7 +471,7 @@ jobs:
                   {
                     "shard_number": 0,
                     "hosts": [
-                      "postgresql://pdr:ci-not-a-secret@127.0.0.1:5432/pdr"
+                      "postgresql://pdr:ci-not-a-secret@postgres:5432/pdr"
                     ]
                   }
                 ]
@@ -637,7 +637,7 @@ jobs:
           cat > deploy/secrets/secrets.json <<'EOF'
           {
             "pdr": {
-              "postgres_dsn": "postgresql://pdr:ci-not-a-secret@127.0.0.1:5432/pdr"
+              "postgres_dsn": "postgresql://pdr:ci-not-a-secret@postgres:5432/pdr"
             },
             "postgresql_settings": {
               "databases": {
@@ -645,7 +645,7 @@ jobs:
                   {
                     "shard_number": 0,
                     "hosts": [
-                      "postgresql://pdr:ci-not-a-secret@127.0.0.1:5432/pdr"
+                      "postgresql://pdr:ci-not-a-secret@postgres:5432/pdr"
                     ]
                   }
                 ]
