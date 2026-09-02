@@ -2,24 +2,16 @@
 
 #include <string>
 
+#include <dynamic_config/variables/PDR_PRODUCT_EVENTS.hpp>
+
 #include <userver/logging/log.hpp>
 
 namespace pdr::observability {
-
-const userver::dynamic_config::Key<ProductEventsConfig> kProductEvents{
-    DynamicConfigStreamSettings::kProductEventsVariable,
-    userver::dynamic_config::DefaultAsJsonString{R"({"enabled": true, "retention_days": 730})"},
-};
-
-ProductEventsConfig Parse(const userver::formats::json::Value& value,
-                          userver::formats::parse::To<ProductEventsConfig>) {
-    return ProductEventsConfig{value["enabled"].As<bool>(),
-                               value["retention_days"].As<std::int32_t>()};
-}
-
 namespace {
 
-std::string Describe(const ProductEventsConfig& settings) {
+using Settings = ::dynamic_config::pdr_product_events::VariableType;
+
+std::string Describe(const Settings& settings) {
     return std::string{"enabled="} + (settings.enabled ? "true" : "false") +
            " retention_days=" + std::to_string(settings.retention_days);
 }
@@ -36,13 +28,13 @@ DynamicConfigStreamSettings::~DynamicConfigStreamSettings() {
 }
 
 void DynamicConfigStreamSettings::OnConfigUpdate(const userver::dynamic_config::Diff& diff) {
-    const auto current = Describe(diff.current[kProductEvents]);
+    const auto current = Describe(diff.current[::dynamic_config::PDR_PRODUCT_EVENTS]);
     if (!diff.previous.has_value()) {
         LOG_INFO() << "продуктовый поток: первое применение — " << current;
         return;
     }
 
-    const auto previous = Describe((*diff.previous)[kProductEvents]);
+    const auto previous = Describe((*diff.previous)[::dynamic_config::PDR_PRODUCT_EVENTS]);
     if (previous != current) {
         LOG_INFO() << "продуктовый поток: было [" << previous << "], стало [" << current << "]";
     }
@@ -50,7 +42,7 @@ void DynamicConfigStreamSettings::OnConfigUpdate(const userver::dynamic_config::
 
 bool DynamicConfigStreamSettings::Enabled() const {
     const auto snapshot = source_.GetSnapshot();
-    return snapshot[kProductEvents].enabled;
+    return snapshot[::dynamic_config::PDR_PRODUCT_EVENTS].enabled;
 }
 
 }  // namespace pdr::observability

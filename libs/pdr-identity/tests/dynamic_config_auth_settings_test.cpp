@@ -3,6 +3,11 @@
 #include <chrono>
 #include <string>
 
+#include <dynamic_config/variables/PDR_AUTH_LIFETIMES.hpp>
+#include <dynamic_config/variables/PDR_LOGIN_THROTTLE.hpp>
+#include <dynamic_config/variables/PDR_SIGNUP_THROTTLE.hpp>
+#include <dynamic_config/variables/PDR_SIGN_IN_RULES.hpp>
+
 #include <userver/dynamic_config/storage_mock.hpp>
 #include <userver/dynamic_config/test_helpers.hpp>
 #include <userver/formats/json/serialize.hpp>
@@ -58,13 +63,13 @@ UTEST(DynamicConfigAuthSettings, WorksOnCodeDefaultsWhenSourceGaveNothing) {
 }
 
 UTEST(DynamicConfigAuthSettings, AppliesChangeWithoutBeingRecreated) {
-    auto storage =
-        userver::dynamic_config::MakeDefaultStorage({{kPasswordRules, Passwords(19456, 2, 1)}});
+    auto storage = userver::dynamic_config::MakeDefaultStorage(
+        {{::dynamic_config::PDR_SIGN_IN_RULES, Passwords(19456, 2, 1)}});
     const DynamicConfigAuthSettings settings{storage.GetSource()};
 
     EXPECT_EQ(settings.Passwords().Value().MemoryKib(), 19456U);
 
-    storage.Extend({{kPasswordRules, Passwords(65536, 3, 2)}});
+    storage.Extend({{::dynamic_config::PDR_SIGN_IN_RULES, Passwords(65536, 3, 2)}});
 
     const auto after = settings.Passwords();
     ASSERT_TRUE(after.HasValue());
@@ -72,24 +77,33 @@ UTEST(DynamicConfigAuthSettings, AppliesChangeWithoutBeingRecreated) {
     EXPECT_EQ(after.Value().Iterations(), 3U);
 }
 
-/// СВЯЗЬ МЕЖДУ ВЕЛИЧИНАМИ СХЕМА НЕ ВЫРАЖАЕТ, и её ловит домен: стоимость счёта,
-/// при которой памяти меньше, чем нужно нитям, отвергается целиком.
-UTEST(DynamicConfigAuthSettings, RefusesCostTheDomainCallsImpossible) {
-    auto storage =
-        userver::dynamic_config::MakeDefaultStorage({{kPasswordRules, Passwords(1024, 2, 1)}});
+/// ДЕШЁВЫЙ СЧЁТ ХЕША НЕ ДОХОДИТ ДО ДОМЕНА ВОВСЕ — и это не ослабление, а
+/// ужесточение (PDR-ARCH-09). Предел одного поля задан схемой в реестре,
+/// порождённый разборщик применяет его сам, и негодная величина отвергается на
+/// разборе — целиком, вместе со всей записью. Прежнее значение продолжает
+/// действовать, а не заменяется наполовину применённым.
+///
+/// Правило домена (`PasswordRules::Compose`) при этом никуда не делось: оно
+/// последний рубеж, а не первый, и срабатывает там, где схемы нет — например у
+/// значения, собранного в коде.
+UTEST(DynamicConfigAuthSettings, ACostBelowTheSchemaIsRefusedOnParseAndKeepsTheOldOne) {
+    auto storage = userver::dynamic_config::MakeDefaultStorage(
+        {{::dynamic_config::PDR_SIGN_IN_RULES, Passwords(19456, 2, 1)}});
     const DynamicConfigAuthSettings settings{storage.GetSource()};
 
-    const auto refused = settings.Passwords();
+    EXPECT_THROW(storage.Extend({{::dynamic_config::PDR_SIGN_IN_RULES, Passwords(1024, 2, 1)}}),
+                 std::exception);
 
-    ASSERT_FALSE(refused.HasValue()) << "дешёвый счёт хеша принят";
-    EXPECT_EQ(refused.Failure().Code(), "password_memory_too_small");
+    const auto after = settings.Passwords();
+    ASSERT_TRUE(after.HasValue()) << "прежняя стоимость счёта не пережила негодную правку";
+    EXPECT_EQ(after.Value().MemoryKib(), 19456U);
 }
 
 /// Порог по адресу строже порога по записи запирает целый класс из школы, у
 /// которого один адрес на всех.
 UTEST(DynamicConfigAuthSettings, RefusesThresholdsThatLockAWholeClass) {
-    auto storage =
-        userver::dynamic_config::MakeDefaultStorage({{kLoginThrottle, Throttle(15, 10, 5)}});
+    auto storage = userver::dynamic_config::MakeDefaultStorage(
+        {{::dynamic_config::PDR_LOGIN_THROTTLE, Throttle(15, 10, 5)}});
     const DynamicConfigAuthSettings settings{storage.GetSource()};
 
     const auto refused = settings.Throttle();
@@ -100,8 +114,8 @@ UTEST(DynamicConfigAuthSettings, RefusesThresholdsThatLockAWholeClass) {
 
 /// Ссылка сброса, живущая дольше приглашения, — самая опасная строка в системе.
 UTEST(DynamicConfigAuthSettings, RefusesResetLinkThatOutlivesAnInvitation) {
-    auto storage =
-        userver::dynamic_config::MakeDefaultStorage({{kAuthLifetimes, Lifetimes(720, 1, 120)}});
+    auto storage = userver::dynamic_config::MakeDefaultStorage(
+        {{::dynamic_config::PDR_AUTH_LIFETIMES, Lifetimes(720, 1, 120)}});
     const DynamicConfigAuthSettings settings{storage.GetSource()};
 
     const auto refused = settings.Lifetimes();

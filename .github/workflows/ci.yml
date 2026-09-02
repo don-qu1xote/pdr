@@ -116,9 +116,14 @@ jobs:
           python3 scripts/check_handmade.py --selftest
           python3 scripts/check_handmade.py
 
+      # Запись без владельца, юрисдикции или «что сломается», число без пределов,
+      # умолчание за собственными пределами и величина, которую никто не читает,
+      # роняют сборку здесь. Расхождение схемы и структуры сюда не входит: типы
+      # порождаются из этого же реестра, и расходиться им нечем (PDR-ARCH-09).
       - name: Реестр динамических значений
         run: |
           set -eu
+          python3 scripts/dynamic_config_schemas.py --selftest
           python3 scripts/check_dynamic_configs.py --selftest
           python3 scripts/check_dynamic_configs.py
 

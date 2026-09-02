@@ -32,7 +32,8 @@ add_library(pdr_http STATIC
 target_include_directories(pdr_http PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
 # pdr_api — ПОРОЖДЁННЫЕ ТИПЫ КОНТРАКТА, и связь публичная: тип тела виден в
 # сигнатуре формы, значит виден и всякому, кто форму наследует.
-target_link_libraries(pdr_http PUBLIC pdr_core pdr_application pdr_identity pdr_api userver::core)
+target_link_libraries(pdr_http
+    PUBLIC pdr_core pdr_application pdr_identity pdr_api pdr_dynamic_configs userver::core)
 
 # Адаптер ключей к Postgres — отдельной целью: сама форма собирается без
 # драйвера базы, и проверяется она на фейке. Цель нужна тому, кто поднимает

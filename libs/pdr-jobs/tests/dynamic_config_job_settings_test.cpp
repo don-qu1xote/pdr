@@ -3,6 +3,8 @@
 #include <chrono>
 #include <string>
 
+#include <dynamic_config/variables/PDR_PERIODIC_JOBS.hpp>
+
 #include <userver/dynamic_config/storage_mock.hpp>
 #include <userver/dynamic_config/test_helpers.hpp>
 #include <userver/formats/json/serialize.hpp>
@@ -44,14 +46,14 @@ UTEST(DynamicConfigJobSettings, WorksOnCodeDefaultsWhenSourceGaveNothing) {
 
 UTEST(DynamicConfigJobSettings, AppliesChangeWithoutBeingRecreated) {
     auto storage = userver::dynamic_config::MakeDefaultStorage(
-        {{kPeriodicJobs, Entry(3600000, 600000, 86400000)}});
+        {{::dynamic_config::PDR_PERIODIC_JOBS, Entry(3600000, 600000, 86400000)}});
     const DynamicConfigJobSettings settings{storage.GetSource()};
 
     const auto before = settings.For(Reminders());
     ASSERT_TRUE(before.HasValue());
     EXPECT_TRUE(before.Value().Period() == 1h);
 
-    storage.Extend({{kPeriodicJobs, Entry(1800000, 600000, 86400000)}});
+    storage.Extend({{::dynamic_config::PDR_PERIODIC_JOBS, Entry(1800000, 600000, 86400000)}});
 
     const auto after = settings.For(Reminders());
     ASSERT_TRUE(after.HasValue());
@@ -60,11 +62,12 @@ UTEST(DynamicConfigJobSettings, AppliesChangeWithoutBeingRecreated) {
 
 UTEST(DynamicConfigJobSettings, RefusesValueOutsideItsRangeAndKeepsTheOldOne) {
     auto storage = userver::dynamic_config::MakeDefaultStorage(
-        {{kPeriodicJobs, Entry(3600000, 600000, 86400000)}});
+        {{::dynamic_config::PDR_PERIODIC_JOBS, Entry(3600000, 600000, 86400000)}});
     const DynamicConfigJobSettings settings{storage.GetSource()};
 
-    EXPECT_THROW(storage.Extend({{kPeriodicJobs, Entry(600000, 3600000, 86400000)}}),
-                 std::exception);
+    EXPECT_THROW(
+        storage.Extend({{::dynamic_config::PDR_PERIODIC_JOBS, Entry(600000, 3600000, 86400000)}}),
+        std::exception);
 
     const auto after = settings.For(Reminders());
     ASSERT_TRUE(after.HasValue());
@@ -74,12 +77,12 @@ UTEST(DynamicConfigJobSettings, RefusesValueOutsideItsRangeAndKeepsTheOldOne) {
 
 UTEST_F(JournalTest, WritesWhatChangedFromWhatToWhat) {
     auto storage = userver::dynamic_config::MakeDefaultStorage(
-        {{kPeriodicJobs, Entry(3600000, 600000, 86400000)}});
+        {{::dynamic_config::PDR_PERIODIC_JOBS, Entry(3600000, 600000, 86400000)}});
     const DynamicConfigJobSettings settings{storage.GetSource()};
 
     EXPECT_FALSE(GetLogCapture().Filter("первое применение").empty());
 
-    storage.Extend({{kPeriodicJobs, Entry(1800000, 600000, 86400000)}});
+    storage.Extend({{::dynamic_config::PDR_PERIODIC_JOBS, Entry(1800000, 600000, 86400000)}});
 
     const auto records = GetLogCapture().Filter("было [");
     ASSERT_FALSE(records.empty());

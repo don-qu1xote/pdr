@@ -9,28 +9,45 @@
 
 Проверяется:
 
-* каждый `dynamic_config::Key` из кода назван в реестре, и наоборот — запись без
-  ключа в коде роняет сборку, чтобы реестр не зарастал мёртвыми строками;
 * у записи есть все обязательные поля: description, kind, owner, jurisdiction,
   breaks, default, schema;
 * `kind` — техническая или продуктовая, `jurisdiction` — да или нет: не «TODO» и
   не пусто;
 * у каждого числа в схеме есть minimum и maximum. Конфигов без диапазонов не
   бывает: значение вне пределов должно отвергаться ДО попадания в работу;
-* значение по умолчанию в реестре совпадает с объявленным в коде. Умолчание живёт
-  в коде — на нём сервис поднимается, когда источник конфигов недоступен, — а
-  реестр обязан говорить о нём правду;
-* ключ объявляется только в infrastructure: в домен значение приходит параметром,
-  а не читается им самим;
-* у ключа есть умолчание прямо в объявлении: на нём сервис поднимается, когда
-  источник конфигов недоступен;
-* рядом с ключом стоит подписка `UpdateAndListen` — журнал «было → стало». Ключ
-  без журнала означает, что «оно само сломалось» будет разбираться по памяти;
 * умолчание не выходит за собственные пределы: значение, которое схема тут же
   объявляет негодным, — ловушка, не видная ни в одном тесте;
-* запись без ключа в коде разрешена ровно с полем `awaits` — областью задачи,
-  которая ключ заведёт. Так число попадает в реестр раньше, чем в константу, и
-  не остаётся там навсегда: как только ключ объявлен, поле обязано исчезнуть.
+* рядом с чтением величины стоит подписка `UpdateAndListen` — журнал
+  «было → стало». Величина без журнала означает, что «оно само сломалось» будет
+  разбираться по памяти;
+* запись, которую никто не читает, разрешена ровно с полем `awaits` — областью
+  задачи, которая её заведёт. Так число попадает в реестр раньше, чем в
+  константу, и не остаётся там навсегда: как только величину начали читать, поле
+  обязано исчезнуть.
+
+ЧТО ОТСЮДА УБРАНО И ПОЧЕМУ (PDR-ARCH-09). Структуры, ключи, умолчания и пределы
+порождаются из ЭТОГО ЖЕ реестра штатным chaotic, и четыре проверки стали
+проверять невозможное:
+
+* ~~каждый `dynamic_config::Key` из кода назван в реестре~~ — ключ объявляет не
+  человек, а порождение, и объявить оно может только то, что в реестре есть;
+* ~~умолчание в реестре совпадает с объявленным в коде~~ — умолчание в коде И
+  ЕСТЬ умолчание из реестра: текст один, источник один, расходиться нечему;
+* ~~у ключа есть умолчание прямо в объявлении~~ — порождение ставит его всегда,
+  объявления без умолчания не бывает;
+* ~~ключ объявляется только в infrastructure~~ — объявлений в дереве не осталось
+  вовсе, они в каталоге сборки. Что домен не читает конфиг сам, проверяет цель
+  `pdr_compile_fail_config_in_core`, и проверяет строже: не грепом, а сборкой.
+
+Вычеркнуты, а не удалены молча: иначе через год непонятно, почему проверка
+похудела, и кто-нибудь вернёт их обратно — вместе с руками писанной структурой,
+ради которой они и были нужны.
+
+ЧТО ОСТАЛОСЬ И ПОЧЕМУ. Порождение не отвечает на вопросы «чей это выбор», «что
+сломается за пределами» и «привязано ли значение к стране» — на них отвечает
+только человек. И оно не ловит умолчание, вышедшее за собственные пределы:
+негодное умолчание порождается молча и падает при первом разборе, а не при
+сборке.
 
 YAML разбирается СТРОГИМ ПОДМНОЖЕСТВОМ, как разбор миграций разбирает подмножество
 DDL: чего разбор не понял, он называет вслух и роняет проверку. Молча пропущенная
@@ -54,6 +71,11 @@ from typing import Sequence
 REGISTRY = Path("configs/dynamic/registry.yaml")
 
 SOURCE_SUFFIXES = frozenset({".hpp", ".cpp", ".hxx", ".cc"})
+TESTS_DIR = "tests"
+"""Проверки не считаются чтением величины.
+
+Подмена значения в тесте — не то же, что «величина кому-то нужна»: реестр не
+должен считать живой запись, которую читает только её собственный тест."""
 SKIPPED_DIRS = frozenset({".git", "build", "out", "_deps", "__pycache__", "compile_fail"})
 
 REQUIRED_FIELDS = ("description", "kind", "owner", "jurisdiction", "breaks", "default", "schema")
@@ -63,16 +85,13 @@ JURISDICTIONS = ("да", "нет")
 CONTRIBUTING = Path("CONTRIBUTING.md")
 AREA_ROW = re.compile(r"^\|\s*`([A-Z]+)`\s*\|")
 
-KEY_DECLARATION = re.compile(
-    r"dynamic_config::Key<[^>]*>\s+(\w+)\s*\{\s*(?:(?P<name>\"[A-Z0-9_]+\")|(?P<alias>[\w:]+))"
-    r"(?P<tail>[^;]*);",
-    re.S,
-)
-DEFAULT_AS_JSON = re.compile(r"DefaultAsJsonString\{\s*(?:R\"\((?P<raw>.*?)\)\"|\"(?P<plain>.*?)\")",
-                             re.S)
-CONSTANT_NAME = re.compile(
-    r"(?:static\s+)?constexpr\s+std::string_view\s+(\w+)\s*=\s*\"([A-Z0-9_]+)\""
-)
+KEY_USE = re.compile(r"dynamic_config::(?P<name>PDR_[A-Z0-9_]+)\b")
+"""Чтение порождённой величины: `::dynamic_config::PDR_ЧТО_ТО`.
+
+Объявлений в дереве больше нет — их порождает chaotic, — поэтому со стороны кода
+величина видна только тем, что её читают. Это и есть вопрос, на который реестру
+нужен ответ: не «объявлена ли она», а «нужна ли она кому-нибудь».
+"""
 
 VARIABLE_LINE = re.compile(r"^([A-Z][A-Z0-9_]*):\s*$")
 FIELD_LINE = re.compile(r"^  ([a-z]+):\s*(.*)$")
@@ -282,87 +301,36 @@ def source_files(root: Path):
         yield path
 
 
-def keys_in_code(root: Path) -> tuple[dict[str, tuple[Path, str]], list[str]]:
-    """{имя величины: (файл, текст умолчания)} и нарушения размещения."""
-    found: dict[str, tuple[Path, str]] = {}
+def keys_in_use(root: Path) -> tuple[dict[str, Path], list[str]]:
+    """{имя величины: файл, который её читает} и нарушения вокруг чтения."""
+    found: dict[str, Path] = {}
     violations: list[str] = []
 
-    aliases: dict[str, set[str]] = {}
-    sources = list(source_files(root))
-    for path in sources:
+    for path in source_files(root):
         text = path.read_text(encoding="utf-8", errors="replace")
-        for alias, value in CONSTANT_NAME.findall(text):
-            aliases.setdefault(alias, set()).add(value)
-
-    for path in sources:
-        text = path.read_text(encoding="utf-8", errors="replace")
-        if "dynamic_config::Key" not in text:
+        used = {match.group("name") for match in KEY_USE.finditer(text)}
+        if not used:
             continue
+
         try:
             display = path.relative_to(root)
         except ValueError:
             display = path
 
-        for match in KEY_DECLARATION.finditer(text):
-            if match.group("name"):
-                name = match.group("name").strip('"')
-            else:
-                alias = match.group("alias").rsplit("::", 1)[-1]
-                values = aliases.get(alias, set())
-                if len(values) != 1:
-                    violations.append(
-                        f"{display}: имя величины у ключа {match.group(1)} собрано так, что "
-                        f"разбор его не видит ({alias} — "
-                        f"{'нет такой константы' if not values else 'их несколько: ' + ', '.join(sorted(values))}). "
-                        f"Имя пишется строкой или одной константой std::string_view — иначе "
-                        f"реестр нечем сверить"
-                    )
-                    continue
-                name = next(iter(values))
+        if TESTS_DIR in display.parts:
+            continue
 
-            default = ""
-            json_default = DEFAULT_AS_JSON.search(match.group("tail"))
-            if json_default:
-                default = (json_default.group("raw") or json_default.group("plain") or "").strip()
-            else:
-                tail = match.group("tail")
-                scalar = re.search(r",\s*([^,{}]+?)\s*,?\s*\}", tail, re.S)
-                if scalar:
-                    default = scalar.group(1).strip()
+        for name in sorted(used):
+            found.setdefault(name, display)
 
-            found[name] = (display, default)
+        if "UpdateAndListen" not in text:
+            violations.append(
+                f"{display}: величины {', '.join(sorted(used))} читаются без журнала "
+                f"изменений. Рядом стоит подписка dynamic_config::Source::UpdateAndListen: "
+                f"без неё «оно само сломалось» разбирается не за минуту, а по памяти"
+            )
 
-            if "UpdateAndListen" not in text:
-                violations.append(
-                    f"{display}: величина {name} объявлена без журнала изменений. Рядом с "
-                    f"ключом стоит подписка dynamic_config::Source::UpdateAndListen: без неё "
-                    f"«оно само сломалось» разбирается не за минуту, а по памяти"
-                )
-
-            if not default:
-                violations.append(
-                    f"{display}: у величины {name} нет умолчания в объявлении ключа. "
-                    f"Умолчание — это то, на чём сервис поднимается, когда источник "
-                    f"конфигов недоступен; без него недоступный источник роняет старт"
-                )
-
-            if "infrastructure" not in display.parts:
-                violations.append(
-                    f"{display}: величина {name} объявлена вне infrastructure. Конфиг читает "
-                    f"адаптер, в домен значение приходит параметром — иначе core узнаёт про "
-                    f"userver, и слои протекли"
-                )
     return found, violations
-
-
-def same_default(registry: str, code: str) -> bool:
-    """Умолчания совпадают, если совпадают как значения, а не как текст."""
-    if registry == code:
-        return True
-    try:
-        return json.loads(registry or "null") == json.loads(code or "null")
-    except json.JSONDecodeError:
-        return False
 
 
 def known_areas(root: Path) -> set[str]:
@@ -379,14 +347,14 @@ def known_areas(root: Path) -> set[str]:
 
 def check(root: Path) -> tuple[list[str], int]:
     registry_path = root / REGISTRY
-    declared, violations = keys_in_code(root)
+    used, violations = keys_in_use(root)
     areas = known_areas(root)
 
     if not registry_path.is_file():
-        if declared:
+        if used:
             violations.append(
-                f"{REGISTRY}: реестра нет, а величины объявлены "
-                f"({', '.join(sorted(declared))}). Число, влияющее на людей, живёт в реестре"
+                f"{REGISTRY}: реестра нет, а величины читаются "
+                f"({', '.join(sorted(used))}). Число, влияющее на людей, живёт в реестре"
             )
         return violations, 0
 
@@ -395,11 +363,10 @@ def check(root: Path) -> tuple[list[str], int]:
     except RegistryError as error:
         return [str(error)], 0
 
-    for name in sorted(declared):
+    for name in sorted(used):
         if name not in entries:
-            where, _ = declared[name]
             violations.append(
-                f"{where}: величина {name} объявлена в коде, но её нет в {REGISTRY}. "
+                f"{used[name]}: величина {name} читается, но её нет в {REGISTRY}. "
                 f"Запись отвечает на то, чего в коде не видно: пределы, что сломается "
                 f"за ними, чей это выбор и привязана ли она к стране"
             )
@@ -409,11 +376,11 @@ def check(root: Path) -> tuple[list[str], int]:
 
         awaited = str(entry.get("awaits", "")).strip()
 
-        if name not in declared and not awaited:
+        if name not in used and not awaited:
             violations.append(
-                f"{REGISTRY}: величина {name} записана, а ключа в коде нет. Реестр не "
-                f"зарастает мёртвыми строками: уберите запись, объявите ключ или назовите "
-                f"полем «awaits» область, которая его заведёт"
+                f"{REGISTRY}: величина {name} записана, а не читает её никто. Реестр не "
+                f"зарастает мёртвыми строками: уберите запись, прочитайте величину или "
+                f"назовите полем «awaits» область, которая её заведёт"
             )
 
         if awaited and awaited not in areas:
@@ -423,11 +390,10 @@ def check(root: Path) -> tuple[list[str], int]:
                 f"область, не дождётся никогда"
             )
 
-        if awaited and name in declared:
-            where, _ = declared[name]
+        if awaited and name in used:
             violations.append(
-                f"{REGISTRY}: у величины {name} стоит «awaits: {awaited}», а ключ уже "
-                f"объявлен ({where}). Поле снимается тем же изменением, что заводит ключ, — "
+                f"{REGISTRY}: у величины {name} стоит «awaits: {awaited}», а её уже читают "
+                f"({used[name]}). Поле снимается тем же изменением, что заводит чтение, — "
                 f"иначе реестр продолжает обещать сделанное"
             )
 
@@ -453,15 +419,6 @@ def check(root: Path) -> tuple[list[str], int]:
             )
 
         violations.extend(numeric_ranges(entry, name))
-
-        if name in declared:
-            _, code_default = declared[name]
-            if not same_default(registry_default(entry), code_default):
-                violations.append(
-                    f"{REGISTRY}: у величины {name} умолчание «{registry_default(entry)}», а в "
-                    f"коде «{code_default}». Умолчание живёт в коде — на нём сервис поднимается, "
-                    f"когда источник конфигов недоступен, — и реестр обязан говорить о нём правду"
-                )
 
     return violations, len(entries)
 
@@ -562,16 +519,6 @@ PDR_BAD_FIELDS:
   schema:
     type: object
 
-PDR_WRONG_DEFAULT:
-  description: Умолчание разошлось с кодом.
-  kind: техническая
-  owner: тот, кто держит сервис
-  jurisdiction: нет
-  breaks: Ничего.
-  default: {}
-  schema:
-    type: object
-
 PDR_FORGOTTEN:
   description: Записана, а ключа в коде нет.
   kind: техническая
@@ -588,47 +535,41 @@ PDR_FORGOTTEN:
 SELFTEST_FILES = {
     "configs/dynamic/registry.yaml": SELFTEST_REGISTRY,
     "libs/pdr-jobs/src/jobs/infrastructure/good.cpp": (
-        'const userver::dynamic_config::Key<int> kGood{\n'
-        '    "PDR_GOOD",\n'
-        '    60000,\n'
-        '};\n'
-        'const userver::dynamic_config::Key<int> kNoLimits{"PDR_NO_LIMITS", 5};\n'
-        'const userver::dynamic_config::Key<Jobs> kBadFields{\n'
-        '    "PDR_BAD_FIELDS", userver::dynamic_config::DefaultAsJsonString{"{}"}};\n'
-        'const userver::dynamic_config::Key<Jobs> kWrong{\n'
-        '    "PDR_WRONG_DEFAULT",\n'
-        '    userver::dynamic_config::DefaultAsJsonString{R"({"lock": "x"})"},\n'
-        '};\n'
-        'const userver::dynamic_config::Key<int> kAlready{"PDR_ALREADY_THERE", 5};\n'
+        "auto every = snapshot[::dynamic_config::PDR_GOOD];\n"
+        "auto limits = snapshot[::dynamic_config::PDR_NO_LIMITS];\n"
+        "auto fields = snapshot[::dynamic_config::PDR_BAD_FIELDS];\n"
+        "auto already = snapshot[::dynamic_config::PDR_ALREADY_THERE];\n"
         'auto scope = source.UpdateAndListen(this, "good", &Good::OnConfigUpdate);\n'
     ),
     "libs/pdr-jobs/src/jobs/infrastructure/silent.cpp": (
-        'const userver::dynamic_config::Key<int> kSilent{"PDR_SILENT", 5};\n'
+        "auto value = snapshot[::dynamic_config::PDR_SILENT];\n"
     ),
-    "libs/pdr-jobs/src/jobs/application/leaked.cpp": (
-        'const userver::dynamic_config::Key<int> kLeaked{"PDR_UNREGISTERED", 1};\n'
-        'auto scope = source.UpdateAndListen(this, "leaked", &Leaked::OnConfigUpdate);\n'
+    "libs/pdr-jobs/src/jobs/infrastructure/unregistered.cpp": (
+        "auto value = snapshot[::dynamic_config::PDR_UNREGISTERED];\n"
+        'auto scope = source.UpdateAndListen(this, "u", &U::OnConfigUpdate);\n'
     ),
-    "libs/pdr-jobs/src/jobs/infrastructure/nodefault.cpp": (
-        'const userver::dynamic_config::Key<int> kNoDefault{"PDR_NO_DEFAULT"};\n'
-        'auto scope = source.UpdateAndListen(this, "nd", &Nd::OnConfigUpdate);\n'
+    "libs/pdr-jobs/tests/only_a_test.cpp": (
+        "auto value = snapshot[::dynamic_config::PDR_NO_DEFAULT];\n"
     ),
 }
+"""Дерево одной самопроверки.
+
+`PDR_NO_DEFAULT` читается ТОЛЬКО проверкой — и обязан считаться непрочитанным:
+величина, которую читает лишь её собственный тест, никому не нужна.
+"""
 
 SELFTEST_EXPECTED = (
     ("PDR_NO_LIMITS", "без пределов"),
     ("PDR_BAD_FIELDS", "нет поля «owner»"),
     ("PDR_BAD_FIELDS", "вид «важная»"),
     ("PDR_BAD_FIELDS", "юрисдикции «возможно»"),
-    ("PDR_WRONG_DEFAULT", "реестр обязан говорить о нём правду"),
-    ("PDR_FORGOTTEN", "записана, а ключа в коде нет"),
+    ("PDR_FORGOTTEN", "не читает её никто"),
+    ("PDR_NO_DEFAULT", "не читает её никто"),
     ("PDR_UNREGISTERED", "нет в configs/dynamic/registry.yaml"),
-    ("PDR_UNREGISTERED", "объявлена вне infrastructure"),
     ("PDR_SILENT", "без журнала изменений"),
-    ("PDR_NO_DEFAULT", "нет умолчания в объявлении ключа"),
     ("PDR_TOO_SMALL", "меньше её же minimum"),
     ("PDR_WAITS_FOREVER", "такой области нет"),
-    ("PDR_ALREADY_THERE", "а ключ уже объявлен"),
+    ("PDR_ALREADY_THERE", "а её уже читают"),
 )
 
 SELFTEST_CLEAN = ("PDR_GOOD",)

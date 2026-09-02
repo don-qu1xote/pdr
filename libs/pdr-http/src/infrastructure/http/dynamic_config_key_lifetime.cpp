@@ -2,19 +2,11 @@
 
 #include <string>
 
+#include <dynamic_config/variables/PDR_IDEMPOTENCY.hpp>
+
 #include <userver/logging/log.hpp>
 
 namespace pdr::infrastructure::http {
-
-const userver::dynamic_config::Key<IdempotencyConfig> kIdempotency{
-    DynamicConfigKeyLifetime::kIdempotencyVariable,
-    userver::dynamic_config::DefaultAsJsonString{R"({"lifetime_hours": 24})"},
-};
-
-IdempotencyConfig Parse(const userver::formats::json::Value& value,
-                        userver::formats::parse::To<IdempotencyConfig>) {
-    return IdempotencyConfig{value["lifetime_hours"].As<std::int32_t>()};
-}
 
 DynamicConfigKeyLifetime::DynamicConfigKeyLifetime(userver::dynamic_config::Source source)
     : source_{source},
@@ -26,13 +18,13 @@ DynamicConfigKeyLifetime::~DynamicConfigKeyLifetime() {
 }
 
 void DynamicConfigKeyLifetime::OnConfigUpdate(const userver::dynamic_config::Diff& diff) {
-    const auto current = diff.current[kIdempotency].lifetime_hours;
+    const auto current = diff.current[::dynamic_config::PDR_IDEMPOTENCY].lifetime_hours;
     if (!diff.previous.has_value()) {
         LOG_INFO() << "ключ повтора: первое применение — часов " << current;
         return;
     }
 
-    const auto previous = (*diff.previous)[kIdempotency].lifetime_hours;
+    const auto previous = (*diff.previous)[::dynamic_config::PDR_IDEMPOTENCY].lifetime_hours;
     if (previous != current) {
         LOG_INFO() << "ключ повтора: было [часов " << previous << "], стало [часов " << current
                    << "]";
@@ -41,7 +33,8 @@ void DynamicConfigKeyLifetime::OnConfigUpdate(const userver::dynamic_config::Dif
 
 core::Result<pdr::http::KeyLifetime> DynamicConfigKeyLifetime::Lifetime() const {
     const auto snapshot = source_.GetSnapshot();
-    return pdr::http::KeyLifetime::Compose(snapshot[kIdempotency].lifetime_hours);
+    return pdr::http::KeyLifetime::Compose(
+        snapshot[::dynamic_config::PDR_IDEMPOTENCY].lifetime_hours);
 }
 
 }  // namespace pdr::infrastructure::http

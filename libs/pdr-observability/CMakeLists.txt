@@ -33,7 +33,7 @@ if(userver_FOUND)
                                PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_link_libraries(pdr_observability_infrastructure
                           PUBLIC pdr_observability pdr_postgres pdr_infrastructure
-                                 pdr_clock userver::postgresql)
+                                 pdr_clock pdr_dynamic_configs userver::postgresql)
 endif()
 
 if(PDR_BUILD_TESTS)

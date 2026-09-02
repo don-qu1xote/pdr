@@ -1,14 +1,9 @@
 #pragma once
 
-#include <string>
-#include <unordered_map>
-
 #include <userver/concurrent/async_event_source.hpp>
 #include <userver/dynamic_config/fwd.hpp>
 #include <userver/dynamic_config/snapshot.hpp>
 #include <userver/dynamic_config/source.hpp>
-#include <userver/formats/json/value.hpp>
-#include <userver/formats/parse/to.hpp>
 
 #include "core/errors.hpp"
 #include "jobs/application/ports/job_settings_source.hpp"
@@ -17,24 +12,19 @@
 
 namespace pdr::jobs {
 
-/// Словарь заданий: ключ — имя компонента задания.
-using PeriodicJobs = std::unordered_map<std::string, JobSettings>;
-
-/// Ключ переменной — ОДИН объект на всё дерево. Второй `dynamic_config::Key` с
-/// тем же именем даёт вторую ячейку хранилища: подмена значения в тесте тогда
-/// не доходит до адаптера, а выглядит это как «конфиг не применился».
-extern const userver::dynamic_config::Key<PeriodicJobs> kPeriodicJobs;
-
-/// Разбор одной записи `PDR_PERIODIC_JOBS`. Значения — целые миллисекунды:
-/// «1h» строкой в динамическом конфиге читается по-разному в разных местах, а
-/// число не читается никак иначе.
-///
-/// Найдено по ADL из `pdr::jobs`, как того требует userver.
-JobSettings Parse(const userver::formats::json::Value& value,
-                  userver::formats::parse::To<JobSettings>);
-
 /// Имя, период, отведённое на прогон время и срок молчания — из динамического
 /// конфига (`PDR-CFG-01`), а не из констант.
+///
+/// НИ КЛЮЧА, НИ РАЗБОРА ЗДЕСЬ НЕТ. Словарь заданий порождён из
+/// `PDR_PERIODIC_JOBS` в configs/dynamic/registry.yaml вместе с умолчанием и
+/// пределами каждого поля; значением словаря сразу стоит доменный `JobSettings`
+/// — так велит `x-usrv-cpp-type` в схеме, а превращает одно в другое
+/// `Convert` рядом с типом (jobs/infrastructure/chaotic-io/...).
+///
+/// СВЯЗЬ МЕЖДУ ПОЛЯМИ ОСТАЛАСЬ ДОМЕННОЙ. «Прогону отведено меньше периода» и
+/// «молчание длиннее периода» схемой не выражаются — их проверяет
+/// `JobSettings::Compose`, и негодная запись отвергает разбор ВСЕЙ величины:
+/// прежние настройки продолжают действовать.
 ///
 /// Умолчание есть только у переменной целиком — пустой словарь. У отдельного
 /// задания умолчаний нет: задания, которого нет в конфиге, для механизма не
@@ -42,10 +32,6 @@ JobSettings Parse(const userver::formats::json::Value& value,
 /// обязана выглядеть как поломка, а не как работающее задание.
 class DynamicConfigJobSettings final : public ports::JobSettingsSource {
 public:
-    /// Ключ переменной. Публичный намеренно: сервису его же прописывать в
-    /// обновлятор конфигов, и второй строки с этим именем в дереве быть не должно.
-    static constexpr std::string_view kVariable = "PDR_PERIODIC_JOBS";
-
     explicit DynamicConfigJobSettings(userver::dynamic_config::Source source);
 
     ~DynamicConfigJobSettings() override;

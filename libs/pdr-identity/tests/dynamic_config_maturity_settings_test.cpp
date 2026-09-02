@@ -1,5 +1,10 @@
 #include "identity/infrastructure/access/dynamic_config_maturity_settings.hpp"
 
+#include <dynamic_config/variables/PDR_GUARDIAN_HANDOVER_DAYS.hpp>
+#include <dynamic_config/variables/PDR_MAJORITY_AGE.hpp>
+#include <dynamic_config/variables/PDR_OWN_PAYMENTS_AGE.hpp>
+#include <dynamic_config/variables/PDR_SELF_ACCOUNT_AGE.hpp>
+
 #include <userver/dynamic_config/storage_mock.hpp>
 #include <userver/dynamic_config/test_helpers.hpp>
 #include <userver/utest/utest.hpp>
@@ -23,12 +28,13 @@ UTEST(DynamicConfigMaturitySettings, WorksOnCodeDefaultsWhenSourceGaveNothing) {
 }
 
 UTEST(DynamicConfigMaturitySettings, AppliesChangeWithoutBeingRecreated) {
-    auto storage = userver::dynamic_config::MakeDefaultStorage({{kOwnPaymentsAge, 16}});
+    auto storage =
+        userver::dynamic_config::MakeDefaultStorage({{::dynamic_config::PDR_OWN_PAYMENTS_AGE, 16}});
     const DynamicConfigMaturitySettings settings{storage.GetSource()};
 
     EXPECT_EQ(settings.Rule().Value().Thresholds().Years(AgeThreshold::kOwnPayments), 16);
 
-    storage.Extend({{kOwnPaymentsAge, 17}});
+    storage.Extend({{::dynamic_config::PDR_OWN_PAYMENTS_AGE, 17}});
 
     EXPECT_EQ(settings.Rule().Value().Thresholds().Years(AgeThreshold::kOwnPayments), 17)
         << "порог поменяли в конфиге, а адаптер отдаёт прежний";
@@ -38,8 +44,10 @@ UTEST(DynamicConfigMaturitySettings, AppliesChangeWithoutBeingRecreated) {
 /// пределах, а вместе — набор, в котором право приходит раньше предыдущего.
 /// Отвергает такое домен, и отвергает целиком.
 UTEST(DynamicConfigMaturitySettings, ThresholdsOutOfOrderAreRefusedWhole) {
-    auto storage = userver::dynamic_config::MakeDefaultStorage(
-        {{kSelfAccountAge, 17}, {kOwnPaymentsAge, 16}, {kMajorityAge, 18}});
+    auto storage =
+        userver::dynamic_config::MakeDefaultStorage({{::dynamic_config::PDR_SELF_ACCOUNT_AGE, 17},
+                                                     {::dynamic_config::PDR_OWN_PAYMENTS_AGE, 16},
+                                                     {::dynamic_config::PDR_MAJORITY_AGE, 18}});
     const DynamicConfigMaturitySettings settings{storage.GetSource()};
 
     const auto refused = settings.Rule();
@@ -51,7 +59,8 @@ UTEST(DynamicConfigMaturitySettings, ThresholdsOutOfOrderAreRefusedWhole) {
 /// Нулевое окно — мгновенный обрыв доступа в день рождения. Тоже отказ, а не
 /// «ноль так ноль».
 UTEST(DynamicConfigMaturitySettings, ZeroHandoverWindowIsRefused) {
-    auto storage = userver::dynamic_config::MakeDefaultStorage({{kGuardianHandoverDays, 0}});
+    auto storage = userver::dynamic_config::MakeDefaultStorage(
+        {{::dynamic_config::PDR_GUARDIAN_HANDOVER_DAYS, 0}});
     const DynamicConfigMaturitySettings settings{storage.GetSource()};
 
     const auto refused = settings.Rule();

@@ -36,7 +36,7 @@ if(userver_FOUND)
     # порта, а реализацию порта берёт отсюда.
     target_link_libraries(pdr_jobs_infrastructure
                           PUBLIC pdr_jobs pdr_postgres pdr_infrastructure pdr_clock
-                                 userver::postgresql)
+                                 pdr_dynamic_configs userver::postgresql)
 endif()
 
 if(PDR_BUILD_TESTS)

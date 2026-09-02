@@ -111,7 +111,7 @@ if(userver_FOUND)
                                PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_link_libraries(pdr_identity_infrastructure
                           PUBLIC pdr_identity pdr_postgres pdr_crypto pdr_infrastructure
-                                 pdr_clock userver::postgresql)
+                                 pdr_clock pdr_dynamic_configs userver::postgresql)
 
     # Argon2id — отдельной целью, потому что ей нужна libargon2, а её в системе
     # может не быть. Своей схемы хеширования паролей в дереве нет и не будет:
