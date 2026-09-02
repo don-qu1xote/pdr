@@ -25,9 +25,11 @@ const userver::storages::postgres::Query kDeclareTenant{
 TenantContext::TenantContext(userver::storages::postgres::ClusterPtr cluster)
     : cluster_{std::move(cluster)} {}
 
-ScopedTenantContext TenantContext::Open(const core::TenantId& tenant) {
-    auto transaction = cluster_->Begin(userver::storages::postgres::ClusterHostType::kMaster,
-                                       userver::storages::postgres::TransactionOptions{});
+ScopedTenantContext TenantContext::Open(
+    const core::TenantId& tenant,
+    userver::storages::postgres::ClusterHostTypeFlags host,
+    const userver::storages::postgres::TransactionOptions& options) {
+    auto transaction = cluster_->Begin(host, options);
     transaction.Execute(kDeclareTenant, tenant.ToString());
 
     return ScopedTenantContext{std::move(transaction), tenant};

@@ -74,7 +74,10 @@ public:
     }
 
 private:
-    void Run(const core::TenantId& tenant, const Work& work) override {
+    void Run(application::ports::Intent intent,
+             const core::TenantId& tenant,
+             const Work& work) override {
+        static_cast<void>(intent);
         LeakySession session{rows_, tenant};
         work(session);
     }

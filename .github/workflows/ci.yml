@@ -158,6 +158,15 @@ jobs:
           python3 scripts/check_http_form.py --selftest
           python3 scripts/check_http_form.py
 
+      # Запрос без имени, срок, назначенный несуществующему запросу, и сроки,
+      # переставленные местами, роняют сборку здесь. Зависший запрос уносит с
+      # собой транзакцию арендатора и соединение из пула (PDR-API-05).
+      - name: У запроса к базе есть срок
+        run: |
+          set -eu
+          python3 scripts/check_query_timeouts.py --selftest
+          python3 scripts/check_query_timeouts.py
+
       # Инструмент порождения типов фронта: ставится по замку версий, иначе у
       # двоих получаются разные типы из одной схемы. Node на раннерах
       # ubuntu-latest предустановлен, нужен только сам инструмент.

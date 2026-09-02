@@ -75,7 +75,20 @@ public:
     TenantContext& operator=(const TenantContext&) = delete;
 
     /// Взять соединение и объявить арендатора ДО первого запроса.
-    ScopedTenantContext Open(const core::TenantId& tenant);
+    ///
+    /// ХОСТ И РЕЖИМ ТРАНЗАКЦИИ — ПАРАМЕТРЫ, А НЕ РЕШЕНИЕ АДАПТЕРА. «Пойдёт ли
+    /// этот запрос на реплику» — свойство сценария, а не соединения: адаптер
+    /// видит только «дайте область» и, решая сам, решал бы за всех одинаково.
+    /// Так и было — мастер и пишущая транзакция на каждое чтение, — и оттого
+    /// чтение занимало соединение мастера и держало пишущую транзакцию, которой
+    /// нечего писать.
+    ///
+    /// Транзакция нужна ОБОИМ путям и читающему тоже: объявление арендатора
+    /// живёт до её конца (`set_config(..., true)`), и без транзакции его нечем
+    /// ограничить — оно уехало бы в пул вместе с соединением.
+    ScopedTenantContext Open(const core::TenantId& tenant,
+                             userver::storages::postgres::ClusterHostTypeFlags host,
+                             const userver::storages::postgres::TransactionOptions& options);
 
 private:
     userver::storages::postgres::ClusterPtr cluster_;

@@ -21,6 +21,11 @@
 читает, ещё нет; порождать ключ для неё значило бы объявить её заведённой и
 лишить поле «awaits» смысла (scripts/check_dynamic_configs.py).
 
+ЗАПИСИ С «штатная: да» ПРОПУСКАЮТСЯ ТОЖЕ, и по причине посерьёзнее: ключ у них
+объявляет сам userver (`POSTGRES_QUERIES_COMMAND_CONTROL` и соседи). Второй
+ключ с тем же именем — вторая ячейка хранилища: значение, положенное в одну, из
+другой не видно, и выглядит это как «конфиг не применился».
+
 Запуск:
     python3 scripts/dynamic_config_schemas.py --out build/dynamic_configs
     python3 scripts/dynamic_config_schemas.py --selftest
@@ -40,6 +45,14 @@ REGISTRY = Path("configs/dynamic/registry.yaml")
 NAME = re.compile(r"^(?P<name>[A-Z][A-Z0-9_]*):\s*$")
 
 AWAITS = re.compile(r"^\s{2}awaits:\s*(?P<area>\S+)\s*$", re.M)
+
+STANDARD = re.compile(r"^\s{2}штатная:\s*да\s*$", re.M)
+"""Величина принадлежит штатному механизму: ключ объявляет userver, не мы.
+
+Порождать ей структуру нельзя, и это не осторожность: второй
+`dynamic_config::Key` с тем же именем — вторая ячейка хранилища, и значение,
+которое положили в одну, не видно из другой.
+"""
 
 
 def blocks(text: str) -> list[tuple[str, str]]:
@@ -78,7 +91,7 @@ def lay_out(registry: str, out: Path) -> list[str]:
 
     written: list[str] = []
     for name, body in blocks(registry):
-        if AWAITS.search(body):
+        if AWAITS.search(body) or STANDARD.search(body):
             continue
         target = out / f"{name}.yaml"
         content = dedent(body)
@@ -116,6 +129,13 @@ PDR_WAITING:
     type: integer
     minimum: 1
     maximum: 10
+
+USERVER_SOMETHING_STANDARD:
+  description: величина штатного механизма, ключ у неё чужой
+  штатная: да
+  default: true
+  schema:
+    type: boolean
 """
 
 
@@ -148,8 +168,12 @@ def selftest() -> int:
         if "PDR_WAITING" in laid or (out / "PDR_WAITING.yaml").exists():
             print("самопроверка: ждущая величина разложена как заведённая", file=sys.stderr)
             return 1
+        if (out / "USERVER_SOMETHING_STANDARD.yaml").exists():
+            print("самопроверка: штатной величине порождён свой ключ", file=sys.stderr)
+            return 1
 
-    print("Самопроверка пройдена: ждущее пропущено, снятое убрано, схема не переписана.")
+    print("Самопроверка пройдена: ждущее и штатное пропущены, снятое убрано, "
+          "схема не переписана.")
     return 0
 
 

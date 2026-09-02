@@ -27,7 +27,9 @@ public:
     explicit PostgresTenantAwareRepository(db::TenantContext& context) noexcept;
 
 private:
-    void Run(const core::TenantId& tenant, const Work& work) override;
+    void Run(application::ports::Intent intent,
+             const core::TenantId& tenant,
+             const Work& work) override;
 
     db::TenantContext& context_;
 };

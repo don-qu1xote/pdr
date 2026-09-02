@@ -23,9 +23,12 @@ PostgresJobLedger::PostgresJobLedger(Storage& storage) noexcept : storage_{stora
 bool PostgresJobLedger::Claim(const core::TenantId& tenant,
                               const JobName& job,
                               const std::string& effect_key) {
-    return storage_.InTenant(tenant, [&](infrastructure::db::ScopedTenantContext& scope) {
-        return !scope.Session().Execute(kClaimEffect, job.Value(), effect_key).IsEmpty();
-    });
+    return storage_.InTenant(
+        application::ports::Intent::kChanging,
+        tenant,
+        [&](infrastructure::db::ScopedTenantContext& scope) {
+            return !scope.Session().Execute(kClaimEffect, job.Value(), effect_key).IsEmpty();
+        });
 }
 
 }  // namespace pdr::jobs

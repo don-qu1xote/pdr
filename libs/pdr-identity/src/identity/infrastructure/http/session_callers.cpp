@@ -3,6 +3,8 @@
 #include <string>
 
 #include <userver/components/component.hpp>
+#include <userver/storages/postgres/cluster_types.hpp>
+#include <userver/storages/postgres/options.hpp>
 
 #include "identity/application/authenticate_session.hpp"
 #include "identity/infrastructure/auth/postgres_session_store.hpp"
@@ -59,7 +61,10 @@ core::Result<infrastructure::http::Caller> CallersComponent::Identify(
         return NotIdentified();
     }
 
-    auto scope = tenants_.Open(id->Tenant());
+    auto scope = tenants_.Open(id->Tenant(),
+                               userver::storages::postgres::ClusterHostType::kMaster,
+                               userver::storages::postgres::TransactionOptions{
+                                   userver::storages::postgres::TransactionOptions::kReadOnly});
     PostgresSessionStore sessions{scope};
     const AuthenticateSession checking{sessions, clock_};
 

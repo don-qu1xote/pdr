@@ -4,6 +4,8 @@
 
 #include <userver/components/component.hpp>
 #include <userver/dynamic_config/storage/component.hpp>
+#include <userver/storages/postgres/cluster_types.hpp>
+#include <userver/storages/postgres/options.hpp>
 
 #include "identity/application/contract_service.hpp"
 #include "identity/application/note_sensitive_access.hpp"
@@ -69,7 +71,9 @@ PermissionsComponent::PermissionsComponent(const userver::components::ComponentC
 bool PermissionsComponent::MayActFor(const core::TenantId& tenant,
                                      const core::PersonId& actor,
                                      const core::PersonId& student) const {
-    auto scope = tenants_.Open(tenant);
+    auto scope = tenants_.Open(tenant,
+                               userver::storages::postgres::ClusterHostType::kMaster,
+                               userver::storages::postgres::TransactionOptions{});
     const AskedInScope asked{scope, clock_, ids_, configs_};
 
     const bool may = asked.Asked().MayActFor(tenant, actor, student);
@@ -81,7 +85,9 @@ PolicyDecision PermissionsComponent::Decide(const core::TenantId& tenant,
                                             const core::PersonId& actor,
                                             Action action,
                                             const Resource& resource) const {
-    auto scope = tenants_.Open(tenant);
+    auto scope = tenants_.Open(tenant,
+                               userver::storages::postgres::ClusterHostType::kMaster,
+                               userver::storages::postgres::TransactionOptions{});
     const AskedInScope asked{scope, clock_, ids_, configs_};
 
     const auto decision = asked.Asked().Decide(tenant, actor, action, resource);

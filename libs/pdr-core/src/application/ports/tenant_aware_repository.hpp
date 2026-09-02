@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <functional>
 #include <optional>
 #include <type_traits>
@@ -8,6 +9,28 @@
 #include "core/types/ids.hpp"
 
 namespace pdr::application::ports {
+
+/// ЧТО РАБОТА СОБИРАЕТСЯ ДЕЛАТЬ С ДАННЫМИ. Решает ВЫЗЫВАЮЩИЙ.
+///
+/// Адаптеру этого не вывести: «меняет или нет» — свойство сценария, а не
+/// запроса, который он пошлёт. Хендлер знает ответ до всякой работы (метод
+/// обращения), сценарий знает его по существу; адаптер узнал бы последним и
+/// только угадыванием.
+///
+/// Намерение здесь, а не в infrastructure, потому что спрашивают его отсюда:
+/// слой application не имеет права знать ни про реплики, ни про режимы
+/// транзакций Postgres — он знает только «читаю» и «меняю». Во что это
+/// превращается, решает адаптер и он один.
+enum class Intent : std::uint8_t {
+    /// Только чтение. Адаптеру разрешено взять реплику и читающую транзакцию.
+    ///
+    /// НЕ СТАВИТСЯ ТАМ, ГДЕ СРАЗУ ПОСЛЕ ЗАПИСИ ЧИТАЮТ СВОЁ ЖЕ: реплика отстаёт,
+    /// и «вошёл, а меня не пустило» — это оно.
+    kReading,
+
+    /// Меняет состояние. Мастер и пишущая транзакция.
+    kChanging,
+};
 
 /// Хранилище, у которого не бывает запросов «вообще»: каждый идёт от имени
 /// арендатора.
@@ -49,17 +72,19 @@ public:
     /// Обёртка не виртуальная: виртуальных шаблонов не бывает, а возвращать
     /// сценарии должны что угодно. Тот же приём, что у `IdGenerator::Next<Id>()`.
     template<class Job>
-    auto InTenant(const core::TenantId& tenant, Job&& job) {
+    auto InTenant(Intent intent, const core::TenantId& tenant, Job&& job) {
         using Result = std::invoke_result_t<Job, Session&>;
         static_assert(!std::is_reference_v<Result>,
                       "Работа не возвращает ссылку: сессия и её строки живут только "
                       "внутри области, а ссылка на них пережила бы транзакцию");
 
         if constexpr (std::is_void_v<Result>) {
-            Run(tenant, Work{[&job](Session& session) { job(session); }});
+            Run(intent, tenant, Work{[&job](Session& session) { job(session); }});
         } else {
             std::optional<Result> result;
-            Run(tenant, Work{[&job, &result](Session& session) { result.emplace(job(session)); }});
+            Run(intent, tenant, Work{[&job, &result](Session& session) {
+                    result.emplace(job(session));
+                }});
             return std::move(*result);
         }
     }
@@ -69,7 +94,12 @@ protected:
 
     /// Реализация обязана: объявить арендатора базе ДО первого запроса работы,
     /// выполнить работу в той же транзакции и снять объявление вместе с ней.
-    virtual void Run(const core::TenantId& tenant, const Work& work) = 0;
+    ///
+    /// Намерение исполняется, а не перепроверяется: адаптер не решает за
+    /// вызывающего и не «поправляет» его. Область нужна обоим намерениям —
+    /// объявление арендатора живёт до конца транзакции, и читающему пути она
+    /// нужна ровно затем же.
+    virtual void Run(Intent intent, const core::TenantId& tenant, const Work& work) = 0;
 };
 
 }  // namespace pdr::application::ports

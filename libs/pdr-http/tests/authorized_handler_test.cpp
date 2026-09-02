@@ -210,7 +210,9 @@ private:
         if (refuse.has_value()) {
             return *refuse;
         }
-        call.session.Insert(call.request_id);
+        if (call.session.Declared() == application::ports::Intent::kChanging) {
+            call.session.Insert(call.request_id);
+        }
 
         return testing::BookingAnswer{call.body.minutes, call.session.Tenant().ToString()};
     }
@@ -268,12 +270,37 @@ UTEST(AuthorizedHandler, WalksTheWholeWayAndAsksThePolicyOnTheWay) {
 /// арендатор уже объявлен базе.
 UTEST(AuthorizedHandler, TheScenarioRunsInsideTheTenantScope) {
     World world;
-    Ask ask;
+    Ask ask = Changing();
 
     const auto body = world.Serve(ask);
 
     EXPECT_EQ(body["tenant"].As<std::string>(), kTenant.ToString());
     EXPECT_EQ(world.database.RowsBypassingPolicy().size(), 1U);
+}
+
+/// ОБЯЗАТЕЛЬНЫЙ ТЕСТ ЗАДАЧИ (PDR-API-05): немутирующий путь не берёт пишущую
+/// транзакцию, а мутирующий берёт.
+///
+/// Намерение передаёт форма, а не адаптер: развилка «меняет / не меняет» у неё
+/// уже была (`pdr::http::Mutating`), и до этой задачи она никуда не доходила —
+/// на мастер пишущей транзакцией шло всё, включая чтение.
+///
+/// Проверяется здесь, на фейке, потому что вопрос не про базу, а про то, ЧТО
+/// форма передала. Что настоящий адаптер исполняет это на живой базе, проверяет
+/// scripts/check_isolation.py.
+UTEST(AuthorizedHandler, ANonChangingRequestDoesNotTakeAWritingTransaction) {
+    World reading;
+    Ask plain;
+    reading.Serve(plain);
+
+    EXPECT_EQ(reading.database.LastIntent(), application::ports::Intent::kReading)
+        << "чтение пошло пишущей транзакцией: занимает мастер и держит запись, которой нет";
+
+    World changing;
+    Ask mutating = Changing();
+    changing.Serve(mutating);
+
+    EXPECT_EQ(changing.database.LastIntent(), application::ports::Intent::kChanging);
 }
 
 /// Удостоверение берут там, где велел тот, кто его проверяет: имя cookie —

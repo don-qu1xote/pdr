@@ -8,8 +8,13 @@
       "enabled": true
     }
   },
-  "PDR_IDEMPOTENCY": {"lifetime_hours": 24},
-  "PDR_PRODUCT_EVENTS": {"enabled": true, "retention_days": 730},
+  "PDR_IDEMPOTENCY": {
+    "lifetime_hours": 24
+  },
+  "PDR_PRODUCT_EVENTS": {
+    "enabled": true,
+    "retention_days": 730
+  },
   "PDR_SELF_ACCOUNT_AGE": 14,
   "PDR_OWN_PAYMENTS_AGE": 16,
   "PDR_MAJORITY_AGE": 18,
@@ -20,11 +25,86 @@
     "parallelism": 1,
     "min_length": 10
   },
-  "PDR_LOGIN_THROTTLE": {"window_minutes": 15, "per_account": 5, "per_address": 20},
-  "PDR_SIGNUP_THROTTLE": {"window_minutes": 60, "per_address": 5},
+  "PDR_LOGIN_THROTTLE": {
+    "window_minutes": 15,
+    "per_account": 5,
+    "per_address": 20
+  },
+  "PDR_SIGNUP_THROTTLE": {
+    "window_minutes": 60,
+    "per_address": 5
+  },
   "PDR_AUTH_LIFETIMES": {
     "session_hours": 720,
     "invitation_hours": 168,
     "password_reset_minutes": 60
-  }
+  },
+  "POSTGRES_DEFAULT_COMMAND_CONTROL": {
+    "network_timeout_ms": 2000,
+    "statement_timeout_ms": 1500
+  },
+  "POSTGRES_QUERIES_COMMAND_CONTROL": {
+    "identity_session_find": {
+      "network_timeout_ms": 500,
+      "statement_timeout_ms": 400
+    },
+    "identity_credential_by_email": {
+      "network_timeout_ms": 500,
+      "statement_timeout_ms": 400
+    },
+    "identity_login_attempt_seen": {
+      "network_timeout_ms": 500,
+      "statement_timeout_ms": 400
+    },
+    "identity_login_attempt_register": {
+      "network_timeout_ms": 500,
+      "statement_timeout_ms": 400
+    },
+    "identity_session_save": {
+      "network_timeout_ms": 800,
+      "statement_timeout_ms": 600
+    },
+    "declare_tenant": {
+      "network_timeout_ms": 300,
+      "statement_timeout_ms": 200
+    },
+    "http_idempotency_key_claim": {
+      "network_timeout_ms": 800,
+      "statement_timeout_ms": 600
+    },
+    "http_idempotency_key_complete": {
+      "network_timeout_ms": 800,
+      "statement_timeout_ms": 600
+    },
+    "readiness_applied_migrations": {
+      "network_timeout_ms": 1000,
+      "statement_timeout_ms": 800
+    },
+    "jobs_claim_effect": {
+      "network_timeout_ms": 10000,
+      "statement_timeout_ms": 9000
+    },
+    "jobs_run_started": {
+      "network_timeout_ms": 10000,
+      "statement_timeout_ms": 9000
+    },
+    "jobs_run_finished": {
+      "network_timeout_ms": 10000,
+      "statement_timeout_ms": 9000
+    },
+    "jobs_run_last": {
+      "network_timeout_ms": 10000,
+      "statement_timeout_ms": 9000
+    },
+    "identity_session_revoke_all": {
+      "network_timeout_ms": 10000,
+      "statement_timeout_ms": 9000
+    },
+    "observability_product_event_record": {
+      "network_timeout_ms": 3000,
+      "statement_timeout_ms": 2500
+    }
+  },
+  "USERVER_DEADLINE_PROPAGATION_ENABLED": true,
+  "USERVER_CANCEL_HANDLE_REQUEST_BY_DEADLINE": true
 }

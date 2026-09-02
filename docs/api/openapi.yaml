@@ -152,6 +152,7 @@ paths:
         - $ref: '#/components/parameters/Tenant'
         - $ref: '#/components/parameters/IdempotencyKey'
         - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/ClientTimeout'
       requestBody:
         required: true
         content:
@@ -180,6 +181,8 @@ paths:
           $ref: '#/components/responses/Conflict'
         '422':
           $ref: '#/components/responses/Refused'
+        '498':
+          $ref: '#/components/responses/Expired'
         '500':
           $ref: '#/components/responses/Broken'
 
@@ -212,6 +215,27 @@ components:
         maxLength: 255
         pattern: '^\S+$'
       example: sign-in-7f3c1a94-6d0b-4f2e-9c31-8a5b0e2d4c77
+
+    ClientTimeout:
+      name: X-YaTaxi-Client-TimeoutMs
+      in: header
+      required: false
+      description: |
+        СКОЛЬКО МИЛЛИСЕКУНД КЛИЕНТ ГОТОВ ЖДАТЬ. Не пожелание: по этому сроку
+        сервис обрывает работу, которую клиент всё равно уже не примет, и не даёт
+        очереди такой работы добить себя под перегрузкой.
+
+        Остаток времени доходит до запросов к базе сам — доведение срока
+        (`USERVER_DEADLINE_PROPAGATION_ENABLED`) включено. Срок, истёкший до того,
+        как до запроса дошли, — это `498`, и работа не начинается вовсе.
+
+        Имя заголовка не наше: так его называет штатный механизм userver, и
+        переименовать его значило бы написать свой (ADR-0013).
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 600000
+      example: 5000
 
     RequestId:
       name: X-Request-Id
@@ -299,6 +323,40 @@ components:
         application/problem+json:
           schema:
             $ref: '#/components/schemas/Problem'
+
+    Expired:
+      description: |
+        Срок, отведённый КЛИЕНТОМ (`X-YaTaxi-Client-TimeoutMs`), истёк раньше, чем
+        до запроса дошли. Работа не начиналась: ни транзакции, ни занятого ключа
+        повтора после этого ответа не остаётся — тот же ключ можно прислать
+        снова, и он сработает как первый.
+
+        498, а не 504, и разница не в номере. 504 означает «мы кого-то ждали и не
+        дождались» — наша неудача, повтор осмыслен. 498 означает «времени не было
+        с самого начала»: повторять то же самое с тем же сроком незачем, надо
+        дать срок больше.
+
+        ЭТОТ ОТВЕТ НЕ problem+json, и это ВТОРОЕ названное исключение во всём
+        контуре (первое — 503 у `/readiness`). Отвечает не наша форма, а штатный
+        механизм доведения срока: он обрывает запрос ДО хендлера, и потому ни
+        одного нашего заголовка и ни одной нашей строки в ответе нет.
+
+        БОЛЬШЕ ТОГО: тип содержимого здесь НЕ СХОДИТСЯ С ТЕЛОМ. Приходит
+        `application/json`, а телом лежит обычный текст «Deadline expired». Это
+        дефект штатного механизма, и описан он тут как есть — спецификация
+        говорит, что сервис делает, а не что нам хотелось бы.
+
+        Отсюда правило для клиента: НА 498 ТЕЛО НЕ РАЗБИРАЮТ. Всё, что нужно
+        знать, — в самом коде: срок вышел, работа не начиналась, повторять надо с
+        большим сроком.
+
+        Своей формой это не переписать, не написав свой базовый хендлер, — а он
+        запрещён (ADR-0013).
+      content:
+        application/json:
+          schema:
+            type: string
+          example: Deadline expired
 
     Broken:
       description: Поломка на нашей стороне

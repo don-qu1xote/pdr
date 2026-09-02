@@ -269,6 +269,8 @@ test: clients/node_modules
 	python3 scripts/check_adult_student.py
 	python3 scripts/check_http_form.py --selftest
 	python3 scripts/check_http_form.py
+	python3 scripts/check_query_timeouts.py --selftest
+	python3 scripts/check_query_timeouts.py
 	python3 scripts/check_openapi.py --selftest
 	python3 scripts/check_openapi.py
 	python3 scripts/check_product_events.py --selftest

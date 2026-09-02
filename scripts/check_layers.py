@@ -9,7 +9,7 @@ application или infrastructure. Запрещено:
     infrastructure/ -> ничего не запрещено, это внешний слой
 
 ПУЛ СОЕДИНЕНИЙ — отдельное правило и не про слои. Упоминать его (заголовок
-`userver/storages/postgres/cluster.hpp`, типы `ClusterPtr` и `ClusterHostType`)
+`userver/storages/postgres/cluster.hpp`, тип `ClusterPtr`)
 разрешено ТОЛЬКО внутри `infrastructure/db/`. Там живут две двери к базе:
 `TenantContext`, который открывается только с арендатором, и `UnscopedAccess`,
 названный так, чтобы обход было видно на ревью. Всё остальное берёт область
@@ -81,7 +81,18 @@ PQ_HEADERS = frozenset({"libpq-fe.h", "libpq-events.h", "postgres_fe.h"})
 TIME_HEADERS = frozenset({"ctime", "time.h", "sys/time.h", "sys/times.h"})
 
 POOL_INCLUDE = "userver/storages/postgres/cluster.hpp"
-POOL_SYMBOLS = ("ClusterPtr", "ClusterHostType")
+POOL_SYMBOLS = ("ClusterPtr",)
+"""Чем БЕРУТ соединение. Именно это и запрещено вне infrastructure/db.
+
+`ClusterHostType` из списка убран (PDR-API-05). Он не берёт соединения и не даёт
+его взять: это ВЫБОР — на мастер идти или на реплику, — и делает его вызывающий,
+а исполняет `db::TenantContext::Open`, который без арендатора не открывается.
+Запрещать выбор заодно с пулом значило бы запретить и то, ради чего пул
+спрятали: чтобы решение принимал тот, кто знает сценарий.
+
+Дверь при этом на месте: соединение по-прежнему нельзя получить иначе как через
+`Open`, и `ClusterPtr` вне infrastructure/db по-прежнему роняет сборку.
+"""
 POOL_HOME = ("infrastructure", "db")
 
 CLOCK_CALLS = (
@@ -489,6 +500,14 @@ SELFTEST_FILES = {
         '#include <userver/storages/postgres/cluster.hpp>\n'
         '#include "alpha/core/thing.hpp"\n'
         'void Read(userver::storages::postgres::ClusterPtr cluster) { (void)cluster; }\n'
+    ),
+    "libs/pdr-alpha/src/alpha/infrastructure/chooses_host.cpp": (
+        '#include <userver/storages/postgres/cluster_types.hpp>\n'
+        'void Read(db::TenantContext& tenants) {\n'
+        '    auto scope = tenants.Open(tenant,\n'
+        '                              userver::storages::postgres::ClusterHostType::kSlaveOrMaster,\n'
+        '                              userver::storages::postgres::TransactionOptions{});\n'
+        '}\n'
     ),
     "libs/pdr-alpha/contract/alpha/contract.hpp": "#pragma once\n",
     "libs/pdr-alpha/src/alpha/application/allowed.cpp": '#include "beta/contract.hpp"\n',

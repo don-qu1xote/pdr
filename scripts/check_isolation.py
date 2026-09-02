@@ -794,6 +794,56 @@ def protection_cannot_be_switched_off(database: Database) -> list[str]:
     return problems
 
 
+def a_reading_scope_declares_and_refuses_to_write(database: Database) -> list[str]:
+    """ОБЯЗАТЕЛЬНЫЙ СЛУЧАЙ (PDR-API-05): читающая область объявляет арендатора и
+    НЕ ПИШЕТ.
+
+    Немутирующий путь берёт читающую транзакцию (`TransactionOptions::kReadOnly`)
+    и, если реплика есть, реплику. Проверить это по коду нельзя: там написано
+    «kReadOnly», а действует ли оно — вопрос к базе.
+
+    Два утверждения сразу, и второе важнее. Первое: объявление арендатора в
+    читающей транзакции РАБОТАЕТ — `set_config(..., true)` не запись, и политика
+    видит арендатора как обычно. Не работай оно, весь читающий путь возвращал бы
+    пустоту, и выглядело бы это как «данные пропали».
+
+    Второе: запись в такой области ОТКАЗЫВАЕТ. Значит, работа, назвавшаяся
+    читающей и всё-таки пишущая, падает на своём же запросе — а не тихо уходит
+    на мастер, оставляя намерение враньём.
+    """
+    rows = database.app(f"""
+begin transaction read only;
+select set_config('{PARAMETER}', '{TENANT_A}', true);
+select 'видно', count(*) from identity_person;
+commit;
+""")
+
+    complaints = []
+    visible = [row for row in rows if row and row[0] == "видно"]
+    if not visible:
+        return ["читающая область не ответила вовсе: объявление арендатора в ней не прошло"]
+    if int(visible[0][1]) != PEOPLE_PER_TENANT:
+        complaints.append(
+            f"в читающей области видно {visible[0][1]} человек вместо {PEOPLE_PER_TENANT}: "
+            f"объявление арендатора в ней не действует, и читающий путь вернул бы пустоту"
+        )
+
+    refused = database.app_refusal(f"""
+begin transaction read only;
+select set_config('{PARAMETER}', '{TENANT_A}', true);
+insert into identity_person (tenant_id, id, display_name, email, tz)
+values ('{TENANT_A}', gen_random_uuid(), 'Пишем в читающей', 'read.only@example.org', 'UTC');
+commit;
+""")
+    if not refused:
+        complaints.append(
+            "запись в читающей области прошла: намерение «только читаю» ничего не значит, "
+            "и работа, назвавшаяся читающей, тихо пишет на мастере"
+        )
+
+    return complaints
+
+
 CASES = (
     ("защита включена, форсирована и с политикой на каждой таблице", protection_is_on),
     ("роль приложения обычная: не суперпользователь, не bypassrls", app_role_is_ordinary),
@@ -803,6 +853,8 @@ CASES = (
     ("без параметра сессии не видно ничего", nothing_is_visible_without_the_parameter),
     ("ОБЯЗАТЕЛЬНЫЙ: объявление арендатора не переживает транзакцию",
      the_declaration_does_not_outlive_the_transaction),
+    ("ОБЯЗАТЕЛЬНЫЙ: читающая область объявляет арендатора и не пишет",
+     a_reading_scope_declares_and_refuses_to_write),
     ("мусор в параметре — отказ", garbage_in_the_parameter_is_refused),
     ("вставка с чужим арендатором отвергается", foreign_insert_is_refused),
     ("вставка без арендатора отвергается", insert_without_tenant_is_refused),

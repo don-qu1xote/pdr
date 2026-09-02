@@ -34,6 +34,10 @@ public:
     PermissionsComponent(const userver::components::ComponentConfig& config,
                          const userver::components::ComponentContext& context);
 
+    /// Оба вопроса задаются в ПИШУЩЕЙ области, хотя звучат как чтение: внутри
+    /// живёт журнал доступа (`PostgresAccessLog`), и обращение к
+    /// чувствительному полю он записывает. Читающая транзакция отказала бы этой
+    /// записи, а не ускорила ответ.
     bool MayActFor(const core::TenantId& tenant,
                    const core::PersonId& actor,
                    const core::PersonId& student) const override;

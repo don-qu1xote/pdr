@@ -25,10 +25,11 @@ TEST(TenantScope, DeclaresTenantBeforeTheWorkAsksAnything) {
     FakeTenantAwareRepository repository;
     EXPECT_EQ(repository.Declarations(), 0);
 
-    repository.InTenant(Numbered<core::TenantId>(1), [&repository](FakeTenantSession& session) {
-        EXPECT_EQ(repository.Declarations(), 1) << "работа началась до объявления арендатора";
-        EXPECT_TRUE(session.Tenant() == Numbered<core::TenantId>(1));
-    });
+    repository.InTenant(
+        Intent::kChanging, Numbered<core::TenantId>(1), [&repository](FakeTenantSession& session) {
+            EXPECT_EQ(repository.Declarations(), 1) << "работа началась до объявления арендатора";
+            EXPECT_TRUE(session.Tenant() == Numbered<core::TenantId>(1));
+        });
 
     EXPECT_EQ(repository.Declarations(), 1);
 }
@@ -36,8 +37,8 @@ TEST(TenantScope, DeclaresTenantBeforeTheWorkAsksAnything) {
 TEST(TenantScope, EachScopeDeclaresAnew) {
     FakeTenantAwareRepository repository;
 
-    repository.InTenant(Numbered<core::TenantId>(1), [](FakeTenantSession&) {});
-    repository.InTenant(Numbered<core::TenantId>(2), [](FakeTenantSession&) {});
+    repository.InTenant(Intent::kChanging, Numbered<core::TenantId>(1), [](FakeTenantSession&) {});
+    repository.InTenant(Intent::kChanging, Numbered<core::TenantId>(2), [](FakeTenantSession&) {});
 
     EXPECT_EQ(repository.Declarations(), 2);
 }
@@ -46,13 +47,16 @@ TEST(TenantScope, ReturnsWhatTheWorkReturnsAndNothingWhenItReturnsNothing) {
     FakeTenantAwareRepository repository;
     const auto tenant = Numbered<core::TenantId>(7);
 
-    const auto counted = repository.InTenant(
-        tenant, [](FakeTenantSession& session) { return session.SelectAll().size(); });
+    const auto counted =
+        repository.InTenant(Intent::kReading, tenant, [](FakeTenantSession& session) {
+            return session.SelectAll().size();
+        });
     EXPECT_EQ(counted, 0U);
 
-    static_assert(std::is_void_v<decltype(repository.InTenant(
-                      tenant, [](FakeTenantSession& session) { session.Insert("x"); }))>,
-                  "работа без результата не должна заставлять сценарий что-то возвращать");
+    static_assert(
+        std::is_void_v<decltype(repository.InTenant(
+            Intent::kChanging, tenant, [](FakeTenantSession& session) { session.Insert("x"); }))>,
+        "работа без результата не должна заставлять сценарий что-то возвращать");
 }
 
 }  // namespace

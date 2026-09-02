@@ -726,3 +726,117 @@ PDR_GUARDIAN_HANDOVER_DAYS:
     type: integer
     minimum: 1
     maximum: 180
+
+POSTGRES_DEFAULT_COMMAND_CONTROL:
+  description: >-
+    Сколько времени отведено запросу к базе, у которого нет своего срока. Пол,
+    ниже которого не проваливается ни один запрос: `network_timeout_ms` — весь
+    поход драйвера, `statement_timeout_ms` — сколько считает сама база.
+  kind: техническая
+  owner: тот, кто держит сервис
+  jurisdiction: нет
+  breaks: >-
+    Без значения таймаута нет вовсе: зависший запрос держит транзакцию
+    арендатора, занятый ключ повтора и соединение из пула, и пул кончается
+    раньше, чем кто-то заметит. Снаружи это «всё висит», а не ошибка. Слишком
+    малое значение рвёт нормальные запросы на медленном железе и выглядит как
+    случайные пятисотые.
+  штатная: да
+  default: {"network_timeout_ms": 2000, "statement_timeout_ms": 1500}
+  schema:
+    type: object
+    additionalProperties: false
+    required: [network_timeout_ms, statement_timeout_ms]
+    properties:
+      network_timeout_ms:
+        description: весь поход драйвера, включая ожидание соединения
+        type: integer
+        minimum: 100
+        maximum: 60000
+      statement_timeout_ms:
+        description: сколько считает сама база; всегда меньше сетевого
+        type: integer
+        minimum: 50
+        maximum: 60000
+
+POSTGRES_QUERIES_COMMAND_CONTROL:
+  description: >-
+    Срок ОТДЕЛЬНОГО запроса, по его имени. Имена стоят у всех запросов дерева
+    (`Query::Name`), и здесь названы те, которым общий пол не подходит:
+    задания и уборка живут дольше, вход и опознание обязаны отвечать быстрее.
+  kind: техническая
+  owner: тот, кто держит сервис
+  jurisdiction: нет
+  breaks: >-
+    Имя, которого в дереве нет, — это срок, который никому не достался: запрос
+    молча остаётся на общем поле. Переименовали запрос и забыли строку здесь —
+    то же самое. Расхождение ловит scripts/check_query_timeouts.py.
+  штатная: да
+  default:
+    identity_session_find: {"network_timeout_ms": 500, "statement_timeout_ms": 400}
+    identity_credential_by_email: {"network_timeout_ms": 500, "statement_timeout_ms": 400}
+    identity_login_attempt_seen: {"network_timeout_ms": 500, "statement_timeout_ms": 400}
+    identity_login_attempt_register: {"network_timeout_ms": 500, "statement_timeout_ms": 400}
+    identity_session_save: {"network_timeout_ms": 800, "statement_timeout_ms": 600}
+    declare_tenant: {"network_timeout_ms": 300, "statement_timeout_ms": 200}
+    http_idempotency_key_claim: {"network_timeout_ms": 800, "statement_timeout_ms": 600}
+    http_idempotency_key_complete: {"network_timeout_ms": 800, "statement_timeout_ms": 600}
+    readiness_applied_migrations: {"network_timeout_ms": 1000, "statement_timeout_ms": 800}
+    jobs_claim_effect: {"network_timeout_ms": 10000, "statement_timeout_ms": 9000}
+    jobs_run_started: {"network_timeout_ms": 10000, "statement_timeout_ms": 9000}
+    jobs_run_finished: {"network_timeout_ms": 10000, "statement_timeout_ms": 9000}
+    jobs_run_last: {"network_timeout_ms": 10000, "statement_timeout_ms": 9000}
+    identity_session_revoke_all: {"network_timeout_ms": 10000, "statement_timeout_ms": 9000}
+    observability_product_event_record: {"network_timeout_ms": 3000, "statement_timeout_ms": 2500}
+  schema:
+    type: object
+    additionalProperties:
+      type: object
+      additionalProperties: false
+      required: [network_timeout_ms, statement_timeout_ms]
+      properties:
+        network_timeout_ms:
+          description: весь поход драйвера для запроса с этим именем
+          type: integer
+          minimum: 100
+          maximum: 60000
+        statement_timeout_ms:
+          description: сколько считает база; всегда меньше сетевого
+          type: integer
+          minimum: 50
+          maximum: 60000
+
+USERVER_DEADLINE_PROPAGATION_ENABLED:
+  description: >-
+    Доходит ли до работы срок, который назначил клиент (`X-YaTaxi-Client-TimeoutMs`).
+    Включено — остаток времени едет в запросы к базе сам; выключено — сервис
+    доделывает работу, которую уже никто не ждёт.
+  kind: техническая
+  owner: тот, кто держит сервис
+  jurisdiction: нет
+  breaks: >-
+    Выключенным оно не экономит, а копит: под перегрузкой очередь работы, чей
+    заказчик давно ушёл, добивает сервис окончательно. Включённым — обрывает
+    запрос, который клиент всё равно бы не дождался.
+  штатная: да
+  default: true
+  schema:
+    type: boolean
+
+USERVER_CANCEL_HANDLE_REQUEST_BY_DEADLINE:
+  description: >-
+    Обрывать ли работу, у которой срок вышел ПОСРЕДИ выполнения. Без этого
+    просроченный запрос узнаёт о своём сроке только на границе, а между границами
+    доделывает всё до конца.
+  kind: техническая
+  owner: тот, кто держит сервис
+  jurisdiction: нет
+  breaks: >-
+    Выключенным превращает срок в пожелание: транзакция арендатора живёт до
+    конца работы, которую уже не ждут. Включённым обрывает работу на середине —
+    поэтому всё, что меняет состояние, живёт в ОДНОЙ транзакции и откатывается
+    целиком (docs/architecture/http.md).
+  штатная: да
+  default: true
+  schema:
+    type: boolean

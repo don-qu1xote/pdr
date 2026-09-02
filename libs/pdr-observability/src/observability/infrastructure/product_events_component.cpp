@@ -4,6 +4,8 @@
 
 #include <userver/components/component.hpp>
 #include <userver/dynamic_config/storage/component.hpp>
+#include <userver/storages/postgres/cluster_types.hpp>
+#include <userver/storages/postgres/options.hpp>
 
 #include "infrastructure/db/tenant_context_component.hpp"
 #include "observability/application/contract_service.hpp"
@@ -28,7 +30,9 @@ core::Result<void> ProductEventsComponent::Record(const core::TenantId& tenant,
         return {};
     }
 
-    auto scope = tenants_.Open(tenant);
+    auto scope = tenants_.Open(tenant,
+                               userver::storages::postgres::ClusterHostType::kMaster,
+                               userver::storages::postgres::TransactionOptions{});
     PostgresProductEventStream stream{scope, ids_};
     ContractService writing{stream};
 

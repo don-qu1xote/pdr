@@ -316,12 +316,13 @@ private:
                                const Body& body,
                                const std::string& request_id) const {
         try {
-            return database_.InTenant(caller.tenant, [&](Session& session) {
-                Served served{};
-                served.answer = Produce(
-                    Call{caller, body, request_id, session, served.handed, clock_, request});
-                return served;
-            });
+            return database_.InTenant(
+                application::ports::Intent::kReading, caller.tenant, [&](Session& session) {
+                    Served served{};
+                    served.answer = Produce(
+                        Call{caller, body, request_id, session, served.handed, clock_, request});
+                    return served;
+                });
         } catch (const Rollback& rolled) {
             return rolled.refusal;
         }
@@ -344,19 +345,20 @@ private:
         const auto expires_at = lifetime_.ExpiresFrom(clock_.Now());
 
         try {
-            return database_.InTenant(caller.tenant, [&](Session& session) {
-                const auto claim =
-                    Or(keys_.Take(session, caller.tenant, key, fingerprint, expires_at));
-                if (claim.outcome != pdr::http::ClaimOutcome::kTaken) {
-                    return Served{claim.outcome, claim.answer, Handed{}};
-                }
+            return database_.InTenant(
+                application::ports::Intent::kChanging, caller.tenant, [&](Session& session) {
+                    const auto claim =
+                        Or(keys_.Take(session, caller.tenant, key, fingerprint, expires_at));
+                    if (claim.outcome != pdr::http::ClaimOutcome::kTaken) {
+                        return Served{claim.outcome, claim.answer, Handed{}};
+                    }
 
-                Served served{};
-                served.answer = Produce(
-                    Call{caller, body, request_id, session, served.handed, clock_, request});
-                Or(keys_.Complete(session, caller.tenant, key, served.answer));
-                return served;
-            });
+                    Served served{};
+                    served.answer = Produce(
+                        Call{caller, body, request_id, session, served.handed, clock_, request});
+                    Or(keys_.Complete(session, caller.tenant, key, served.answer));
+                    return served;
+                });
         } catch (const Rollback& rolled) {
             return rolled.refusal;
         }

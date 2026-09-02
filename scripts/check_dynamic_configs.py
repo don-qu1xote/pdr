@@ -20,6 +20,11 @@
 * рядом с чтением величины стоит подписка `UpdateAndListen` — журнал
   «было → стало». Величина без журнала означает, что «оно само сломалось» будет
   разбираться по памяти;
+* ШТАТНАЯ величина (`штатная: да`) — та, чей ключ объявляет userver, а не мы:
+  сроки запросов к базе, доведение дедлайна. Своего ключа ей не заводят, и
+  «кто читает» с ней не сверяют — сверяют с УСТАНОВКОЙ: значение обязано стоять
+  в `dynamic_config_fallback.json` каждого сервиса. Записана и не выставлена —
+  значит не действует, а реестр обещает, что действует;
 * запись, которую никто не читает, разрешена ровно с полем `awaits` — областью
   задачи, которая её заведёт. Так число попадает в реестр раньше, чем в
   константу, и не остаётся там навсегда: как только величину начали читать, поле
@@ -83,6 +88,20 @@ KINDS = ("техническая", "продуктовая")
 JURISDICTIONS = ("да", "нет")
 
 CONTRIBUTING = Path("CONTRIBUTING.md")
+SERVICES = Path("services")
+FALLBACK = Path("configs/dynamic_config_fallback.json")
+
+STANDARD_FIELD = "штатная"
+STANDARD_YES = "да"
+"""Величина принадлежит ШТАТНОМУ механизму: ключ объявляет userver, не мы.
+
+Такие записи в реестре живут наравне с нашими — «чей это выбор», «что сломается
+за пределами» и «привязано ли к стране» у них ровно те же, и отвечает на них
+человек. Отличий два, и оба машинные: структуру им не порождают (второй ключ с
+тем же именем — вторая ячейка хранилища), а вместо «кто читает» с ними сверяется
+установка: значение обязано стоять в dynamic_config_fallback.json каждого
+сервиса, иначе оно записано и не действует.
+"""
 AREA_ROW = re.compile(r"^\|\s*`([A-Z]+)`\s*\|")
 
 KEY_USE = re.compile(r"dynamic_config::(?P<name>PDR_[A-Z0-9_]+)\b")
@@ -345,6 +364,21 @@ def known_areas(root: Path) -> set[str]:
     }
 
 
+def services_of(root: Path) -> list[Path]:
+    services = root / SERVICES
+    if not services.is_dir():
+        return []
+    return sorted(entry for entry in services.iterdir() if (entry / FALLBACK).is_file())
+
+
+def installed(root: Path) -> dict[Path, str]:
+    """{сервис: текст его dynamic_config_fallback.json}."""
+    return {
+        service.relative_to(root): (service / FALLBACK).read_text(encoding="utf-8")
+        for service in services_of(root)
+    }
+
+
 def check(root: Path) -> tuple[list[str], int]:
     registry_path = root / REGISTRY
     used, violations = keys_in_use(root)
@@ -363,6 +397,8 @@ def check(root: Path) -> tuple[list[str], int]:
     except RegistryError as error:
         return [str(error)], 0
 
+    fallbacks = installed(root)
+
     for name in sorted(used):
         if name not in entries:
             violations.append(
@@ -375,6 +411,28 @@ def check(root: Path) -> tuple[list[str], int]:
         entry = entries[name]
 
         awaited = str(entry.get("awaits", "")).strip()
+        standard = str(entry.get(STANDARD_FIELD, "")).strip() == STANDARD_YES
+
+        if standard:
+            if awaited:
+                violations.append(
+                    f"{REGISTRY}: у величины {name} стоит и «штатная», и «awaits». Штатная "
+                    f"величина есть уже сейчас — ждать ей нечего"
+                )
+            if name in used:
+                violations.append(
+                    f"{REGISTRY}: величина {name} объявлена штатной, а её читают своим ключом "
+                    f"({used[name]}). Второй ключ с тем же именем — вторая ячейка хранилища: "
+                    f"положенное в одну из другой не видно"
+                )
+            for service, text in sorted(fallbacks.items()):
+                if f'"{name}"' not in text:
+                    violations.append(
+                        f"{service / FALLBACK}: штатной величины {name} нет в установке. "
+                        f"Записана в реестре и не выставлена — значит не действует, а реестр "
+                        f"обещает, что действует"
+                    )
+            continue
 
         if name not in used and not awaited:
             violations.append(
@@ -463,6 +521,40 @@ PDR_WAITS_FOREVER:
     minimum: 1
     maximum: 2
 
+POSTGRES_INSTALLED:
+  description: штатная величина, выставленная в установке
+  kind: техническая
+  owner: тот, кто держит сервис
+  jurisdiction: нет
+  breaks: Ничего.
+  штатная: да
+  default: {"network_timeout_ms": 1}
+  schema:
+    type: object
+
+POSTGRES_NOT_INSTALLED:
+  description: штатная величина, про которую установка не знает
+  kind: техническая
+  owner: тот, кто держит сервис
+  jurisdiction: нет
+  breaks: Ничего.
+  штатная: да
+  default: {"network_timeout_ms": 1}
+  schema:
+    type: object
+
+USERVER_BOTH_WAYS:
+  description: штатная и одновременно ждущая — так не бывает
+  kind: техническая
+  owner: тот, кто держит сервис
+  jurisdiction: нет
+  breaks: Ничего.
+  штатная: да
+  awaits: SCHED
+  default: true
+  schema:
+    type: boolean
+
 PDR_ALREADY_THERE:
   description: Ключ уже объявлен, а поле «awaits» осталось.
   kind: техническая
@@ -534,6 +626,8 @@ PDR_FORGOTTEN:
 
 SELFTEST_FILES = {
     "configs/dynamic/registry.yaml": SELFTEST_REGISTRY,
+    "services/scheduling/configs/dynamic_config_fallback.json":
+        '{"POSTGRES_INSTALLED": {"network_timeout_ms": 1}}\n',
     "libs/pdr-jobs/src/jobs/infrastructure/good.cpp": (
         "auto every = snapshot[::dynamic_config::PDR_GOOD];\n"
         "auto limits = snapshot[::dynamic_config::PDR_NO_LIMITS];\n"
@@ -554,11 +648,16 @@ SELFTEST_FILES = {
 }
 """Дерево одной самопроверки.
 
+Установка здесь выставляет одну штатную величину из двух: вторая обязана быть
+поймана как «записана в реестре и не действует».
+
 `PDR_NO_DEFAULT` читается ТОЛЬКО проверкой — и обязан считаться непрочитанным:
 величина, которую читает лишь её собственный тест, никому не нужна.
 """
 
 SELFTEST_EXPECTED = (
+    ("POSTGRES_NOT_INSTALLED", "нет в установке"),
+    ("USERVER_BOTH_WAYS", "и «штатная», и «awaits»"),
     ("PDR_NO_LIMITS", "без пределов"),
     ("PDR_BAD_FIELDS", "нет поля «owner»"),
     ("PDR_BAD_FIELDS", "вид «важная»"),
@@ -601,7 +700,9 @@ def selftest() -> int:
                     print("    " + line, file=sys.stderr)
                 return 1
 
-        expected_entries = SELFTEST_REGISTRY.count("\nPDR_") + SELFTEST_REGISTRY.startswith("PDR_")
+        expected_entries = len(
+            re.findall(r"^[A-Z][A-Z0-9_]*:$", SELFTEST_REGISTRY, re.M)
+        )
         if entries != expected_entries:
             print(f"самопроверка: разобрано {entries} записей вместо {expected_entries}",
                   file=sys.stderr)

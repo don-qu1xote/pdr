@@ -8,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+#include "application/ports/tenant_aware_repository.hpp"
 #include "core/types/ids.hpp"
 
 /// @file
@@ -66,6 +67,20 @@
 
 namespace pdr::testing {
 
+/// Намерение области короткой записью: набор и так плотный, а `InTenant`
+/// встречается в нём пятнадцать раз.
+///
+/// Расставлено ПО СУЩЕСТВУ каждого случая, а не одним значением на весь файл:
+/// проверка «чужого не видно» действительно только читает, и читающей областью
+/// она заодно доказывает, что чтение работает и в ней.
+constexpr application::ports::Intent Reading() noexcept {
+    return application::ports::Intent::kReading;
+}
+
+constexpr application::ports::Intent Changing() noexcept {
+    return application::ports::Intent::kChanging;
+}
+
 /// Оснастка набора: два арендатора и мир реализации. Общей базовой фикстуры «на
 /// всё» в проекте нет — эта знает ровно про один порт.
 template<class World>
@@ -96,13 +111,15 @@ PDR_CONTRACT_TEST_P(RepositoryContract, NothingOfAnotherTenantIsVisible) {
     using Session = typename TypeParam::Session;
     auto& repository = this->world_.Repository();
 
-    repository.InTenant(this->First(),
-                        [](Session& session) { TypeParam::Insert(session, "занятие А"); });
-    repository.InTenant(this->Second(),
-                        [](Session& session) { TypeParam::Insert(session, "занятие Б"); });
+    repository.InTenant(Changing(), this->First(), [](Session& session) {
+        TypeParam::Insert(session, "занятие А");
+    });
+    repository.InTenant(Changing(), this->Second(), [](Session& session) {
+        TypeParam::Insert(session, "занятие Б");
+    });
 
     const auto seen = repository.InTenant(
-        this->Second(), [](Session& session) { return TypeParam::SelectAll(session); });
+        Reading(), this->Second(), [](Session& session) { return TypeParam::SelectAll(session); });
 
     ASSERT_EQ(seen.size(), 1U) << "из области второго арендатора видно не только его строку";
     EXPECT_EQ(seen.front(), "занятие Б");
@@ -115,10 +132,10 @@ PDR_CONTRACT_TEST_P(RepositoryContract, ForeignRowIsNotFoundByItsPayload) {
     using Session = typename TypeParam::Session;
     auto& repository = this->world_.Repository();
 
-    repository.InTenant(this->First(),
-                        [](Session& session) { TypeParam::Insert(session, "секрет"); });
+    repository.InTenant(
+        Changing(), this->First(), [](Session& session) { TypeParam::Insert(session, "секрет"); });
 
-    const auto found = repository.InTenant(this->Second(), [](Session& session) {
+    const auto found = repository.InTenant(Reading(), this->Second(), [](Session& session) {
         const auto rows = TypeParam::SelectAll(session);
         return std::count(rows.begin(), rows.end(), std::string{"секрет"});
     });
@@ -132,7 +149,7 @@ PDR_CONTRACT_TEST_P(RepositoryContract, TenantIsDeclaredBeforeAnyQuery) {
     auto& repository = this->world_.Repository();
 
     const auto declared = repository.InTenant(
-        this->First(), [](Session& session) { return TypeParam::Declared(session); });
+        Reading(), this->First(), [](Session& session) { return TypeParam::Declared(session); });
 
     EXPECT_TRUE(declared == this->First()) << "область начала работу не под тем арендатором";
 }
@@ -144,9 +161,10 @@ PDR_CONTRACT_TEST_P(RepositoryContract, ForeignRowCannotBeWritten) {
     auto& repository = this->world_.Repository();
     const auto foreign = this->Second();
 
-    const auto accepted = repository.InTenant(this->First(), [&foreign](Session& session) {
-        return TypeParam::InsertFor(session, foreign, "чужое");
-    });
+    const auto accepted =
+        repository.InTenant(Changing(), this->First(), [&foreign](Session& session) {
+            return TypeParam::InsertFor(session, foreign, "чужое");
+        });
 
     EXPECT_FALSE(accepted) << "строка с чужим арендатором принята";
     EXPECT_EQ(this->world_.RowsBypassingPolicy(), 0U);
@@ -158,19 +176,19 @@ PDR_CONTRACT_TEST_P(RepositoryContract, BareDeleteTouchesOnlyOwnRows) {
     using Session = typename TypeParam::Session;
     auto& repository = this->world_.Repository();
 
-    repository.InTenant(this->First(), [](Session& session) {
+    repository.InTenant(Changing(), this->First(), [](Session& session) {
         TypeParam::Insert(session, "первое");
         TypeParam::Insert(session, "второе");
     });
-    repository.InTenant(this->Second(),
-                        [](Session& session) { TypeParam::Insert(session, "чужое"); });
+    repository.InTenant(
+        Changing(), this->Second(), [](Session& session) { TypeParam::Insert(session, "чужое"); });
 
     const auto removed = repository.InTenant(
-        this->First(), [](Session& session) { return TypeParam::DeleteAll(session); });
+        Changing(), this->First(), [](Session& session) { return TypeParam::DeleteAll(session); });
     EXPECT_EQ(removed, 2U) << "удаление без условия задело не свои строки";
 
     const auto left = repository.InTenant(
-        this->Second(), [](Session& session) { return TypeParam::SelectAll(session); });
+        Reading(), this->Second(), [](Session& session) { return TypeParam::SelectAll(session); });
     ASSERT_EQ(left.size(), 1U);
     EXPECT_EQ(left.front(), "чужое");
     EXPECT_EQ(this->world_.RowsBypassingPolicy(), 1U);
@@ -182,11 +200,13 @@ PDR_CONTRACT_TEST_P(RepositoryContract, ScopeReturnsWhatTheWorkReturns) {
     using Session = typename TypeParam::Session;
     auto& repository = this->world_.Repository();
 
-    const auto counted = repository.InTenant(
-        this->First(), [](Session& session) { return TypeParam::SelectAll(session).size(); });
+    const auto counted = repository.InTenant(Reading(), this->First(), [](Session& session) {
+        return TypeParam::SelectAll(session).size();
+    });
     EXPECT_EQ(counted, 0U);
 
     static_assert(std::is_void_v<decltype(repository.InTenant(
+                      Changing(),
                       core::TenantId::FromBytes(core::IdBytes{}),
                       [](Session& session) { TypeParam::Insert(session, "x"); }))>,
                   "работа без результата не должна заставлять сценарий что-то возвращать");

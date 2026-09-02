@@ -15,6 +15,8 @@
 #include <userver/formats/json/serialize.hpp>
 #include <userver/formats/json/value.hpp>
 #include <userver/storages/postgres/cluster.hpp>
+#include <userver/storages/postgres/cluster_types.hpp>
+#include <userver/storages/postgres/options.hpp>
 #include <userver/storages/postgres/utest/cluster_local.hpp>
 #include <userver/utest/utest.hpp>
 
@@ -95,7 +97,9 @@ UTEST_F(ProductStreamTest, FieldsKeepTheirKind) {
                                                     {"reason", Value::Code("moved")}});
     ASSERT_TRUE(event.HasValue()) << event.Failure().Detail();
 
-    auto scope = tenants_.Open(tenant);
+    auto scope = tenants_.Open(tenant,
+                               userver::storages::postgres::ClusterHostType::kMaster,
+                               userver::storages::postgres::TransactionOptions{});
     PostgresProductEventStream stream{scope, ids_};
     stream.Record(event.Value());
     scope.Commit();
@@ -110,7 +114,9 @@ UTEST_F(ProductStreamTest, FieldsKeepTheirKind) {
 /// База отвергает то же, что домен: правило одно, мест применения два.
 UTEST_F(ProductStreamTest, DatabaseRefusesAName) {
     const auto tenant = SomeTenant();
-    auto scope = tenants_.Open(tenant);
+    auto scope = tenants_.Open(tenant,
+                               userver::storages::postgres::ClusterHostType::kMaster,
+                               userver::storages::postgres::TransactionOptions{});
     PostgresProductEventStream stream{scope, ids_};
 
     EXPECT_THROW(

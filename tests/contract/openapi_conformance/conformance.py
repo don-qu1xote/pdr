@@ -53,8 +53,15 @@ def _document(specification, schema):
     return document
 
 
-def matches(specification, response, path, method, status, media=MEDIA_JSON):
-    """Проверить один обмен целиком: код, тип содержимого, тело и заголовки."""
+def matches(specification, response, path, method, status, media=MEDIA_JSON, parse=None):
+    """Проверить один обмен целиком: код, тип содержимого, тело и заголовки.
+
+    `parse` нужен ровно одному ответу во всём контуре — 498. Там штатный механизм
+    доведения срока ставит тип `application/json`, а телом кладёт обычный текст, и
+    одно с другим не сходится. Спецификация это описывает как есть (сказать
+    «application/json» и разобрать текст — единственный способ не соврать ни про
+    заголовок, ни про тело), а разбирать такое тело как JSON нечем.
+    """
     operation = operation_of(specification, path, method)
 
     assert response.status == status, (
@@ -78,7 +85,8 @@ def matches(specification, response, path, method, status, media=MEDIA_JSON):
             )
 
     schema = resolved(specification, described['content'][media]['schema'])
-    body = response.text if media in (MEDIA_TEXT, MEDIA_OCTETS) else json.loads(response.text)
+    as_text = parse is False or media in (MEDIA_TEXT, MEDIA_OCTETS)
+    body = response.text if as_text else json.loads(response.text)
 
     jsonschema.Draft202012Validator(_document(specification, schema)).validate(body)
     return body

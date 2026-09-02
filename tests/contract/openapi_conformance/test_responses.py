@@ -146,6 +146,45 @@ async def test_unknown_cabinet_answers_as_described(service_client, specificatio
     assert problem['type'] == 'urn:pdr:error:cabinet_unknown'
 
 
+async def test_an_expired_deadline_answers_as_described(
+    service_client, specification, practice,
+):
+    """ОБЯЗАТЕЛЬНЫЙ ОБМЕН ЗАДАЧИ: срок вышел — 498, и работа не начиналась.
+
+    Срок клиент называет сам, заголовком `X-YaTaxi-Client-TimeoutMs`. Ноль
+    означает «времени нет вовсе»: ответ обязан прийти сразу и до всякой работы.
+
+    Отвечает штатный механизм, а не наша форма: тело здесь не problem+json, а
+    тип содержимого с ним даже не сходится — `application/json` при обычном
+    тексте. И то и другое названо в спецификации, а не спрятано.
+
+    Что транзакция при этом не открывалась, видно отсюда косвенно — по ключу
+    повтора. Ключ тот же самый используется следом, и второе обращение обязано
+    пройти как ПЕРВОЕ, а не как повтор: занятый ключ означал бы, что просроченный
+    запрос успел открыть область и занять строку.
+    """
+    reused = key()
+    body = {'email': EMAIL, 'password': PASSWORD}
+
+    response = await service_client.post(
+        address(),
+        json=body,
+        headers={'Idempotency-Key': reused, 'X-YaTaxi-Client-TimeoutMs': '0'},
+    )
+
+    conformance.matches(
+        specification, response, SIGN_IN, 'POST', 498, conformance.MEDIA_JSON, parse=False,
+    )
+
+    again = await service_client.post(
+        address(), json=body, headers={'Idempotency-Key': reused},
+    )
+    assert again.status == 200, 'ключ остался занят: просроченный запрос всё-таки открыл область'
+    assert 'Idempotency-Replayed' not in again.headers, (
+        'ответ пришёл сохранённым: просроченный запрос успел записать его'
+    )
+
+
 async def test_repeat_returns_the_saved_answer(service_client, specification, practice):
     """ПОВТОР ОТДАЁТ СОХРАНЁННОЕ, а не выполняет вход второй раз.
 
