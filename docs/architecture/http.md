@@ -103,12 +103,27 @@ RFC 9457, `application/problem+json`. Собирает тело один фай�
 
 ## Разбор тела
 
-Схема лежит файлом рядом с хендлером (`schemas/*.json`) и читается **один раз
-при его сборке**. Отложить чтение до первого запроса значило бы узнать о
-сломанной схеме от первого человека, который на неё наткнулся.
+ТЕЛО РАЗБИРАЕТСЯ В ТИП, ПОРОЖДЁННЫЙ ИЗ `docs/api/openapi.yaml`, а не читается по
+полям. Ручка получает готовую структуру и `formats::json::Value` не видит вовсе:
+поля, которого нет в схеме, в ней неоткуда взяться — обращение к нему не
+компилируется.
 
-Проверяет штатный `formats::json::Schema` (ADR-0013). Путь до поля берётся у
-него же и уходит в ответ.
+Порождает штатный `chaotic` на этапе сборки (ADR-0013), из того же файла, из
+которого порождает типы клиент. Второй схемы рядом с ручкой не лежит: она была бы
+копией, а копия расходится с оригиналом в тот день, когда правку внесли в одну.
+
+Разбор и проверка схемы здесь — **одно действие**: обязательные поля, длины,
+образцы и запрет лишних свойств уже внутри порождённого разборщика. Делает это
+`ParseBody<Body>` (`request_body.hpp`) — единственное место в дереве, где тело
+запроса превращается в структуру.
+
+Родов отказа два, и клиент их различает: `request_not_json` — тело не JSON
+вообще, `request_field_invalid` — JSON, но не тот. Путь до поля уходит в ответ:
+штатный разборщик сообщает его двумя способами — часть отказов приходит
+`ExceptionWithPath`, у которого путь можно спросить, часть (проверки длины,
+образца, лишнего свойства) — обычным исключением, у которого путь только в
+тексте. Разбирает текст `FieldOfMessage`; отказаться от второго случая значило бы
+потерять имя поля там, где оно нужнее всего.
 
 ## Заголовки безопасности
 
@@ -140,9 +155,13 @@ RFC 9457, `application/problem+json`. Собирает тело один фай�
 | без принесённого след всё равно есть | `RequestId.WithoutOneWeMakeOurOwn` |
 | негодный след клиента не уходит ни в журнал, ни в ответ | `RequestId.ADangerousOneIsNotTakenAtAll`, `AuthorizedHandler.ADangerousBroughtIdIsReplacedEverywhere` |
 | заголовки безопасности есть на всех ответах, включая отказы | `AuthorizedHandler.EverySecurityHeaderIsOnEveryAnswerIncludingRefusals` |
-| отказ разбора называет поле | `RequestSchema.ARefusalNamesTheField`, `AuthorizedHandler.ARefusedBodyNamesTheFieldAndNeverReachesTheScenario` |
-| сломанная схема ловится при сборке, а не в проде | `RequestSchema.AMissingFileIsRefusedAtOnce`, `...TextThatIsNotASchemaIsRefusedAtOnce` |
+| отказ разбора называет поле | `RequestBody.ARefusalNamesTheField`, `AuthorizedHandler.ARefusedBodyNamesTheFieldAndNeverReachesTheScenario` |
+| правило схемы (длина, образец, лишнее поле) применяется и называет поле | `RequestBody.ARuleFromTheSchemaIsAppliedAndNamesTheField`, `...AnExtraFieldIsRefusedAndNamed` |
+| ручка и схема не расходятся | сборкой: поля не из схемы в порождённом типе нет |
+| пример из схемы проходит круг разбора и сборки | `SchemaRoundTrip.EveryExampleSurvivesTheCircle` |
+| ни одна схема не забыта в круге | `SchemaRoundTrip.TheRegistryNamesEverySchemaInTheDocument` |
 | статус решается в одном файле, формат — в одном | `scripts/check_http_form.py` |
+| тело не разбирают руками | `scripts/check_http_form.py` |
 | след запроса не глобальный | `scripts/check_http_form.py` |
 | политику спрашивают до сценария и до базы | `AuthorizedHandler.ARefusedPolicyStopsBeforeTheScenario` |
 | сценарий работает внутри области арендатора | `AuthorizedHandler.TheScenarioRunsInsideTheTenantScope` |
@@ -174,6 +193,7 @@ RFC 9457, `application/problem+json`. Собирает тело один фай�
   (`identity-callers`), а спрашивать его некому: у единственной поднятой ручки —
   входа — сессии ещё нет по существу. Спросит первая ручка с
   `AuthorizedHandler`;
-* **схема тела пока одна настоящая** — `libs/pdr-identity/schemas/sign_in.json`.
-  Рядом лежит проверочная (`libs/pdr-http/tests/schemas/`): она образец формы и
-  то, на чём проверяется чтение файла.
+* **порождённый тип тела пока один настоящий** — `api::SignInRequest`. Рядом
+  лежит двойник (`libs/pdr-http/tests/schemas/booking.yaml`): форма обобщена по
+  типу тела, и проверять её на типах входа значило бы проверять заодно вход.
+  Контрактом двойник не является и наружу не смотрит.

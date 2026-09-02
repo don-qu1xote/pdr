@@ -5,14 +5,16 @@
 #include <userver/components/component_base.hpp>
 #include <userver/server/http/http_request.hpp>
 
-#include "infrastructure/db/tenant_context.hpp"
 #include "infrastructure/http/authorized_handler.hpp"
 
 namespace pdr::infrastructure::http {
 
-/// Ручка, доведённая до процесса: форма запроса на настоящем запросе userver и
-/// настоящей области арендатора.
-using Operation = ServedHandler<userver::server::http::HttpRequest, db::ScopedTenantContext>;
+/// Ручка, доведённая до процесса: форма запроса на настоящем запросе userver.
+///
+/// СТЁРТАЯ, а не типизованная: тело и ответ у каждой ручки свои — они порождены
+/// из схемы, — и держать их все одним типом маршрут может только так. Область
+/// арендатора и порождённые типы остались у наследника, где им и место.
+using Operation = Handler<userver::server::http::HttpRequest>;
 
 /// Компонент-операция: живёт всю жизнь процесса и отдаёт свою ручку маршруту.
 ///

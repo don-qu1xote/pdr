@@ -7,10 +7,11 @@
 #include <string>
 #include <vector>
 
+#include <pdr/http/double/booking.hpp>
+
 #include <userver/engine/async.hpp>
 #include <userver/engine/sleep.hpp>
 #include <userver/formats/json/serialize.hpp>
-#include <userver/formats/json/value_builder.hpp>
 #include <userver/utest/utest.hpp>
 
 #include "builders/identifiers.hpp"
@@ -33,9 +34,6 @@ const auto kStudent = Numbered<core::PersonId>(3);
 
 constexpr std::string_view kCookie = "__Host-pdr_session";
 constexpr std::string_view kAuthorization = "Authorization";
-
-const std::string kSchemaFile =
-    std::string{PDR_SOURCE_DIR} + "/libs/pdr-http/tests/schemas/book_lesson.json";
 
 const std::string kGoodBody =
     R"({"student_id": "s-1", "starts_at": "2026-09-01T10:00:00Z", "minutes": 45})";
@@ -178,17 +176,18 @@ public:
 
 /// Ручка, у которой нет ни одного предметного правила: она называет действие,
 /// называет ресурс и зовёт сценарий. Больше в хендлере быть нечему.
-class BookingHandler final : public AuthorizedHandler<Ask, FakeTenantSession> {
+class BookingHandler final : public AuthorizedHandler<Ask,
+                                                      FakeTenantSession,
+                                                      testing::BookingRequest,
+                                                      testing::BookingAnswer> {
 public:
     BookingHandler(const Callers& callers,
                    Database& database,
                    const identity::Contract& permissions,
                    Keys& keys,
                    const application::ports::Clock& clock,
-                   pdr::http::KeyLifetime lifetime,
-                   RequestSchema schema)
-        : AuthorizedHandler{
-              callers, database, permissions, keys, clock, lifetime, std::move(schema)} {}
+                   pdr::http::KeyLifetime lifetime)
+        : AuthorizedHandler{callers, database, permissions, keys, clock, lifetime} {}
 
     mutable std::atomic<int> ran{0};
     std::optional<core::Error> refuse;
@@ -199,12 +198,11 @@ private:
         return identity::Action::kBookLesson;
     }
 
-    identity::Resource About(const Caller& caller,
-                             const userver::formats::json::Value&) const override {
+    identity::Resource About(const Caller& caller, const testing::BookingRequest&) const override {
         return identity::Resource{caller.tenant, std::nullopt, kStudent};
     }
 
-    core::Result<userver::formats::json::Value> Run(const Call& call) const override {
+    core::Result<testing::BookingAnswer> Run(const Call& call) const override {
         ++ran;
         if (takes.count() != 0) {
             userver::engine::SleepFor(takes);
@@ -214,28 +212,18 @@ private:
         }
         call.session.Insert(call.request_id);
 
-        userver::formats::json::ValueBuilder made{userver::formats::json::Type::kObject};
-        made["minutes"] = call.body["minutes"].As<int>();
-        made["tenant"] = call.session.Tenant().ToString();
-        return made.ExtractValue();
+        return testing::BookingAnswer{call.body.minutes, call.session.Tenant().ToString()};
     }
 };
 
 /// Мир одной проверки: хендлер со всеми двойниками наготове.
 struct World final {
-    World()
-        : schema{RequestSchema::FromFile(kSchemaFile)},
-          handler{callers, database, permissions, keys, clock, Lifetime(), Schema()} {}
+    World() : handler{callers, database, permissions, keys, clock, Lifetime()} {}
 
     static pdr::http::KeyLifetime Lifetime() {
         const auto composed = pdr::http::KeyLifetime::Compose(24);
         EXPECT_TRUE(composed.HasValue());
         return composed.Value();
-    }
-
-    RequestSchema Schema() const {
-        EXPECT_TRUE(schema.HasValue());
-        return schema.Value();
     }
 
     userver::formats::json::Value Serve(Ask& ask) {
@@ -247,7 +235,6 @@ struct World final {
     FakeTenantAwareRepository database;
     FakeIdempotencyKeys keys;
     FakeClock clock;
-    core::Result<RequestSchema> schema;
     BookingHandler handler;
 };
 

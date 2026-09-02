@@ -1,0 +1,45 @@
+# ДВОЙНИК ТЕЛА ЗАПРОСА, А НЕ КОНТРАКТ.
+#
+# Форма запроса обобщена по типу тела и типу ответа, и проверять её на типах
+# входа значило бы проверять заодно вход. Здесь лежит выдуманная ручка записи на
+# занятие: полей ровно столько, сколько нужно проверке формы.
+#
+# Наружу этот файл не смотрит НИКОГДА. Контракт платформы один, и он в
+# docs/api/openapi.yaml; сюда клиент не ходит и о существовании файла не знает.
+# Проверка `scripts/check_openapi.py` за составом ручек следит там, а не тут.
+#
+# Типы отсюда порождает тот же штатный chaotic и тем же правилом: двойник,
+# собранный руками, проверял бы разбор, которого в проде нет.
+openapi: 3.1.0
+
+info:
+  title: Двойник для проверки формы запроса
+  version: 1.0.0
+
+paths: {}
+
+components:
+  schemas:
+    BookingRequest:
+      type: object
+      additionalProperties: false
+      required: [student_id, starts_at, minutes]
+      properties:
+        student_id:
+          type: string
+          minLength: 1
+        starts_at:
+          type: string
+        minutes:
+          type: integer
+          minimum: 1
+
+    BookingAnswer:
+      type: object
+      additionalProperties: false
+      required: [minutes, tenant]
+      properties:
+        minutes:
+          type: integer
+        tenant:
+          type: string

@@ -12,7 +12,6 @@ monitor-port: 8081
 secdist-path: /etc/pdr/secrets.json
 dynamic-config-defaults: /etc/pdr/dynamic_config_fallback.json
 dynamic-config-cache: /var/cache/pdr/dynamic_config.json
-sign-in-schema: /etc/pdr/schemas/sign_in.json
 openapi-document: /etc/pdr/openapi.yaml
 dump-root: /var/cache/pdr/dumps
 testsuite-enabled: false

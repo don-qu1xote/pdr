@@ -147,7 +147,6 @@ components_manager:
         identity-permissions: {}
         identity-callers: {}
         identity-sign-in:
-            schema: $sign-in-schema
             counting-task-processor: fs-task-processor
 
         observability-product-events: {}

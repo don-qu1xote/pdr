@@ -19,7 +19,16 @@
 * каждая ручка клиентского порта названа в спецификации, и наоборот;
 * прикладной путь лежит под `/api/v1`. Исключение закрытым списком — пробы
   состояния: их читает оркестратор, схема у них не развивается, версионировать
-  нечего (docs/api/README.md).
+  нечего (docs/api/README.md);
+* ТИПЫ ФРОНТА НЕ ОТСТАЛИ ОТ СПЕЦИФИКАЦИИ. `clients/shared/api/openapi.ts`
+  порождён из того же файла и, в отличие от C++, лежит в истории: у фронта
+  своего chaotic нет, и без закоммиченного файла он не собирается без
+  бэкендового инструментария. Асимметрия названа в docs/api/README.md.
+
+  Плата за закоммиченное порождённое — ровно одна: копия расходится с
+  оригиналом. Поэтому проверка ПОРОЖДАЕТ ЗАНОВО и сравнивает побайтно. Правки
+  руками, забытый перегон после смены схемы, чужая версия инструмента — всё это
+  один и тот же отказ, и чинится он одной строкой: `make api-types`.
 
 ЧЕГО ПРОВЕРКА НЕ СЧИТАЕТ РУЧКОЙ, и каждый случай назван:
 
@@ -44,6 +53,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -58,6 +68,11 @@ CONFIG_VARS = Path("configs/config_vars.yaml")
 VERSIONED_PREFIX = "/api/v1/"
 
 PROBES = ("/ping", "/health", "/readiness")
+
+CLIENTS = Path("clients")
+CLIENT_TYPES = CLIENTS / "shared/api/openapi.ts"
+GENERATOR = CLIENTS / "node_modules/.bin/openapi-typescript"
+
 """Пробы состояния: единственное, чему разрешено жить вне `/api/v1`.
 
 Список закрытый и короткий намеренно. Их читает оркестратор, а не клиент; схема
@@ -194,6 +209,50 @@ def services_of(root: Path) -> list[Path]:
     return sorted(entry for entry in directory.iterdir() if (entry / STATIC_CONFIG).is_file())
 
 
+def client_types(root: Path) -> list[str]:
+    """Закоммиченные типы фронта совпадают со свежепорождёнными."""
+    spec = root / SPEC
+    committed = root / CLIENT_TYPES
+    generator = root / GENERATOR
+
+    if not spec.is_file():
+        return []
+
+    if not committed.is_file():
+        return [
+            f"{CLIENT_TYPES}: типов фронта нет вовсе. Клиент порождает их из "
+            f"{SPEC}, а без файла в истории он собирается только у того, у кого "
+            f"поставлен бэкендовый инструментарий: `make api-types`"
+        ]
+
+    if not generator.is_file():
+        return [
+            f"{GENERATOR}: порождать нечем, и потому расхождение НЕ ПРОВЕРЕНО. "
+            f"Пропустить эту проверку молча значило бы держать в истории копию, "
+            f"за которой никто не следит: `make api-types`"
+        ]
+
+    with tempfile.TemporaryDirectory() as directory:
+        fresh = Path(directory) / "openapi.ts"
+        made = subprocess.run(
+            [str(generator), str(spec), "--output", str(fresh)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if made.returncode != 0:
+            return [f"{CLIENT_TYPES}: порождение не прошло: {made.stderr.strip()}"]
+
+        if fresh.read_text(encoding="utf-8") != committed.read_text(encoding="utf-8"):
+            return [
+                f"{CLIENT_TYPES}: закоммиченные типы разошлись со спецификацией. "
+                f"Фронт собирается по ним и будет собран по устаревшему контракту: "
+                f"`make api-types`"
+            ]
+
+    return []
+
+
 def check(root: Path) -> tuple[list[str], int]:
     violations: list[str] = []
     services = services_of(root)
@@ -239,6 +298,8 @@ def check(root: Path) -> tuple[list[str], int]:
             f"{SPEC}: описана ручка {method} {path}, которой в сервисе нет. Спецификация, "
             f"обещающая снятую ручку, врёт ровно так же, как молчащая о новой"
         )
+
+    violations.extend(client_types(root))
 
     for path, _ in sorted(described):
         if path in PROBES or path.startswith(VERSIONED_PREFIX):
@@ -325,9 +386,25 @@ SELFTEST_EXPECTED = (
 
 SELFTEST_CLEAN = ("/service/monitor", "/tests/{action}", "implicit-http-options")
 
+SELFTEST_SILENCE = (
+    "типов фронта нет вовсе",
+    "порождать нечем",
+)
+"""Два способа промолчать вместо проверки, и оба обязаны быть слышны.
+
+Ни того ни другого нельзя пропускать тихо: «файла нет» и «порождать нечем»
+выглядят как «всё хорошо» ровно до дня, когда фронт соберут по контракту
+позапрошлого месяца.
+"""
+
 
 def selftest() -> int:
-    """Отрицательные случаи: обе стороны расхождения обязаны ловиться."""
+    """Отрицательные случаи: обе стороны расхождения обязаны ловиться.
+
+    Типы фронта проверяются дважды, и оба раза на молчание: сперва их нет вовсе,
+    потом файл на месте, а порождать нечем. И то и другое обязано быть слышно —
+    «не проверено» не то же самое, что «совпадает».
+    """
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
 
@@ -352,6 +429,17 @@ def selftest() -> int:
                 for line in violations:
                     print("    " + line, file=sys.stderr)
                 return 1
+
+        if not any(SELFTEST_SILENCE[0] in line for line in violations):
+            print(f"самопроверка: не поймано «{SELFTEST_SILENCE[0]}»", file=sys.stderr)
+            return 1
+
+        (root / CLIENT_TYPES).parent.mkdir(parents=True, exist_ok=True)
+        (root / CLIENT_TYPES).write_text("export interface paths {}\n", encoding="utf-8")
+        unchecked = client_types(root)
+        if not any(SELFTEST_SILENCE[1] in line for line in unchecked):
+            print(f"самопроверка: не поймано «{SELFTEST_SILENCE[1]}»", file=sys.stderr)
+            return 1
 
         for fragment in SELFTEST_CLEAN:
             if any(fragment in line for line in violations):

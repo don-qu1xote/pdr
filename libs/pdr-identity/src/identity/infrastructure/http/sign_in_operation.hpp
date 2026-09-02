@@ -3,6 +3,8 @@
 #include <optional>
 #include <string_view>
 
+#include <pdr/api/openapi.hpp>
+
 #include <userver/components/component_config.hpp>
 #include <userver/components/component_context.hpp>
 #include <userver/dynamic_config/source.hpp>
@@ -15,7 +17,6 @@
 #include "infrastructure/http/authorized_handler.hpp"
 #include "infrastructure/http/operation.hpp"
 #include "infrastructure/http/postgres_idempotency_keys.hpp"
-#include "infrastructure/http/request_schema.hpp"
 #include "infrastructure/postgres_tenant_aware_repository.hpp"
 #include "infrastructure/userver_clock.hpp"
 
@@ -32,9 +33,15 @@ namespace pdr::identity {
 /// выражается. Справочника «поддомен — арендатор» в дереве нет, поэтому в
 /// адресе стоит сам идентификатор; появится справочник — поменяется разбор
 /// адреса, а не форма.
+///
+/// ТЕЛО И ОТВЕТ ЗДЕСЬ — ПОРОЖДЁННЫЕ ТИПЫ, а не разбор руками: `api::SignInRequest`
+/// и `api::SignInAnswer` порождены из `components/schemas` спецификации. Второй
+/// схемы рядом с ручкой не лежит, и расходиться нечему.
 class SignInDoor final
     : public infrastructure::http::DoorHandler<userver::server::http::HttpRequest,
-                                               infrastructure::db::ScopedTenantContext> {
+                                               infrastructure::db::ScopedTenantContext,
+                                               api::SignInRequest,
+                                               api::SignInAnswer> {
 public:
     /// Часть адреса, из которой берётся арендатор.
     static constexpr std::string_view kTenantArgument = "tenant";
@@ -45,14 +52,13 @@ public:
                const application::ports::SecretGenerator& secrets,
                userver::dynamic_config::Source configs,
                userver::engine::TaskProcessor& counting,
-               pdr::http::KeyLifetime lifetime,
-               infrastructure::http::RequestSchema schema);
+               pdr::http::KeyLifetime lifetime);
 
 private:
     core::Result<core::TenantId> Where(
         const userver::server::http::HttpRequest& request) const override;
 
-    core::Result<userver::formats::json::Value> Run(const Call& call) const override;
+    core::Result<api::SignInAnswer> Run(const Call& call) const override;
 
     const application::ports::SecretGenerator& secrets_;
     userver::dynamic_config::Source configs_;

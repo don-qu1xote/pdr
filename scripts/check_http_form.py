@@ -30,11 +30,26 @@
 * завести ВТОРОЙ МАРШРУТ-НАСЛЕДНИК. Наследник `HttpHandlerBase`, который зовёт
   форму, в процессе ровно один: маршрутов сколько угодно, а места, где решают,
   что делать с запросом, — одно. Два таких наследника расходятся в первый же
-  месяц: один спросит политику до открытия области арендатора, другой после.
+  месяц: один спросит политику до открытия области арендатора, другой после;
+* РАЗОБРАТЬ ТЕЛО РУКАМИ. Типы тел и ответов порождены из docs/api/openapi.yaml
+  (PDR-API-04), и ручка получает их готовыми. `formats::json::Value` и
+  `.As<...>` в файле ручки означают, что кто-то читает тело мимо схемы: поле,
+  которого в схеме нет, так появляется в коде, и спецификация начинает врать.
 
-Схемы тел проверяются заодно: `schemas/*.json` обязан быть разбираемым JSON со
-свойствами — схема, которую разберут только в проде, ничем не лучше её
-отсутствия.
+  Ловится по ФАЙЛАМ РУЧЕК, а не по всему дереву: JSON вокруг ручек живёт
+  законно — динамические настройки, секреты, продуктовые события, перевод
+  спецификации из YAML. Схемы у них нет, и порождать типы неоткуда.
+
+  Разбор чужого API — тоже законный случай, и он тоже не здесь: у внешнего
+  сервиса своей спецификации в дереве нет. Адаптером он и остаётся, а ручка —
+  это то, что отвечает НАШЕМУ клиенту.
+
+  Единственное послабление — статический конфиг компонента: `config["имя"]` это
+  не тело запроса, а настройка, которую задаёт не клиент, а тот, кто ставит
+  сервис.
+
+  Проверки (`tests/`) не считаются вовсе: тест читает то, что ручка ОТДАЛА, и
+  другого способа убедиться у него нет.
 
 Запуск:
     python3 scripts/check_http_form.py
@@ -60,14 +75,42 @@ HEADERS = HTTP / "security_headers.hpp"
 REQUEST_ID = HTTP / "request_id.hpp"
 
 SOURCES = ("*.hpp", "*.cpp")
-SCHEMAS = "schemas"
 
 SERVICES = Path("services")
+TESTS_DIR = "tests"
+"""Каталог проверок. Разбор ответа руками здесь — не нарушение, а сама проверка:
+тест читает то, что ручка ОТДАЛА, и другого способа убедиться у него нет."""
 SKIPPED_DIRS = frozenset({".git", "out", "node_modules", "_deps", "__pycache__"})
 SKIPPED_PREFIXES = ("build", "venv", ".venv")
 
 DOOR_HEIR = re.compile(r"public\s+(?:\w+::)*DoorHandler\s*<")
 CALLS_THE_FORM = re.compile(r"\.Serve\s*\(\s*request")
+
+HANDLER_HEIR = re.compile(
+    r"public\s+(?:\w+::)*"
+    r"(?:HttpHandlerBase|ServedHandler|AuthorizedHandler|DoorHandler)\b"
+)
+
+HANDMADE_JSON = re.compile(r"\bformats::json::")
+
+HANDMADE_READ = re.compile(r"\.\s*As\s*<")
+"""Чтение значения по типу: `.As<T>()`, чем бы слева ни было.
+
+Образцом ловится только само чтение. Кто его хозяин — образцом не выяснить:
+слева бывает и `body["поле"]`, и `request.GetArg("x")`, и цепочка подлиннее.
+Хозяина ищет `receiver_root` разбором назад, иначе послабление для конфига
+превращается в дырку размером с любой вызов.
+"""
+
+CONFIGURED = frozenset({"config"})
+"""Кому чтение по типу разрешено даже в ручке.
+
+Статический конфиг компонента — не тело запроса: его задаёт тот, кто ставит
+сервис, а не клиент, схемы у него своя (`GetStaticConfigSchema`), и порождать
+типы неоткуда.
+"""
+
+CLOSERS = {")": "(", "]": "["}
 
 MEMBERS = ("type", "title", "status", "detail", "instance", "request_id")
 
@@ -278,22 +321,110 @@ def check_one_route(root: Path) -> list[str]:
     return violations
 
 
-def check_schemas(root: Path) -> tuple[list[str], int]:
-    """Схемы тел разбираются здесь, а не в проде."""
-    violations = []
-    found = sorted((root / "libs").rglob(f"{SCHEMAS}/*.json"))
+def receiver_root(code: str, dot: int) -> str | None:
+    """Имя, с которого начинается выражение слева от точки.
+
+    Идём назад от точки, перешагивая уже закрытые скобки целиком: `body["поле"]`
+    даёт `body`, `request.GetArg("x")` — `request`, `call.request.GetArg("x")` —
+    `call`. Ничего не разобрав, возвращаем None — и тогда чтение считается
+    разбором руками: неизвестное послаблением не бывает.
+    """
+    index = dot - 1
+    while True:
+        while index >= 0 and code[index].isspace():
+            index -= 1
+        if index < 0:
+            return None
+
+        if code[index] in CLOSERS:
+            opener, closer = CLOSERS[code[index]], code[index]
+            depth = 0
+            while index >= 0:
+                if code[index] == closer:
+                    depth += 1
+                elif code[index] == opener:
+                    depth -= 1
+                    if depth == 0:
+                        break
+                index -= 1
+            if index < 0:
+                return None
+            index -= 1
+            continue
+
+        if not (code[index].isalnum() or code[index] == "_"):
+            return None
+
+        end = index + 1
+        while index >= 0 and (code[index].isalnum() or code[index] == "_"):
+            index -= 1
+        name = code[index + 1 : end]
+
+        while index >= 0 and code[index].isspace():
+            index -= 1
+        if index >= 1 and code[index] == ":" and code[index - 1] == ":":
+            index -= 2
+            continue
+        if index >= 0 and code[index] == ".":
+            index -= 1
+            continue
+        if index >= 1 and code[index] == ">" and code[index - 1] == "-":
+            index -= 2
+            continue
+        return name
+
+
+def handler_files(root: Path) -> list[Path]:
+    """Файлы ручек: где объявлен наследник формы — и его сосед по имени.
+
+    Пара нужна потому, что объявление и тело лежат врозь: разбор руками пишут в
+    `.cpp`, а наследника видно в `.hpp`. Проверять только тот файл, где нашёлся
+    наследник, значило бы не проверять как раз то место, где разбор и заводят.
+    """
+    stems: set[Path] = set()
+    for path in tree_sources(root):
+        relative = path.relative_to(root)
+        if relative == HANDLER or TESTS_DIR in relative.parts:
+            continue
+        if HANDLER_HEIR.search(code_of(path.read_text(encoding="utf-8", errors="replace"))):
+            stems.add(path.with_suffix(""))
+
+    found = [
+        neighbour
+        for stem in sorted(stems)
+        for suffix in (".hpp", ".cpp")
+        if (neighbour := stem.with_suffix(suffix)).is_file()
+    ]
+    return sorted(found)
+
+
+def check_generated_bodies(root: Path) -> tuple[list[str], int]:
+    """Ручка получает тело ПОРОЖДЁННЫМ ТИПОМ, а не разбирает его сама."""
+    violations: list[str] = []
+    found = handler_files(root)
+
     for path in found:
         display = path.relative_to(root)
-        try:
-            schema = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError as broken:
-            violations.append(f"{display}: схема не разбирается как JSON: {broken}")
-            continue
-        if not isinstance(schema, dict) or "properties" not in schema:
+        code = code_of(path.read_text(encoding="utf-8", errors="replace"))
+
+        if HANDMADE_JSON.search(code):
             violations.append(
-                f"{display}: в схеме нет properties. Схема, которая ничего не требует, "
-                f"пропускает всё — и называть поле ей нечем"
+                f"{display}: ручка трогает formats::json. Тело и ответ порождаются из "
+                f"docs/api/openapi.yaml и приходят готовыми: поле, которого нет в схеме, "
+                f"в ручке взяться не должно"
             )
+
+        for read in HANDMADE_READ.finditer(code):
+            owner = receiver_root(code, read.start())
+            if owner in CONFIGURED:
+                continue
+            named = owner if owner else "неизвестно что"
+            violations.append(
+                f"{display}: разбор руками — `{named}...As<...>`. Тело запроса разбирает "
+                f"форма, порождённым разборщиком; вручную читают только то, чему схемы "
+                f"нет, и не в ручке"
+            )
+
     return violations, len(found)
 
 
@@ -307,8 +438,8 @@ def check(root: Path) -> tuple[list[str], int]:
     violations.extend(check_request_id(root))
     violations.extend(check_one_door(root))
     violations.extend(check_one_route(root))
-    schemas, counted = check_schemas(root)
-    violations.extend(schemas)
+    handmade, counted = check_generated_bodies(root)
+    violations.extend(handmade)
     return violations, counted
 
 
@@ -326,10 +457,19 @@ SELFTEST_TREE = {
     REQUEST_ID: "thread_local std::string current_request_id;\n",
     HTTP / "book_lesson_handler.cpp": 'response.SetStatus(409);\nbody["error"] = "занято";\n',
     HTTP / "cancel_lesson_handler.cpp": '/// Своего формата тут нет: ни "error", ни "message".\n',
-    Path("libs/pdr-http/tests/schemas/broken.json"): "{ это не json\n",
-    Path("libs/pdr-http/tests/schemas/empty.json"): '{"type": "object"}\n',
     Path("libs/pdr-identity/src/identity/infrastructure/http/sign_in.hpp"):
         "class SignInDoor final : public infrastructure::http::DoorHandler<Request, Session> {};\n",
+    Path("libs/pdr-identity/src/identity/infrastructure/http/sign_in.cpp"):
+        "auto minutes = call.body[\"minutes\"].As<int>();\n",
+    Path("services/main/src/health.cpp"):
+        "userver::formats::json::ValueBuilder made;\n",
+    Path("services/main/src/openapi.hpp"):
+        "class Doc final : public server::handlers::HttpHandlerBase {};\n",
+    Path("services/main/src/openapi.cpp"):
+        'auto path = config["document"].As<std::string>();\n',
+    Path("libs/pdr-http/tests/sign_in_test.cpp"):
+        "class Twin final : public infrastructure::http::AuthorizedHandler<R, S, B, A> {};\n"
+        'EXPECT_EQ(body["type"].As<std::string>(), "urn:pdr:error:sign_in_refused");\n',
     Path("libs/pdr-billing/src/billing/infrastructure/http/pay.hpp"):
         "class PayDoor final : public infrastructure::http::DoorHandler<Request, Session> {};\n",
     Path("services/main/src/route.cpp"):
@@ -340,6 +480,17 @@ SELFTEST_TREE = {
         "class Health final : public server::handlers::HttpHandlerBase {};\n",
 }
 
+"""Дерево одной самопроверки.
+
+Разбор руками подсажен дважды и по-разному: `sign_in.cpp` читает тело
+`.As<int>()` там, где наследника не видно — его выдаёт сосед по имени, —
+а `health.cpp` собирает ответ через `formats::json`.
+
+Молчать при этом обязаны два законных случая: `openapi.cpp` читает свой
+статический конфиг (`config["document"]`), а `sign_in_test.cpp` разбирает
+ОТВЕТ, потому что он проверка и другого способа убедиться у него нет.
+"""
+
 SELFTEST_EXPECTED = (
     "статус 409 назван мимо таблицы",
     "вне базового хендлера",
@@ -348,15 +499,20 @@ SELFTEST_EXPECTED = (
     "нет заголовка «Permissions-Policy»",
     "лежит глобально",
     "берут как есть",
-    "не разбирается как JSON",
-    "нет properties",
+    "разбор руками",
+    "трогает formats::json",
     "дверей стало 2",
     "форму зовут из 2 мест",
 )
 
 
 def selftest() -> int:
-    """Отрицательные случаи: каждый способ развести форму обязан ловиться."""
+    """Отрицательные случаи: каждый способ развести форму обязан ловиться.
+
+    Файлов ручек в этом дереве семь: дверь входа парой, дверь оплаты (только
+    `.hpp`), состояние парой, спецификация парой. Число сверяется затем, что
+    проверка, нашедшая ноль ручек, зеленела бы и на дереве, где ручек нет вовсе.
+    """
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         for path, content in SELFTEST_TREE.items():
@@ -364,7 +520,7 @@ def selftest() -> int:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content, encoding="utf-8")
 
-        violations, schemas = check(root)
+        violations, handlers = check(root)
         for fragment in SELFTEST_EXPECTED:
             if not any(fragment in line for line in violations):
                 print(f"самопроверка: не поймано «{fragment}»", file=sys.stderr)
@@ -372,13 +528,22 @@ def selftest() -> int:
                     print("    " + line, file=sys.stderr)
                 return 1
 
-        if schemas != 2:
-            print(f"самопроверка: найдено {schemas} схем вместо двух", file=sys.stderr)
+        if handlers != 7:
+            print(f"самопроверка: найдено {handlers} файлов ручек вместо семи", file=sys.stderr)
+            return 1
+
+        if any("sign_in_test.cpp" in line for line in violations):
+            print("самопроверка: разбор ответа в проверке объявлен нарушением", file=sys.stderr)
+            return 1
+        if any("openapi.cpp" in line for line in violations):
+            print("самопроверка: статический конфиг объявлен разбором тела", file=sys.stderr)
             return 1
 
         (root / HTTP / "book_lesson_handler.cpp").unlink()
         (root / "libs/pdr-billing/src/billing/infrastructure/http/pay.hpp").unlink()
         (root / "services/main/src/second_route.cpp").unlink()
+        (root / "libs/pdr-identity/src/identity/infrastructure/http/sign_in.cpp").unlink()
+        (root / "services/main/src/health.cpp").unlink()
         (root / REQUEST_ID).write_text(
             "bool IsUsableRequestId(std::string_view) noexcept;\n", encoding="utf-8"
         )
@@ -390,7 +555,8 @@ def selftest() -> int:
             print("самопроверка: ручка состояния объявлена вторым маршрутом", file=sys.stderr)
             return 1
         for fragment in ("назван мимо таблицы", "второй формат", "лежит глобально",
-                         "берут как есть", "дверей стало", "форму зовут из"):
+                         "берут как есть", "дверей стало", "форму зовут из",
+                         "разбор руками", "трогает formats::json"):
             if any(fragment in line for line in clean):
                 print(f"самопроверка: чистый файл объявлен нарушением «{fragment}»",
                       file=sys.stderr)
@@ -411,7 +577,7 @@ def main(argv: Sequence[str]) -> int:
     if arguments.selftest:
         return selftest()
 
-    violations, schemas = check(arguments.root)
+    violations, handlers = check(arguments.root)
     for line in violations:
         print(line, file=sys.stderr)
 
@@ -421,7 +587,7 @@ def main(argv: Sequence[str]) -> int:
         return 1
 
     print(f"Форма отказа одна: {len(MEMBERS)} членов, {len(SECURITY)} заголовков "
-          f"безопасности, статус решается в {MAPPING.name}. Схем тел проверено: {schemas}.")
+          f"безопасности, статус решается в {MAPPING.name}. Файлов ручек проверено: {handlers}.")
     return 0
 
 

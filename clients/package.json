@@ -1,0 +1,13 @@
+{
+  "name": "pdr-clients",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Клиентская часть монорепозитория. Типы контракта порождаются из спецификации, а не пишутся руками.",
+  "license": "UNLICENSED",
+  "scripts": {
+    "api-types": "openapi-typescript ../docs/api/openapi.yaml --output shared/api/openapi.ts"
+  },
+  "devDependencies": {
+    "openapi-typescript": "7.9.1"
+  }
+}

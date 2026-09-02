@@ -3,9 +3,9 @@
 #include <cstdint>
 #include <exception>
 
+#include <pdr/api/openapi.hpp>
+
 #include <userver/components/component.hpp>
-#include <userver/formats/json/serialize.hpp>
-#include <userver/formats/json/value_builder.hpp>
 #include <userver/http/content_type.hpp>
 #include <userver/logging/log.hpp>
 #include <userver/server/http/http_request.hpp>
@@ -41,24 +41,24 @@ std::string ReadinessHandler::HandleRequestThrow(
 
     request.GetHttpResponse().SetContentType(userver::http::content_type::kApplicationJson);
 
-    userver::formats::json::ValueBuilder answer{userver::formats::json::Type::kObject};
+    api::Readiness answer{};
 
     try {
         const auto applied = access_.Execute(kAppliedMigrations).AsSingleRow<std::int64_t>();
-        answer["ready"] = applied > 0;
-        answer["migrations"] = applied;
+        answer.ready = applied > 0;
+        answer.migrations = static_cast<int>(applied);
         if (applied == 0) {
             request.SetResponseStatus(userver::server::http::HttpStatus::kServiceUnavailable);
-            answer["why"] = "схема пуста: миграции не применены";
+            answer.why = "схема пуста: миграции не применены";
         }
     } catch (const std::exception& unreachable) {
         request.SetResponseStatus(userver::server::http::HttpStatus::kServiceUnavailable);
-        answer["ready"] = false;
-        answer["why"] = "хранилище недоступно";
+        answer.ready = false;
+        answer.why = "хранилище недоступно";
         LOG_WARNING() << "готовность: база не отвечает: " << unreachable.what();
     }
 
-    return userver::formats::json::ToString(answer.ExtractValue());
+    return ToJsonString(answer);
 }
 
 userver::yaml_config::Schema ReadinessHandler::GetStaticConfigSchema() {

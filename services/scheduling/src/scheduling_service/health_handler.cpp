@@ -1,7 +1,7 @@
 #include "scheduling_service/health_handler.hpp"
 
-#include <userver/formats/json/serialize.hpp>
-#include <userver/formats/json/value_builder.hpp>
+#include <pdr/api/openapi.hpp>
+
 #include <userver/http/content_type.hpp>
 #include <userver/server/http/http_request.hpp>
 #include <userver/server/http/http_response.hpp>
@@ -15,9 +15,7 @@ std::string HealthHandler::HandleRequestThrow(
 
     request.GetHttpResponse().SetContentType(userver::http::content_type::kApplicationJson);
 
-    userver::formats::json::ValueBuilder answer{userver::formats::json::Type::kObject};
-    answer["alive"] = true;
-    return userver::formats::json::ToString(answer.ExtractValue());
+    return ToJsonString(api::Liveness{true});
 }
 
 }  // namespace pdr::scheduling_service

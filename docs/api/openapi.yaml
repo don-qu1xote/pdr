@@ -315,12 +315,14 @@ components:
       type: string
       format: uuid
       pattern: '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+      example: 018f2b3c-4d5e-4f60-8a71-b2c3d4e5f607
 
     RequestIdValue:
       type: string
       minLength: 1
       maxLength: 64
       pattern: '^[A-Za-z0-9._:-]+$'
+      example: 018f2b3c4d5e4f608a71b2c3d4e5f607
 
     Liveness:
       type: object
@@ -329,8 +331,14 @@ components:
       properties:
         alive:
           type: boolean
-          const: true
-          description: Процесс отвечает. Про базу это не говорит ничего.
+          description: |
+            Процесс отвечает. Про базу это не говорит ничего.
+
+            Всегда `true`, и записать это в схеме нечем: `const` порождение
+            типов ломает (docs/api/README.md, «Чего спецификация себе не
+            позволяет»). Обещание проверяет contract-набор, а не схема.
+      example:
+        alive: true
 
     Readiness:
       type: object
@@ -350,6 +358,10 @@ components:
           type: string
           minLength: 1
           description: Чего не хватает. Появляется только у неготовности.
+      example:
+        ready: false
+        migrations: 0
+        why: 'схема пуста: миграции не применены'
 
     SignInRequest:
       type: object
@@ -365,7 +377,14 @@ components:
           type: string
           minLength: 1
           maxLength: 1024
-          format: password
+          description: |
+            Пароль. `format: password` здесь НЕ СТОИТ намеренно: он не описывает
+            значение, а просит показывалку спрятать ввод, — и порождение типов
+            его не понимает (docs/api/README.md, «Чего спецификация себе не
+            позволяет»).
+      example:
+        email: mail@example.org
+        password: correct-horse-battery
 
     SignInAnswer:
       type: object
@@ -374,10 +393,16 @@ components:
       properties:
         expires_at:
           type: integer
+          format: int64
           description: |
             Когда сессия перестанет действовать: микросекунды от начала эпохи в
             UTC. Число, а не строка: у клиента и у сервера разные представления
             о том, как записать момент, а у числа их нет.
+
+            `format: int64` не украшение: без него порождённое поле сорокового
+            года не вмещает, а микросекунды эпохи не вмещает уже сегодня.
+      example:
+        expires_at: 1780000000000000
 
     Problem:
       type: object
@@ -417,6 +442,14 @@ components:
             Поле, из-за которого отказ, — путь внутри тела запроса. Появляется
             только у отказа разбора: «bad request» без имени поля отправляет
             человека угадывать, а разработчика — читать схему глазами.
+      example:
+        type: urn:pdr:error:request_field_invalid
+        title: Запрос не проходит схему
+        status: 400
+        detail: 'поле «email» не проходит схему: слишком короткое'
+        instance: /api/v1/cabinet/018f2b3c-4d5e-4f60-8a71-b2c3d4e5f607/sign-in
+        request_id: 018f2b3c4d5e4f608a71b2c3d4e5f607
+        field: email
 
     ProblemType:
       type: string
@@ -437,6 +470,7 @@ components:
         (docs/product/voice.md, «Коды, которых человек не увидит»). Что сегодня
         сломанный динамический конфиг всё-таки выпускает такой код наружу —
         названо в docs/api/README.md как расхождение, а не узаконено здесь.
+      example: urn:pdr:error:sign_in_refused
       enum:
         - urn:pdr:error:request_not_json
         - urn:pdr:error:request_field_invalid

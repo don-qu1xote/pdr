@@ -20,7 +20,6 @@ USERVER_CONFIG_HOOKS = ['pdr_config_paths']
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MIGRATIONS = ROOT / 'db' / 'migrations'
-SIGN_IN_SCHEMA = ROOT / 'libs' / 'pdr-identity' / 'schemas' / 'sign_in.json'
 OPENAPI = ROOT / 'docs' / 'api' / 'openapi.yaml'
 
 sys.path.insert(0, str(ROOT / 'scripts'))
@@ -132,7 +131,6 @@ def pdr_config_paths(tmp_path_factory):
     dumps = tmp_path_factory.mktemp('dumps')
 
     def patch(config_yaml, config_vars):
-        config_vars['sign-in-schema'] = str(SIGN_IN_SCHEMA)
         config_vars['openapi-document'] = str(OPENAPI)
         config_vars['dump-root'] = str(dumps)
         config_vars['dynamic-config-updates'] = True

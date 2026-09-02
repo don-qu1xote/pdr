@@ -26,11 +26,13 @@ add_library(pdr_http STATIC
     src/infrastructure/http/middlewares/pipeline.cpp
     src/infrastructure/http/openapi_document.cpp
     src/infrastructure/http/problem.cpp
+    src/infrastructure/http/request_body.cpp
     src/infrastructure/http/request_id.cpp
-    src/infrastructure/http/request_schema.cpp
 )
 target_include_directories(pdr_http PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
-target_link_libraries(pdr_http PUBLIC pdr_core pdr_application pdr_identity userver::core)
+# pdr_api — ПОРОЖДЁННЫЕ ТИПЫ КОНТРАКТА, и связь публичная: тип тела виден в
+# сигнатуре формы, значит виден и всякому, кто форму наследует.
+target_link_libraries(pdr_http PUBLIC pdr_core pdr_application pdr_identity pdr_api userver::core)
 
 # Адаптер ключей к Postgres — отдельной целью: сама форма собирается без
 # драйвера базы, и проверяется она на фейке. Цель нужна тому, кто поднимает
@@ -44,17 +46,31 @@ if(PDR_BUILD_TESTS)
     # праву: тело запроса, схема и сериализация — это userver, а его в
     # unit-цели нет намеренно (корневой CMakeLists, pdr_forbid_links).
     #
-    # Схемы для проверки лежат файлами рядом: схема, вкомпилированная в тест,
-    # проверяла бы разбор, но не чтение файла, — а падать оно будет именно на
-    # чтении.
+    # ТЕЛО ДВОЙНИКА ПОРОЖДАЕТСЯ ТЕМ ЖЕ ИНСТРУМЕНТОМ, что и настоящее.
+    #
+    # Форма обобщена по типу тела, и проверять её на типах входа значило бы
+    # проверять заодно вход. Двойник же, собранный руками, проверял бы разбор,
+    # которого в проде нет: настоящий разбор — порождённый.
+    #
+    # Контрактом эта схема не является и наружу не смотрит: за составом ручек
+    # платформы следит scripts/check_openapi.py по docs/api/openapi.yaml.
+    userver_target_generate_chaotic(pdr_http_double
+        OUTPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated"
+        OUTPUT_PREFIX pdr/http/double
+        RELATIVE_TO "${CMAKE_CURRENT_SOURCE_DIR}/tests/schemas"
+        LAYOUT "/components/schemas/([^/]*)/=pdr::infrastructure::http::testing::{0}"
+        GENERATE_SERIALIZERS
+        SCHEMAS "${CMAKE_CURRENT_SOURCE_DIR}/tests/schemas/booking.yaml"
+    )
+
     pdr_adapter_test_sources(
         tests/authorized_handler_test.cpp
         tests/error_mapping_test.cpp
         tests/idempotency_test.cpp
         tests/problem_test.cpp
+        tests/request_body_test.cpp
         tests/request_id_test.cpp
-        tests/request_schema_test.cpp
         tests/security_headers_test.cpp
     )
-    pdr_adapter_test_libraries(pdr_http pdr_testing)
+    pdr_adapter_test_libraries(pdr_http pdr_testing pdr_http_double)
 endif()

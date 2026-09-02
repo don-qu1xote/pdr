@@ -2,11 +2,9 @@
 
 #include <stdexcept>
 #include <string>
-#include <utility>
 
 #include <userver/components/component.hpp>
 #include <userver/dynamic_config/storage/component.hpp>
-#include <userver/formats/json/value_builder.hpp>
 #include <userver/server/http/http_request.hpp>
 #include <userver/yaml_config/merge_schemas.hpp>
 
@@ -63,9 +61,8 @@ SignInDoor::SignInDoor(Database& database,
                        const application::ports::SecretGenerator& secrets,
                        userver::dynamic_config::Source configs,
                        userver::engine::TaskProcessor& counting,
-                       pdr::http::KeyLifetime lifetime,
-                       infrastructure::http::RequestSchema schema)
-    : DoorHandler{database, keys, clock, lifetime, std::move(schema)},
+                       pdr::http::KeyLifetime lifetime)
+    : DoorHandler{database, keys, clock, lifetime},
       secrets_{secrets},
       configs_{configs},
       counting_{counting} {}
@@ -79,8 +76,8 @@ core::Result<core::TenantId> SignInDoor::Where(
     return *named;
 }
 
-core::Result<userver::formats::json::Value> SignInDoor::Run(const Call& call) const {
-    const auto mail = Email::Parse(call.body["email"].As<std::string>());
+core::Result<api::SignInAnswer> SignInDoor::Run(const Call& call) const {
+    const auto mail = Email::Parse(call.body.email);
     if (!mail.HasValue()) {
         return NotSignedIn();
     }
@@ -98,7 +95,7 @@ core::Result<userver::formats::json::Value> SignInDoor::Run(const Call& call) co
 
     const SignInRequest asked{call.caller.tenant,
                               mail.Value(),
-                              call.body["password"].As<std::string>(),
+                              call.body.password,
                               SeenBy(call.request, digests),
                               http::ReadSessionId(call.request)};
 
@@ -109,9 +106,7 @@ core::Result<userver::formats::json::Value> SignInDoor::Run(const Call& call) co
 
     call.handed.emplace_back(std::string{kSetCookie}, CookieFor(opened.Value().Id()));
 
-    userver::formats::json::ValueBuilder answer{userver::formats::json::Type::kObject};
-    answer["expires_at"] = opened.Value().ExpiresAt().UnixMicros();
-    return answer.ExtractValue();
+    return api::SignInAnswer{opened.Value().ExpiresAt().UnixMicros()};
 }
 
 SignInOperation::SignInOperation(const userver::components::ComponentConfig& config,
@@ -119,11 +114,6 @@ SignInOperation::SignInOperation(const userver::components::ComponentConfig& con
     : infrastructure::http::OperationComponent{config, context},
       tenants_{context.FindComponent<infrastructure::db::TenantContextComponent>().Context()},
       storage_{tenants_} {
-    auto schema = infrastructure::http::RequestSchema::FromFile(config["schema"].As<std::string>());
-    if (!schema.HasValue()) {
-        throw std::runtime_error{"вход: схема тела не читается: " + schema.Failure().Detail()};
-    }
-
     const auto configs = context.FindComponent<userver::components::DynamicConfig>().GetSource();
     const infrastructure::http::DynamicConfigKeyLifetime lifetimes{configs};
     const auto lifetime = lifetimes.Lifetime();
@@ -138,8 +128,7 @@ SignInOperation::SignInOperation(const userver::components::ComponentConfig& con
                   secrets_,
                   configs,
                   context.GetTaskProcessor(config["counting-task-processor"].As<std::string>()),
-                  lifetime.Value(),
-                  std::move(schema).Value());
+                  lifetime.Value());
 }
 
 const infrastructure::http::Operation& SignInOperation::Handler() const {
@@ -152,9 +141,6 @@ type: object
 description: единственная дверь — та, у которой сессии ещё нет
 additionalProperties: false
 properties:
-    schema:
-        type: string
-        description: путь к JSON-схеме тела запроса
     counting-task-processor:
         type: string
         description: процессор задач, на котором считается хеш пароля

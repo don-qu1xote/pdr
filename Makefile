@@ -24,7 +24,8 @@ PG_ENV = set -a; . ./$(ENV_FILE); set +a; \
         comments comments-fix hooks logs migrate migrate-verify migrate-status schema-doc \
         product-events-lock product-events-export product-events-prune \
         idempotency-prune \
-        account-export account-delete practice-queue ps check-env permissions-lock
+        account-export account-delete practice-queue ps check-env permissions-lock \
+        api-types
 
 help:
 	@echo "Цели:"
@@ -46,6 +47,7 @@ help:
 	@echo "  make migrate-verify   сверить суммы, ничего не применяя"
 	@echo "  make migrate-status   что применено, что ждёт"
 	@echo "  make schema-doc  пересобрать docs/architecture/schema.md"
+	@echo "  make api-types   пересобрать типы фронта из docs/api/openapi.yaml"
 	@echo "  make product-events-lock     пересобрать снимок опубликованных схем событий"
 	@echo "  make product-events-export OUT=<файл>   выгрузить продуктовый поток в CSV"
 	@echo "  make product-events-prune DAYS=<дней>   убрать записи старше срока"
@@ -239,8 +241,8 @@ logs: check-env
 # Уровни пирамиды и куда писать новый тест — docs/testing.md.
 #
 # Кроме cmake и python3 цели нужен node: правила речи проверяются по файлам
-# локализации, а они живут в clients/ (docs/product/voice.md).
-test:
+# локализации, а типы контракта фронта — порождаются (docs/api/README.md).
+test: clients/node_modules
 	cmake -S . -B $(BUILD_DIR) -DCMAKE_BUILD_TYPE=Debug
 	cmake --build $(BUILD_DIR) --parallel
 	ctest --test-dir $(BUILD_DIR) --output-on-failure
@@ -310,6 +312,29 @@ test-unit:
 	cmake -S . -B $(BUILD_DIR) -DCMAKE_BUILD_TYPE=Debug
 	cmake --build $(BUILD_DIR) --target pdr_unit_tests --parallel
 	ctest --test-dir $(BUILD_DIR) --output-on-failure -R '^unit$$'
+
+# ТИПЫ КОНТРАКТА ДЛЯ ФРОНТА.
+#
+# Порождаются из docs/api/openapi.yaml тем же документом, из которого сборка
+# порождает типы C++. Разница одна, и она названа в docs/api/README.md:
+# порождённое для C++ в историю не попадает, а это — попадает. У фронта своего
+# chaotic нет, и без файла в истории он не собирается без бэкендового
+# инструментария.
+#
+# Расхождение закоммиченного и свежепорождённого ловит scripts/check_openapi.py:
+# он порождает заново и сравнивает побайтно.
+api-types: clients/node_modules
+	cd clients && npm run api-types
+
+# Инструмент порождения ставится ОДИН РАЗ и по замку версий: `npm ci`, а не
+# `npm install`, — иначе у двоих получаются разные типы из одной схемы, и
+# проверка расхождения ловит не схему, а разные версии инструмента.
+#
+# Правило по каталогу, а не .PHONY: ставить его на каждый `make test` значило бы
+# ходить в сеть там, где ничего не поменялось.
+clients/node_modules: clients/package-lock.json
+	cd clients && npm ci
+	touch clients/node_modules
 
 fmt:
 	@python3 scripts/check_format.py --fix

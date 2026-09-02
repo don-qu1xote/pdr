@@ -36,6 +36,7 @@
 | ограничение повторов | `utils::RetryBudget` | свой экспоненциальный откат |
 | таблица соответствий | `utils::TrivialBiMap` | две параллельные `switch` в обе стороны |
 | разбор форматов | `formats::parse::To`, `formats::json` | вторую JSON-библиотеку, свой парсер |
+| типы тел и ответов из схемы | `chaotic` ([PDR-API-04](../api/README.md)) | структуры руками, свой генератор поверх шаблонов |
 | JSON-ручка | `server::handlers::HttpHandlerJsonBase` | свою сериализацию в `HttpHandlerBase` |
 | метрики | `utils::statistics` | свой реестр счётчиков, `prometheus-cpp` |
 | трассировка | `tracing::Span` | свой идентификатор запроса в логах |

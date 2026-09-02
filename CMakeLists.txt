@@ -148,6 +148,16 @@ endfunction()
 find_package(userver QUIET COMPONENTS core postgresql)
 if(userver_FOUND)
     message(STATUS "pdr: userver найден, слой адаптеров собирается")
+
+    # chaotic — ОТДЕЛЬНЫМ ВЫЗОВОМ И REQUIRED, а не ещё одним словом в списке
+    # выше. Дописанный туда, он при отсутствии сделал бы userver_FOUND ложным, и
+    # сборка сказала бы «userver не найден» — про userver, который найден.
+    # Человек пошёл бы искать не там.
+    #
+    # REQUIRED, а не QUIET, потому что необязательным он не бывает: типы тел
+    # порождаются им из спецификации, и без него нечем собрать ни одну ручку.
+    # Молча пропустить это значит собрать процесс без единой ручки.
+    find_package(userver REQUIRED COMPONENTS chaotic)
 else()
     message(STATUS "pdr: userver не найден, цели адаптеров пропущены")
 endif()
