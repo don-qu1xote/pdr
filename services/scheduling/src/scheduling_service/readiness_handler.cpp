@@ -4,6 +4,7 @@
 #include <exception>
 
 #include <pdr/api/openapi.hpp>
+#include <pdr/sql_queries.hpp>
 
 #include <userver/components/component.hpp>
 #include <userver/http/content_type.hpp>
@@ -11,21 +12,9 @@
 #include <userver/server/http/http_request.hpp>
 #include <userver/server/http/http_status.hpp>
 #include <userver/storages/postgres/component.hpp>
-#include <userver/storages/postgres/query.hpp>
 #include <userver/yaml_config/merge_schemas.hpp>
 
 namespace pdr::scheduling_service {
-namespace {
-
-/// Реестр применённых миграций. Арендатора у него нет по существу — схема одна
-/// на всех, — поэтому читается он второй дверью и с названной причиной.
-const userver::storages::postgres::Query kAppliedMigrations{
-    "SELECT count(*) FROM schema_version",
-    userver::storages::postgres::Query::Name{"readiness_applied_migrations"},
-};
-
-}  // namespace
-
 ReadinessHandler::ReadinessHandler(const userver::components::ComponentConfig& config,
                                    const userver::components::ComponentContext& context)
     : HttpHandlerBase{config, context},
@@ -44,7 +33,8 @@ std::string ReadinessHandler::HandleRequestThrow(
     api::Readiness answer{};
 
     try {
-        const auto applied = access_.Execute(kAppliedMigrations).AsSingleRow<std::int64_t>();
+        const auto applied =
+            access_.Execute(sql::kReadinessAppliedMigrations).AsSingleRow<std::int64_t>();
         answer.ready = applied > 0;
         answer.migrations = static_cast<int>(applied);
         if (applied == 0) {

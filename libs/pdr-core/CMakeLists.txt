@@ -51,7 +51,10 @@ if(userver_FOUND)
         src/infrastructure/postgres_tenant_aware_repository.cpp
     )
     target_include_directories(pdr_postgres PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
-    target_link_libraries(pdr_postgres PUBLIC pdr_core pdr_application userver::postgresql)
+    # pdr_sql — порождённые запросы (корневой CMakeLists.txt). PUBLIC: их берут
+    # все адаптеры дерева, а не только этот, и берут они РОВНО одну
+    # библиотеку — вторую цель с теми же именами завести негде.
+    target_link_libraries(pdr_postgres PUBLIC pdr_core pdr_application pdr_sql userver::postgresql)
 endif()
 
 # Часы, которые умеет двигать контур. Отдельная цель, а не часть

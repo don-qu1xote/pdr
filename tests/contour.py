@@ -33,6 +33,23 @@ jobs::SystemTenant(). Третьей записи значения нет: он�
 
 POSTGRES_COMPONENT = 'postgres-pdr'
 
+CABINET = '11111111-1111-4111-8111-111111111111'
+PARTICIPANT = '22222222-2222-4222-8222-222222222222'
+CABINET_EMAIL = 'nina@example.org'
+CABINET_PASSWORD = 'correct-horse-battery'
+
+CABINET_PASSWORD_HASH = (
+    '$argon2id$v=19$m=65536,t=3,p=1$cGRyLWNvbnRyYWN0LXNsdA'
+    '$XGIFHfMENSnGu6lfQYEW/Ikhm2vP48/FF5k9G+yAnmg'
+)
+"""Argon2id от CABINET_PASSWORD, посчитанный один раз и записанный сюда.
+
+Параметры счёта лежат ВНУТРИ записи, поэтому проверка не зависит ни от текущего
+PDR_SIGN_IN_RULES, ни от того, чем хеш посчитали. Считать его в прогоне значило
+бы тратить на каждый тест десятки миллисекунд ровно ради того, что и так
+проверено contract-набором счёта паролей.
+"""
+
 
 @pytest.fixture(scope='session')
 def pgsql_local(pgsql_local_create):
@@ -136,3 +153,29 @@ def pdr_config_paths(tmp_path_factory):
         config_vars['dynamic-config-updates'] = True
 
     return patch
+
+
+@pytest.fixture
+def practice(pgsql):
+    """Кабинет, в который можно войти: практика, человек и его пароль.
+
+    Одна на оба набора. Две копии этой засыпки разошлись бы молча — и каждый
+    набор остался бы зелёным на своём представлении о том, кто заведён.
+    """
+    rows = pgsql[DATABASE].cursor()
+    rows.execute(
+        "insert into identity_tenant (tenant_id, name, tz) "
+        "values (%s, 'Нина', 'Europe/Moscow') on conflict do nothing",
+        (CABINET,),
+    )
+    rows.execute(
+        'insert into identity_person (tenant_id, id, display_name, email, tz) '
+        "values (%s, %s, 'Нина', %s, 'Europe/Moscow') on conflict do nothing",
+        (CABINET, PARTICIPANT, CABINET_EMAIL),
+    )
+    rows.execute(
+        'insert into identity_credential (tenant_id, person_id, password_hash) '
+        'values (%s, %s, %s) on conflict do nothing',
+        (CABINET, PARTICIPANT, CABINET_PASSWORD_HASH),
+    )
+    return rows

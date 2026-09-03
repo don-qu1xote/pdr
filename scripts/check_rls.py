@@ -14,10 +14,12 @@
 при третьем — значит открыть её всем: политика лежит рядом и не применяется.
 Поэтому проверяется весь набор, а не наличие слова «policy» в файле.
 
-Проверяется и вторая сторона: адаптер, который объявляет арендатора базе, обязан
+Проверяется и вторая сторона: запрос, которым арендатор объявляется базе, обязан
 объявлять ТОТ ЖЕ параметр и объявлять его локально для транзакции. Опечатка в
 имени параметра — это пустые ответы во всей системе, а `false` вместо `true` —
-арендатор, оставшийся на соединении после возврата в пул.
+арендатор, оставшийся на соединении после возврата в пул. С PDR-DB-05 этот
+запрос лежит файлом (`db/sql/core/declare_tenant.sql`), а не строкой в адаптере,
+и проверяется он там же, где написан.
 
 Нарушение печатается как <файл>:<строка> и даёт код возврата 1.
 
@@ -43,7 +45,7 @@ PARAMETER = "pdr.tenant_id"
 
 TENANT_COLUMN = "tenant_id"
 
-ADAPTER = Path("libs/pdr-core/src/infrastructure/db/tenant_context.cpp")
+ADAPTER = Path("db/sql/core/declare_tenant.sql")
 
 SET_CONFIG = re.compile(r"set_config\(\s*'([^']*)'\s*,\s*\$1\s*,\s*(true|false)\s*\)")
 
@@ -187,10 +189,10 @@ def check_migrations(migrations: Sequence[tuple[str, model.Migration]]) -> tuple
 
 
 def check_adapter(path: Path, source: str) -> list[str]:
-    """Адаптер объявляет тот же параметр и объявляет его на время транзакции."""
+    """Запрос объявляет тот же параметр и объявляет его на время транзакции."""
     if not path.is_file():
         return [
-            f"{source}: адаптера нет. Политики есть, а объявить арендатора базе некому — "
+            f"{source}: файла нет. Политики есть, а объявить арендатора базе некому — "
             f"любой запрос вернёт пусто"
         ]
 
@@ -198,7 +200,7 @@ def check_adapter(path: Path, source: str) -> list[str]:
     found = list(SET_CONFIG.finditer(text))
     if not found:
         return [
-            f"{source}: адаптер не вызывает set_config('{PARAMETER}', $1, true). "
+            f"{source}: запрос не вызывает set_config('{PARAMETER}', $1, true). "
             f"Арендатор объявляется базе здесь и только здесь"
         ]
 
@@ -208,7 +210,7 @@ def check_adapter(path: Path, source: str) -> list[str]:
         name, local = match.group(1), match.group(2)
         if name != PARAMETER:
             violations.append(
-                f"{source}:{line}: адаптер объявляет параметр «{name}», а политики "
+                f"{source}:{line}: запрос объявляет параметр «{name}», а политики "
                 f"смотрят на «{PARAMETER}». Разъезд имён — это пустые ответы везде"
             )
         if local != "true":
@@ -264,9 +266,8 @@ create policy identity_person_isolation on identity_person
 """
 
 GOOD_ADAPTER = """
-const userver::storages::postgres::Query kDeclareTenant{
-    "SELECT set_config('pdr.tenant_id', $1, true)",
-};
+-- Объявление арендатора: тот же параметр, что в политиках, и на транзакцию.
+SELECT set_config('pdr.tenant_id', $1, true)
 """
 
 SELFTEST_FILES = {
@@ -402,7 +403,7 @@ def selftest() -> int:
 
         adapter.unlink()
         if not any("некому" in line for line in check_adapter(adapter, str(ADAPTER))):
-            print("самопроверка: не поймано отсутствие адаптера", file=sys.stderr)
+            print("самопроверка: не поймано отсутствие файла запроса", file=sys.stderr)
             return 1
 
     print(f"Самопроверка пройдена: {len(SELFTEST_EXPECTED) + 3} нарушений найдено там, где они "

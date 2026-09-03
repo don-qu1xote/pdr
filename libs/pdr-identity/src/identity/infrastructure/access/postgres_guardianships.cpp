@@ -3,7 +3,7 @@
 #include <stdexcept>
 #include <string>
 
-#include <userver/storages/postgres/query.hpp>
+#include <pdr/sql_queries.hpp>
 
 #include "infrastructure/db/timestamps.hpp"
 
@@ -19,33 +19,8 @@ using infrastructure::db::Timestamptz;
 /// паре «опекун и ученик». Первичный ключ нужен базе, и живёт он ровно здесь.
 using RowId = core::StrongId<struct GuardianshipRowTag>;
 
-const userver::storages::postgres::Query kFindActive{
-    "SELECT granted_at FROM identity_guardianship "
-    "WHERE guardian_id = $1::uuid AND student_id = $2::uuid AND revoked_at IS NULL",
-    userver::storages::postgres::Query::Name{"identity_guardianship_find_active"},
-};
-
-const userver::storages::postgres::Query kGuardiansOf{
-    "SELECT guardian_id::text AS guardian_id FROM identity_guardianship "
-    "WHERE student_id = $1::uuid AND revoked_at IS NULL ORDER BY granted_at",
-    userver::storages::postgres::Query::Name{"identity_guardianship_guardians_of"},
-};
-
-const userver::storages::postgres::Query kUpdateActive{
-    "UPDATE identity_guardianship SET granted_at = $3, revoked_at = $4 "
-    "WHERE guardian_id = $1::uuid AND student_id = $2::uuid AND revoked_at IS NULL",
-    userver::storages::postgres::Query::Name{"identity_guardianship_update_active"},
-};
-
-const userver::storages::postgres::Query kInsert{
-    "INSERT INTO identity_guardianship "
-    "(tenant_id, id, guardian_id, student_id, granted_at, revoked_at) "
-    "VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6)",
-    userver::storages::postgres::Query::Name{"identity_guardianship_insert"},
-};
-
-core::PersonId PersonOf(const userver::storages::postgres::Row& row, const char* column) {
-    const auto person = core::PersonId::Parse(row[column].As<std::string>());
+core::PersonId PersonOf(const std::string& stored) {
+    const auto person = core::PersonId::Parse(stored);
     if (!person.has_value()) {
         throw std::runtime_error{"identity_guardianship: строка не разбирается"};
     }
@@ -61,29 +36,31 @@ PostgresGuardianships::PostgresGuardianships(infrastructure::db::ScopedTenantCon
 std::optional<Guardianship> PostgresGuardianships::FindActive(const core::TenantId& tenant,
                                                               const core::PersonId& guardian,
                                                               const core::PersonId& student) const {
-    const auto result =
-        scope_.Session().Execute(kFindActive, guardian.ToString(), student.ToString());
+    const auto result = scope_.Session().Execute(
+        sql::kIdentityGuardianshipFindActive, guardian.ToString(), student.ToString());
     if (result.IsEmpty()) {
         return std::nullopt;
     }
 
-    return Guardianship::Restore(tenant,
-                                 guardian,
-                                 student,
-                                 AsInstant(result.Front()["granted_at"].As<Timestamptz>()),
-                                 std::nullopt);
+    return Guardianship::Restore(
+        tenant,
+        guardian,
+        student,
+        AsInstant(result.Front().As<Timestamptz>(userver::storages::postgres::kFieldTag)),
+        std::nullopt);
 }
 
 std::vector<core::PersonId> PostgresGuardianships::GuardiansOf(
     const core::TenantId& tenant, const core::PersonId& student) const {
     static_cast<void>(tenant);
 
-    const auto result = scope_.Session().Execute(kGuardiansOf, student.ToString());
+    const auto result =
+        scope_.Session().Execute(sql::kIdentityGuardianshipGuardiansOf, student.ToString());
 
     std::vector<core::PersonId> found;
     found.reserve(result.Size());
-    for (const auto& row : result) {
-        found.push_back(PersonOf(row, "guardian_id"));
+    for (const auto& stored : result.AsSetOf<std::string>(userver::storages::postgres::kFieldTag)) {
+        found.push_back(PersonOf(stored));
     }
     return found;
 }
@@ -94,7 +71,7 @@ void PostgresGuardianships::Save(const Guardianship& guardianship) {
         revoked = AsTimestamptz(*guardianship.RevokedAt());
     }
 
-    const auto changed = scope_.Session().Execute(kUpdateActive,
+    const auto changed = scope_.Session().Execute(sql::kIdentityGuardianshipUpdateActive,
                                                   guardianship.Guardian().ToString(),
                                                   guardianship.Student().ToString(),
                                                   AsTimestamptz(guardianship.GrantedAt()),
@@ -103,7 +80,7 @@ void PostgresGuardianships::Save(const Guardianship& guardianship) {
         return;
     }
 
-    scope_.Session().Execute(kInsert,
+    scope_.Session().Execute(sql::kIdentityGuardianshipInsert,
                              guardianship.Tenant().ToString(),
                              ids_.Next<RowId>().ToString(),
                              guardianship.Guardian().ToString(),

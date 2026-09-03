@@ -8,16 +8,23 @@
 `POSTGRES_DEFAULT_COMMAND_CONTROL`, а тем, кому пол не годится, срок назначен
 поимённо в `POSTGRES_QUERIES_COMMAND_CONTROL`.
 
+ИМЯ ЗАПРОСА — ЭТО ИМЯ ФАЙЛА. С PDR-DB-05 запросы лежат в
+`db/sql/<контекст>/<имя>.sql`, а объявление `storages::Query` порождает
+`userver_add_sql_library`. Руками имя больше не пишется — значит и разойтись с
+реестром сроков и с метриками оно не может, и проверять «есть ли у запроса имя»
+стало не у чего: безымянных не бывает.
+
 Проверяется:
 
-* У КАЖДОГО ЗАПРОСА ЕСТЬ ИМЯ. `postgres::Query` без `Query::Name` не получит
-  своего срока никогда: назначать его не по чему. Такой запрос роняет сборку
-  здесь же, а не обнаруживается через полгода зависшим;
+* ЗАПРОС НЕ ОБЪЯВЛЕН РУКАМИ. `postgres::Query` в .cpp — это имя, написанное
+  человеком: оно разойдётся с реестром сроков молча, и запрос уедет на общий
+  пол. Место запроса — файл в `db/sql`;
 * имя в реестре сроков СУЩЕСТВУЕТ в дереве. Строка про запрос, которого нет, —
-  это срок, не доставшийся никому: запрос переименовали, а строку забыли, и он
+  это срок, не доставшийся никому: файл переименовали, а строку забыли, и он
   молча уехал на общий пол;
-* имена запросов НЕ ПОВТОРЯЮТСЯ. Два разных запроса под одним именем делят один
-  срок и одну строку метрик, и разобрать, который из них завис, нечем;
+* имена запросов НЕ ПОВТОРЯЮТСЯ. Одно имя на два файла в разных контекстах —
+  один срок и одна строка метрик на два запроса, и который из них завис, не
+  разобрать;
 * сроки не переставлены местами: `statement_timeout_ms` меньше
   `network_timeout_ms`. Иначе база считает дольше, чем драйвер готов ждать, —
   запрос обрывается по сети, а в базе продолжает считаться.
@@ -44,13 +51,13 @@ from typing import Iterator, Sequence
 
 REGISTRY = Path("configs/dynamic/registry.yaml")
 VARIABLE = "POSTGRES_QUERIES_COMMAND_CONTROL"
+QUERIES = Path("db/sql")
 
 SOURCE_SUFFIXES = frozenset({".hpp", ".cpp", ".hxx", ".cc"})
 SKIPPED_DIRS = frozenset({".git", "out", "_deps", "__pycache__", "compile_fail"})
 SKIPPED_PREFIXES = ("build", "venv", ".venv")
 
 QUERY = re.compile(r"\bpostgres::Query\s+\w+\s*\{(?P<body>[^;]*)\}\s*;", re.S)
-NAMED = re.compile(r"Query::Name\{\s*\"(?P<name>[^\"]+)\"")
 
 ENTRY = re.compile(
     r"^\s{4}(?P<name>[a-z][a-z0-9_]*):\s*\{(?P<body>[^}]*)\}\s*$", re.M
@@ -70,9 +77,8 @@ def source_files(root: Path) -> Iterator[Path]:
         yield path
 
 
-def queries_in_code(root: Path) -> tuple[dict[str, list[Path]], list[str]]:
-    """{имя запроса: где объявлен} и жалобы на запросы без имени."""
-    found: dict[str, list[Path]] = {}
+def declared_by_hand(root: Path) -> list[str]:
+    """Жалобы на запросы, объявленные в коде, а не файлом в db/sql."""
     violations: list[str] = []
 
     for path in source_files(root):
@@ -82,14 +88,25 @@ def queries_in_code(root: Path) -> tuple[dict[str, list[Path]], list[str]]:
         display = path.relative_to(root)
 
         for query in QUERY.finditer(text):
-            named = NAMED.search(query.group("body"))
-            if not named:
-                violations.append(
-                    f"{display}: запрос объявлен без Query::Name. Срок назначается ПО ИМЕНИ, "
-                    f"и безымянному его не назначить: он останется на общем поле навсегда"
-                )
-                continue
-            found.setdefault(named.group("name"), []).append(display)
+            line = text[: query.start()].count("\n") + 1
+            violations.append(
+                f"{display}:{line}: запрос объявлен в коде. Имя ему тогда пишет человек, и "
+                f"разойтись с реестром сроков оно может молча. Место запроса — файл "
+                f"{QUERIES}/<контекст>/<имя>.sql, объявление порождает сборка"
+            )
+
+    return violations
+
+
+def queries_in_files(root: Path) -> tuple[dict[str, list[Path]], list[str]]:
+    """{имя запроса: файлы} и жалобы на одинаковые имена в разных контекстах."""
+    found: dict[str, list[Path]] = {}
+    violations: list[str] = []
+
+    directory = root / QUERIES
+    if directory.is_dir():
+        for path in sorted(directory.rglob("*.sql")):
+            found.setdefault(path.stem, []).append(path.relative_to(root))
 
     for name, places in sorted(found.items()):
         if len(places) > 1:
@@ -122,7 +139,8 @@ def timeouts_in_registry(text: str) -> tuple[dict[str, dict[str, int]], list[str
 
 
 def check(root: Path) -> tuple[list[str], int, int]:
-    named, violations = queries_in_code(root)
+    named, violations = queries_in_files(root)
+    violations.extend(declared_by_hand(root))
 
     registry = root / REGISTRY
     if not registry.is_file():
@@ -139,8 +157,9 @@ def check(root: Path) -> tuple[list[str], int, int]:
     for name in sorted(timeouts):
         if name not in named:
             violations.append(
-                f"{REGISTRY}: сроку назначено имя «{name}», а такого запроса в дереве нет. "
-                f"Запрос переименовали, а строку забыли — и он молча уехал на общий пол"
+                f"{REGISTRY}: сроку назначено имя «{name}», а файла {QUERIES}/*/{name}.sql "
+                f"в дереве нет. Запрос переименовали, а строку забыли — и он молча уехал "
+                f"на общий пол"
             )
 
     for name, milliseconds in sorted(timeouts.items()):
@@ -180,27 +199,20 @@ USERVER_SOMETHING:
 """
 
 SELFTEST_FILES = {
-    "libs/pdr-identity/src/identity/infrastructure/auth/sessions.cpp": (
-        'const userver::storages::postgres::Query kFind{\n'
-        '    "SELECT 1",\n'
-        '    userver::storages::postgres::Query::Name{"identity_session_find"},\n'
-        '};\n'
-    ),
-    "libs/pdr-identity/src/identity/infrastructure/auth/nameless.cpp": (
-        'const userver::storages::postgres::Query kNameless{"SELECT 2"};\n'
-    ),
-    "libs/pdr-jobs/src/jobs/infrastructure/twin.cpp": (
-        'const userver::storages::postgres::Query kTwin{\n'
-        '    "SELECT 3",\n'
-        '    userver::storages::postgres::Query::Name{"identity_session_find"},\n'
+    "db/sql/identity/identity_session_find.sql": "SELECT 1\n",
+    "db/sql/jobs/identity_session_find.sql": "SELECT 3\n",
+    "libs/pdr-identity/src/identity/infrastructure/auth/handmade.cpp": (
+        'const userver::storages::postgres::Query kByHand{\n'
+        '    "SELECT 2",\n'
+        '    userver::storages::postgres::Query::Name{"written_by_a_person"},\n'
         '};\n'
     ),
 }
 
 SELFTEST_EXPECTED = (
-    "объявлен без Query::Name",
+    "запрос объявлен в коде",
     "занято дважды",
-    "«long_gone», а такого запроса в дереве нет",
+    "«long_gone», а файла",
     "база считает дольше",
     "назван не весь",
 )
@@ -231,7 +243,7 @@ def selftest() -> int:
                     print("    " + line, file=sys.stderr)
                 return 1
 
-        if any("identity_session_find», а такого" in line for line in violations):
+        if any("«identity_session_find», а файла" in line for line in violations):
             print("самопроверка: существующий запрос объявлен несуществующим", file=sys.stderr)
             return 1
 
@@ -262,7 +274,7 @@ def main(argv: Sequence[str]) -> int:
         print("Запросов к базе нет — сроки назначать нечему.")
         return 0
 
-    print(f"Запросов с именем: {named}. Свой срок назван у {timeouts}, "
+    print(f"Запросов в {QUERIES}: {named}. Свой срок назван у {timeouts}, "
           f"остальные {named - timeouts} живут на общем поле.")
     return 0
 

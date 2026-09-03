@@ -61,10 +61,16 @@ if(PDR_BUILD_TESTS AND USERVER_FEATURE_TESTSUITE)
     # Имя исполняемого файла называется явно: штатная функция собирает его из
     # имени ПРОЕКТА, а проект у нас один на всё дерево — иначе контур искал бы
     # файл «pdr».
+    # SQL_LIBRARY включает штатный sql_coverage: контур считает покрытие ЗАПРОСОВ,
+    # а не строк кода. Список запросов он берёт из порождённого sql_files.py, а
+    # факт выполнения — из штатной точки sql_statement, которую ставит драйвер
+    # Postgres. Запрос без единого выполнения роняет прогон; какие из них не
+    # выполняются осознанно и почему — названо поимённо в tests/conftest.py.
     userver_testsuite_add_simple(
         SERVICE_TARGET pdr_scheduling_service
+        SQL_LIBRARY pdr_sql
         PYTEST_ARGS "--service-binary=${CMAKE_CURRENT_BINARY_DIR}/pdr_scheduling_service"
-                    "-p" "no:cacheprovider"
+                    "-o" "cache_dir=${CMAKE_CURRENT_BINARY_DIR}/Testing/Temporary/pytest_cache"
     )
 
     # СВЕРКА С КОНТРАКТОМ — отдельным набором и на том же процессе.

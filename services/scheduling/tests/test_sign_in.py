@@ -10,32 +10,47 @@
 
 import uuid
 
-import pytest
-
-TENANT = '11111111-1111-4111-8111-111111111111'
-PERSON = '22222222-2222-4222-8222-222222222222'
-EMAIL = 'nina@example.org'
-PASSWORD = 'correct-horse-battery'
+from contour import CABINET as TENANT
+from contour import CABINET_EMAIL as EMAIL
+from contour import CABINET_PASSWORD as PASSWORD
 
 
 def address(path=''):
     return f'/api/v1/cabinet/{TENANT}/sign-in{path}'
 
 
-@pytest.fixture
-def practice(pgsql):
-    rows = pgsql['pdr'].cursor()
-    rows.execute(
-        "insert into identity_tenant (tenant_id, name, tz) values (%s, 'Нина', 'Europe/Moscow') "
-        'on conflict do nothing',
-        (TENANT,),
+async def test_sign_in_hands_out_one_session_and_repeats_the_same_answer(
+    service_client, practice,
+):
+    """УСПЕШНЫЙ ВХОД, а не только отказы.
+
+    Пока проверены одни отказы, до записи сессии и до закрытия ключа повтора
+    прогон не доходит вовсе — и это видно не рассуждением, а покрытием
+    запросов: `identity_session_save` и `http_idempotency_key_complete` не
+    выполняются ни разу.
+    """
+    used = f'sign-in-{uuid.uuid4()}'
+    first = await service_client.post(
+        address(),
+        json={'email': EMAIL, 'password': PASSWORD},
+        headers={'Idempotency-Key': used},
     )
-    rows.execute(
-        'insert into identity_person (tenant_id, id, display_name, email, tz) '
-        "values (%s, %s, 'Нина', %s, 'Europe/Moscow') on conflict do nothing",
-        (TENANT, PERSON, EMAIL),
+
+    assert first.status == 200
+    assert '__Host-pdr_session=' in first.headers['Set-Cookie']
+    assert first.json()['expires_at'] > 0
+
+    repeated = await service_client.post(
+        address(),
+        json={'email': EMAIL, 'password': PASSWORD},
+        headers={'Idempotency-Key': used},
     )
-    return rows
+
+    assert repeated.status == 200
+    assert repeated.json() == first.json(), 'повтор ответил не тем же самым'
+
+    practice.execute('select count(*) from identity_session')
+    assert practice.fetchone()[0] == 1, 'повтор по тому же ключу завёл вторую сессию'
 
 
 async def test_wrong_password_is_refused_in_one_shape(service_client, practice):

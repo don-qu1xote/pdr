@@ -22,6 +22,12 @@
 * не удалось узнать, что изменилось (первый коммит, отсутствие базы сравнения):
   неизвестность трактуется как «затронуто всё», а не как «ничего».
 
+МИГРАЦИИ И ФАЙЛЫ ЗАПРОСОВ ЗАТРАГИВАЮТ СБОРКУ, а не только область `db`. С
+PDR-DB-05 по ним порождаются объявления запросов и структуры строк:
+переименованная колонка роняет сборку, и роняет её на месте. Не позвать сборку
+на такой правке значило бы отложить падение до первого изменения в `libs/` — то
+есть повесить его на чужое изменение, которое ничего не ломало.
+
 Запуск:
     python3 scripts/detect_changes.py --base origin/main
     python3 scripts/detect_changes.py --files README.md
@@ -39,8 +45,8 @@ from pathlib import Path, PurePosixPath
 from typing import Iterable, Sequence
 
 AREAS: dict[str, tuple[str, ...]] = {
-    "cpp": ("libs/", "services/", "CMakeLists.txt", ".clang-format", ".clang-tidy",
-            ".clang-format-version"),
+    "cpp": ("libs/", "services/", "CMakeLists.txt", "db/migrations/", "db/sql/",
+            ".clang-format", ".clang-tidy", ".clang-format-version"),
     "python": ("scripts/",),
     "db": ("db/", "scripts/migrate.py", "scripts/migration_model.py", "scripts/check_plans.py"),
     "deploy": ("deploy/", "Makefile"),
@@ -113,7 +119,9 @@ SELFTEST_CASES = (
     (["README.md"], False, {"cpp": False, "docs": True, "docs_only": True, "forced": False}),
     (["docs/testing.md", "CONTRIBUTING.md"], False, {"cpp": False, "docs_only": True}),
     (["libs/pdr-core/src/core/money.cpp"], False, {"cpp": True, "docs_only": False}),
-    (["db/migrations/V004__x.sql"], False, {"db": True, "cpp": False, "docs_only": False}),
+    (["db/migrations/V004__x.sql"], False, {"db": True, "cpp": True, "docs_only": False}),
+    (["db/sql/identity/identity_session_find.sql"], False,
+     {"db": True, "cpp": True, "docs_only": False}),
     (["db/explain/hot_queries.sql"], False, {"db": True, "cpp": False, "docs_only": False}),
     ([".clang-format-version"], False, {"cpp": True, "docs_only": False}),
     (["deploy/docker-compose.yml"], False, {"deploy": True, "cpp": False}),

@@ -20,6 +20,13 @@ application или infrastructure. Запрещено:
 system_clock::now() и подобное. Часы приходят портом application::ports::Clock,
 иначе тест расписания зависит от секунды, в которую его запустили.
 
+ПОРОЖДЁННОЕ ИЗ СХЕМЫ БАЗЫ — ещё одно правило и тоже не про слои. Заголовки
+`pdr/sql_queries.hpp`, `pdr/pg_client.hpp`, `pdr/pg_models.hpp` порождает
+`userver_add_sql_library` из миграций и файлов запросов (PDR-DB-05): они говорят
+на языке ТАБЛИЦ. Включать их в core и application запрещено. Порт объявляет
+application, и говорит он на языке домена; впусти сюда порождённую структуру —
+и схема базы окажется в сигнатурах сценария, а слои перестанут что-либо значить.
+
 Вторая граница — между модулями контекстов (libs/pdr-<контекст>). Чужой модуль
 виден ровно одним заголовком — его публичным контрактом <контекст>/contract.hpp.
 Всё остальное под <контекст>/ для соседей не существует. Платформенные
@@ -58,7 +65,18 @@ from pathlib import Path, PurePosixPath
 from typing import Callable, Iterable, Iterator, Sequence
 
 SOURCE_SUFFIXES = frozenset({".h", ".hh", ".hpp", ".hxx", ".ipp", ".c", ".cc", ".cpp", ".cxx"})
-SKIPPED_DIRS = frozenset({"build", "out", "node_modules", "_deps", "third_party", "compile_fail"})
+SKIPPED_DIRS = frozenset({"out", "node_modules", "_deps", "third_party", "compile_fail"})
+SKIPPED_PREFIXES = ("build", "venv", ".venv")
+"""Каталоги сборки — по ПРЕФИКСУ, а не по точному имени.
+
+Их у человека бывает несколько (build, build-userver, build-asan), и в них лежит
+ПОРОЖДЁННОЕ. Правило про слои — про написанное: спрашивать с генератора нечем, а
+поймать его выход проверкой значит поймать не того. Показательный пример —
+`pdr/pg_cluster.hpp` из userver_add_sql_library: он держит `ClusterPtr`, то есть
+берёт соединение сам. Это ровно то, что запрещено вне infrastructure/db, — и
+ровно поэтому порождённый клиент у нас не используется
+(docs/architecture/queries.md, «Порождённый клиент и арендатор»).
+"""
 LAYERS = ("core", "application", "infrastructure")
 
 LIBRARY_PREFIX = "pdr-"
@@ -79,6 +97,16 @@ PQ_ROOTS = frozenset({"pqxx", "libpq"})
 PQ_HEADERS = frozenset({"libpq-fe.h", "libpq-events.h", "postgres_fe.h"})
 
 TIME_HEADERS = frozenset({"ctime", "time.h", "sys/time.h", "sys/times.h"})
+
+GENERATED_ROOT = "pdr"
+GENERATED_HEADERS = frozenset({
+    "sql_queries.hpp",
+    "pg_client.hpp",
+    "pg_models.hpp",
+    "pg_cluster.hpp",
+    "pg_mock.hpp",
+})
+"""Что порождает userver_add_sql_library. Всё это — язык таблиц, а не домена."""
 
 POOL_INCLUDE = "userver/storages/postgres/cluster.hpp"
 POOL_SYMBOLS = ("ClusterPtr",)
@@ -317,6 +345,10 @@ def _uses_system_time(parts: Sequence[str], include: str) -> bool:
     return include in TIME_HEADERS
 
 
+def _uses_generated_schema(parts: Sequence[str], include: str) -> bool:
+    return len(parts) == 2 and parts[0] == GENERATED_ROOT and parts[1] in GENERATED_HEADERS
+
+
 def _uses_layer(layer: str) -> Callable[[Sequence[str], str], bool]:
     def predicate(parts: Sequence[str], include: str) -> bool:
         return layer in parts[:-1]
@@ -331,6 +363,7 @@ FORBIDDEN: dict[str, tuple[Rule, ...]] = {
         ("userver", _uses_userver),
         ("pqxx/libpq", _uses_postgres_driver),
         ("системное время", _uses_system_time),
+        ("порождённое из схемы базы", _uses_generated_schema),
         ("слой application", _uses_layer("application")),
         ("слой infrastructure", _uses_layer("infrastructure")),
     ),
@@ -338,6 +371,7 @@ FORBIDDEN: dict[str, tuple[Rule, ...]] = {
         ("userver", _uses_userver),
         ("pqxx/libpq", _uses_postgres_driver),
         ("системное время", _uses_system_time),
+        ("порождённое из схемы базы", _uses_generated_schema),
         ("слой infrastructure", _uses_layer("infrastructure")),
     ),
     "infrastructure": (),
@@ -353,7 +387,10 @@ def source_files(paths: Iterable[Path]) -> Iterator[Path]:
         for candidate in sorted(path.rglob("*")):
             if candidate.suffix not in SOURCE_SUFFIXES or not candidate.is_file():
                 continue
-            if any(part in SKIPPED_DIRS or part.startswith(".") for part in candidate.parts):
+            parts = candidate.parts
+            if any(part in SKIPPED_DIRS or part.startswith(".") for part in parts):
+                continue
+            if any(part.startswith(SKIPPED_PREFIXES) for part in parts):
                 continue
             yield candidate
 
@@ -479,6 +516,15 @@ SELFTEST_FILES = {
         '#include <userver/components/component_base.hpp>\n'
         '#include "core/tariff.hpp"\n'
         '#include <ctime>\n'
+        '#include <pdr/pg_client.hpp>\n'
+    ),
+    "src/core/schema.cpp": (
+        '#include <pdr/sql_queries.hpp>\n'
+        '#include "core/tariff.hpp"\n'
+    ),
+    "src/infrastructure/rows.cpp": (
+        '#include <pdr/pg_client.hpp>\n'
+        '#include <pdr/sql_queries.hpp>\n'
     ),
     "src/core/clock.cpp": (
         '#include <chrono>\n'
@@ -540,6 +586,8 @@ SELFTEST_EXPECTED = {
     ("src/core/bad.cpp", 5),
     ("src/application/bad.cpp", 1),
     ("src/application/bad.cpp", 3),
+    ("src/application/bad.cpp", 4),
+    ("src/core/schema.cpp", 1),
     ("src/core/clock.cpp", 6),
     ("src/core/clock.cpp", 7),
     ("libs/pdr-alpha/src/alpha/application/forbidden.cpp", 2),

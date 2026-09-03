@@ -5,9 +5,12 @@
 #include <string>
 #include <utility>
 
-#include <userver/storages/postgres/cluster_types.hpp>
-#include <userver/storages/postgres/query.hpp>
+#include <pdr/pg_client.hpp>
+#include <pdr/sql_queries.hpp>
 
+#include <userver/storages/postgres/cluster_types.hpp>
+
+#include "infrastructure/db/columns.hpp"
 #include "infrastructure/db/timestamps.hpp"
 
 namespace pdr::jobs {
@@ -15,6 +18,7 @@ namespace {
 
 using infrastructure::db::AsInstant;
 using infrastructure::db::AsTimestamptz;
+using infrastructure::db::Filled;
 using infrastructure::db::Timestamptz;
 
 std::optional<Outcome> OutcomeFrom(const std::string& stored) {
@@ -30,47 +34,19 @@ std::optional<Outcome> OutcomeFrom(const std::string& stored) {
     return std::nullopt;
 }
 
-/// Начало попытки не стирает последний завершённый прогон: пока идёт новый,
-/// возраст последнего удачного — единственное, что вообще известно о задании.
-const userver::storages::postgres::Query kStarted{
-    "INSERT INTO jobs_run (job, attempt_at, outcome, runs) "
-    "VALUES ($1, $2, 'running', 1) "
-    "ON CONFLICT (job) DO UPDATE "
-    "SET attempt_at = excluded.attempt_at, outcome = 'running', runs = jobs_run.runs + 1",
-    userver::storages::postgres::Query::Name{"jobs_run_started"},
-};
-
-const userver::storages::postgres::Query kFinished{
-    "UPDATE jobs_run "
-    "SET started_at = $2, finished_at = $3, duration_ms = $4, outcome = $5, "
-    "produced = $6, repeated = $7 "
-    "WHERE job = $1",
-    userver::storages::postgres::Query::Name{"jobs_run_finished"},
-};
-
-/// Незавершённый прогон записью о прогоне не считается: воркер, упавший
-/// посреди работы, обязан выглядеть как замолчавшее задание, а не как
-/// отработавшее.
-const userver::storages::postgres::Query kLast{
-    "SELECT started_at, finished_at, outcome, produced, repeated "
-    "FROM jobs_run "
-    "WHERE job = $1 AND finished_at IS NOT NULL",
-    userver::storages::postgres::Query::Name{"jobs_run_last"},
-};
-
 }  // namespace
 
 PostgresJobJournal::PostgresJobJournal(const infrastructure::db::UnscopedAccess& access) noexcept
     : access_{access} {}
 
 void PostgresJobJournal::Started(const JobName& job, core::Instant at) {
-    access_.Execute(kStarted, job.Value(), AsTimestamptz(at));
+    access_.Execute(sql::kJobsRunStarted, job.Value(), AsTimestamptz(at));
 }
 
 void PostgresJobJournal::Finished(const JobName& job, const RunRecord& record) {
     const auto took_ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(record.Took()).count();
-    access_.Execute(kFinished,
+    access_.Execute(sql::kJobsRunFinished,
                     job.Value(),
                     AsTimestamptz(record.StartedAt()),
                     AsTimestamptz(record.FinishedAt()),
@@ -81,22 +57,22 @@ void PostgresJobJournal::Finished(const JobName& job, const RunRecord& record) {
 }
 
 std::optional<RunRecord> PostgresJobJournal::Last(const JobName& job) const {
-    const auto result = access_.Execute(kLast, job.Value());
+    const auto result = access_.Execute(sql::kJobsRunLast, job.Value());
     if (result.IsEmpty()) {
         return std::nullopt;
     }
 
-    const auto row = result.Front();
-    const auto outcome = OutcomeFrom(row["outcome"].As<std::string>());
+    const auto row = result.Front().As<JobsRunLastRow>(userver::storages::postgres::kRowTag);
+    const auto outcome = OutcomeFrom(Filled(row.outcome, "outcome"));
     if (!outcome.has_value()) {
         return std::nullopt;
     }
 
-    const auto record = RunRecord::Compose(AsInstant(row["started_at"].As<Timestamptz>()),
-                                           AsInstant(row["finished_at"].As<Timestamptz>()),
+    const auto record = RunRecord::Compose(AsInstant(Filled(row.started_at, "started_at")),
+                                           AsInstant(Filled(row.finished_at, "finished_at")),
                                            *outcome,
-                                           row["produced"].As<std::int64_t>(),
-                                           row["repeated"].As<std::int64_t>());
+                                           Filled(row.produced, "produced"),
+                                           Filled(row.repeated, "repeated"));
     if (!record.HasValue()) {
         return std::nullopt;
     }

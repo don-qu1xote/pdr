@@ -4,31 +4,23 @@
 #include <stdexcept>
 #include <string>
 
+#include <pdr/sql_queries.hpp>
+
 #include <userver/storages/postgres/io/date.hpp>
-#include <userver/storages/postgres/query.hpp>
 
 namespace pdr::identity {
-namespace {
-
-const userver::storages::postgres::Query kBornOn{
-    "SELECT born_on FROM identity_person WHERE id = $1::uuid",
-    userver::storages::postgres::Query::Name{"identity_person_born_on"},
-};
-
-}  // namespace
-
 PostgresBirthDates::PostgresBirthDates(infrastructure::db::ScopedTenantContext& scope) noexcept
     : scope_{scope} {}
 
 std::optional<BirthDate> PostgresBirthDates::Of(const core::TenantId&,
                                                 const core::PersonId& person) const {
-    const auto result = scope_.Session().Execute(kBornOn, person.ToString());
+    const auto result = scope_.Session().Execute(sql::kIdentityPersonBornOn, person.ToString());
     if (result.IsEmpty()) {
         return std::nullopt;
     }
 
-    const auto stored =
-        result.Front()["born_on"].As<std::optional<userver::storages::postgres::Date>>();
+    const auto stored = result.Front().As<std::optional<userver::storages::postgres::Date>>(
+        userver::storages::postgres::kFieldTag);
     if (!stored.has_value()) {
         return std::nullopt;
     }

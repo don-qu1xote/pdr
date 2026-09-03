@@ -17,12 +17,13 @@
 (`core::StrongId::Parse`), и приведение — единственное место, где это сказано
 базе.
 
-ЧТО РАЗБИРАЕТСЯ. Строковые литералы C++, склеенные подряд, — так адаптеры и
-пишут запросы. Из них берётся `select <список> from <таблица>`; состав колонок
-таблиц читается из миграций тем же разбором, что у остальных проверок схемы
-(scripts/migration_model.py). Чего разбор не понял, он пропускает молча: это
-линтер одного правила, а не второй разборщик SQL. Пропуск здесь безопасен —
-непонятый запрос просто не проверяется, а не объявляется правильным.
+ЧТО РАЗБИРАЕТСЯ. Файлы запросов `db/sql/<контекст>/*.sql` — с PDR-DB-05 запросы
+живут там, а не строками в .cpp. Из файла берётся `select <список> from
+<таблица>`; состав колонок таблиц читается из миграций тем же разбором, что у
+остальных проверок схемы (scripts/migration_model.py). Чего разбор не понял, он
+пропускает молча: это линтер одного правила, а не второй разборщик SQL. Пропуск
+здесь безопасен — непонятый запрос просто не проверяется, а не объявляется
+правильным.
 
 Запуск:
     python3 scripts/check_uuid_reads.py
@@ -43,57 +44,33 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import migration_model as model  # noqa: E402  (после правки sys.path)
 
 MIGRATIONS = Path("db/migrations")
-
-SKIPPED_DIRS = frozenset({".git", "out", "node_modules", "_deps", "__pycache__"})
-SKIPPED_PREFIXES = ("build", "venv", ".venv")
-
-SOURCE_SUFFIXES = frozenset({".cpp", ".hpp"})
+QUERIES = Path("db/sql")
 
 UUID_TYPE = "uuid"
 
-STRING_LITERAL = re.compile(r'"((?:\\.|[^"\\])*)"')
+COMMENT = re.compile(r"--[^\n]*")
 SELECT = re.compile(r"\bselect\s+(?P<columns>.+?)\s+from\s+(?P<table>[a-z_][a-z0-9_]*)", re.I | re.S)
 
 PLAIN_COLUMN = re.compile(r"^(?:(?P<alias>[a-z_][a-z0-9_]*)\.)?(?P<name>[a-z_][a-z0-9_]*)$", re.I)
 """Столбец, взятый как есть: ни функции, ни приведения, ни звёздочки."""
 
 
-def source_files(root: Path) -> Iterator[Path]:
-    for path in sorted(root.rglob("*")):
-        if not path.is_file() or path.suffix not in SOURCE_SUFFIXES:
-            continue
-        parts = path.relative_to(root).parts
-        if any(part in SKIPPED_DIRS or part.startswith(".") for part in parts):
-            continue
-        if any(part.startswith(SKIPPED_PREFIXES) for part in parts):
-            continue
-        yield path
+def query_files(root: Path) -> Iterator[Path]:
+    directory = root / QUERIES
+    if not directory.is_dir():
+        return
+    for path in sorted(directory.rglob("*.sql")):
+        if path.is_file():
+            yield path
 
 
-def glued_literals(text: str) -> Iterator[tuple[int, str]]:
-    """(строка, склеенный текст) для каждой цепочки литералов подряд.
+def statement(text: str) -> str:
+    """Текст запроса без пояснений: комментарий — не часть выборки.
 
-    Запрос в адаптере записан несколькими литералами на нескольких строках, и
-    смысл у него один. Склеиваются подряд идущие: между ними разрешены только
-    пробелы и переводы строк, как их и ставит форматтер.
+    В файле запроса они по-русски и по делу (docs/comments.md разрешает их в
+    SQL), но `-- берём id из identity_person` разбору выборки только мешает.
     """
-    pieces: list[str] = []
-    start = 0
-    last_end = -1
-
-    for found in STRING_LITERAL.finditer(text):
-        between = text[last_end : found.start()] if last_end >= 0 else ""
-        if last_end >= 0 and between.strip() == "":
-            pieces.append(found.group(1))
-        else:
-            if pieces:
-                yield start, "".join(pieces)
-            pieces = [found.group(1)]
-            start = text[: found.start()].count("\n") + 1
-        last_end = found.end()
-
-    if pieces:
-        yield start, "".join(pieces)
+    return COMMENT.sub(" ", text)
 
 
 def selected_columns(columns: str) -> Iterator[str]:
@@ -133,20 +110,18 @@ def check(root: Path) -> tuple[list[str], int]:
     violations: list[str] = []
     checked = 0
 
-    for path in source_files(root):
+    for path in query_files(root):
         display = path.relative_to(root)
-        text = path.read_text(encoding="utf-8", errors="replace")
+        query = statement(path.read_text(encoding="utf-8", errors="replace"))
 
-        for number, query in glued_literals(text):
-            found = SELECT.search(query)
-            if found is None:
-                continue
+        for found in SELECT.finditer(query):
             checked += 1
 
             table = found.group("table").lower()
             if table not in known or not known[table]:
                 continue
 
+            number = query[: found.start()].count("\n") + 1
             for piece in selected_columns(found.group("columns")):
                 shape = PLAIN_COLUMN.match(piece)
                 if shape is None:
@@ -172,42 +147,35 @@ create table identity_person (
 """
 
 SELFTEST_FILES = {
-    "libs/pdr-alpha/src/alpha/infrastructure/bad.cpp": (
-        'const Query kFind{\n'
-        '    "SELECT id, display_name "\n'
-        '    "FROM identity_person WHERE tenant_id = $1::uuid",\n'
-        '};\n'
+    "db/sql/alpha/bad.sql": (
+        "SELECT id, display_name\n"
+        "  FROM identity_person\n"
+        " WHERE tenant_id = $1::uuid\n"
     ),
-    "libs/pdr-alpha/src/alpha/infrastructure/good.cpp": (
-        'const Query kFind{\n'
-        '    "SELECT id::text AS id, display_name, born_on "\n'
-        '    "FROM identity_person WHERE tenant_id = $1::uuid",\n'
-        '};\n'
+    "db/sql/alpha/good.sql": (
+        "SELECT id::text AS id, display_name, born_on\n"
+        "  FROM identity_person\n"
+        " WHERE tenant_id = $1::uuid\n"
     ),
-    "libs/pdr-alpha/src/alpha/infrastructure/qualified.cpp": (
-        'const Query kJoin{"SELECT p.id, p.display_name FROM identity_person p"};\n'
-    ),
-    "libs/pdr-alpha/src/alpha/infrastructure/counting.cpp": (
-        'const Query kHowMany{"SELECT count(*) FROM identity_person"};\n'
-    ),
-    "libs/pdr-alpha/src/alpha/infrastructure/elsewhere.cpp": (
-        'const Query kOther{"SELECT id, name FROM unknown_table"};\n'
-    ),
-    "build-userver/_deps/foreign.cpp": (
-        'const Query kForeign{"SELECT id FROM identity_person"};\n'
+    "db/sql/alpha/qualified.sql": "SELECT p.id, p.display_name FROM identity_person p\n",
+    "db/sql/alpha/counting.sql": "SELECT count(*) FROM identity_person\n",
+    "db/sql/alpha/elsewhere.sql": "SELECT id, name FROM unknown_table\n",
+    "db/sql/alpha/commented.sql": (
+        "-- SELECT id, display_name FROM identity_person\n"
+        "SELECT display_name FROM identity_person\n"
     ),
 }
 
 SELFTEST_EXPECTED = (
-    ("libs/pdr-alpha/src/alpha/infrastructure/bad.cpp", "«id»"),
-    ("libs/pdr-alpha/src/alpha/infrastructure/qualified.cpp", "«id»"),
+    ("db/sql/alpha/bad.sql", "«id»"),
+    ("db/sql/alpha/qualified.sql", "«id»"),
 )
 
 SELFTEST_CLEAN = (
-    "libs/pdr-alpha/src/alpha/infrastructure/good.cpp",
-    "libs/pdr-alpha/src/alpha/infrastructure/counting.cpp",
-    "libs/pdr-alpha/src/alpha/infrastructure/elsewhere.cpp",
-    "build-userver",
+    "db/sql/alpha/good.sql",
+    "db/sql/alpha/counting.sql",
+    "db/sql/alpha/elsewhere.sql",
+    "db/sql/alpha/commented.sql",
 )
 
 
@@ -265,7 +233,7 @@ def main(argv: Sequence[str]) -> int:
               f"сказать это базе можно только приведением", file=sys.stderr)
         return 1
 
-    print(f"Выборок разобрано: {checked}. Колонки uuid читаются текстом.")
+    print(f"Выборок разобрано: {checked} в {QUERIES}. Колонки uuid читаются текстом.")
     return 0
 
 

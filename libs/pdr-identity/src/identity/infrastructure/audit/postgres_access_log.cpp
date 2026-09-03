@@ -2,7 +2,7 @@
 
 #include <string>
 
-#include <userver/storages/postgres/query.hpp>
+#include <pdr/sql_queries.hpp>
 
 #include "core/types/ids.hpp"
 #include "infrastructure/db/timestamps.hpp"
@@ -18,20 +18,6 @@ using infrastructure::db::AsTimestamptz;
 /// ровно здесь.
 using RowId = core::StrongId<struct AccessLogRowTag>;
 
-/// Приведение `::uuid` написано явно. Идентификатор уезжает текстом — тем же
-/// `ToString()`, что и всюду, — а колонка типизирована; полагаться на то, что
-/// база сама догадается привести текст к uuid при вставке, здесь не за чем:
-/// написанное приведение видно, а угаданное — нет.
-///
-/// Момент приходит параметром, хотя у колонки есть `default now()`: часы у нас
-/// портом, и строка «кто смотрел в марте» должна отвечать по тем же часам, что
-/// и весь остальной сценарий, а не по вторым, базы.
-const userver::storages::postgres::Query kRecord{
-    "INSERT INTO identity_access_log (tenant_id, id, actor_id, subject_id, resource_kind, at) "
-    "VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6)",
-    userver::storages::postgres::Query::Name{"identity_access_log_record"},
-};
-
 }  // namespace
 
 PostgresAccessLog::PostgresAccessLog(infrastructure::db::ScopedTenantContext& scope,
@@ -39,7 +25,7 @@ PostgresAccessLog::PostgresAccessLog(infrastructure::db::ScopedTenantContext& sc
     : scope_{scope}, ids_{ids} {}
 
 void PostgresAccessLog::Record(const AccessRecord& record) {
-    scope_.Session().Execute(kRecord,
+    scope_.Session().Execute(sql::kIdentityAccessLogRecord,
                              record.Tenant().ToString(),
                              ids_.Next<RowId>().ToString(),
                              record.Actor().ToString(),

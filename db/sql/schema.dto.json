@@ -1,0 +1,1507 @@
+{
+  "catalog": {
+    "enums": {},
+    "tables": {
+      "public.http_idempotency_key": {
+        "columns": [
+          {
+            "name": "tenant_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "key",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "request_fingerprint",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "state",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "response_status",
+            "nullable": true,
+            "type": "integer"
+          },
+          {
+            "name": "response_body",
+            "nullable": true,
+            "type": "text"
+          },
+          {
+            "name": "created_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "expires_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          }
+        ],
+        "name": "http_idempotency_key",
+        "namespace": "public",
+        "version": 0
+      },
+      "public.identity_access_log": {
+        "columns": [
+          {
+            "name": "tenant_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "actor_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "subject_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "resource_kind",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "outcome",
+            "nullable": false,
+            "type": "text"
+          }
+        ],
+        "name": "identity_access_log",
+        "namespace": "public",
+        "version": 1
+      },
+      "public.identity_account": {
+        "columns": [
+          {
+            "name": "id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "email_digest",
+            "nullable": false,
+            "type": "character(64)"
+          },
+          {
+            "name": "confirmed_at",
+            "nullable": true,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "confirmation_digest",
+            "nullable": true,
+            "type": "character(64)"
+          },
+          {
+            "name": "confirmation_expires_at",
+            "nullable": true,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "created_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          }
+        ],
+        "name": "identity_account",
+        "namespace": "public",
+        "version": 0
+      },
+      "public.identity_consent": {
+        "columns": [
+          {
+            "name": "tenant_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "subject_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "given_by",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "kind",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "version",
+            "nullable": false,
+            "type": "integer"
+          },
+          {
+            "name": "action",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "given_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "withdrawn_at",
+            "nullable": true,
+            "type": "timestamp with time zone"
+          }
+        ],
+        "name": "identity_consent",
+        "namespace": "public",
+        "version": 0
+      },
+      "public.identity_credential": {
+        "columns": [
+          {
+            "name": "tenant_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "person_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "password_hash",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "updated_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          }
+        ],
+        "name": "identity_credential",
+        "namespace": "public",
+        "version": 0
+      },
+      "public.identity_guardian_consent": {
+        "columns": [
+          {
+            "name": "tenant_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "guardian_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "student_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "scope",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "granted_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "granted_by",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "expires_at",
+            "nullable": true,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "revoked_at",
+            "nullable": true,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "revoked_by",
+            "nullable": true,
+            "type": "uuid"
+          },
+          {
+            "name": "basis",
+            "nullable": false,
+            "type": "text"
+          }
+        ],
+        "name": "identity_guardian_consent",
+        "namespace": "public",
+        "version": 1
+      },
+      "public.identity_guardianship": {
+        "columns": [
+          {
+            "name": "tenant_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "guardian_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "student_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "granted_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "revoked_at",
+            "nullable": true,
+            "type": "timestamp with time zone"
+          }
+        ],
+        "name": "identity_guardianship",
+        "namespace": "public",
+        "version": 0
+      },
+      "public.identity_login_attempt": {
+        "columns": [
+          {
+            "name": "tenant_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "subject_kind",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "subject_hash",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "window_started_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "attempts",
+            "nullable": false,
+            "type": "integer"
+          }
+        ],
+        "name": "identity_login_attempt",
+        "namespace": "public",
+        "version": 0
+      },
+      "public.identity_one_time_token": {
+        "columns": [
+          {
+            "name": "tenant_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "purpose",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "token_hash",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "role",
+            "nullable": true,
+            "type": "text"
+          },
+          {
+            "name": "person_id",
+            "nullable": true,
+            "type": "uuid"
+          },
+          {
+            "name": "created_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "expires_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "used_at",
+            "nullable": true,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "invited_digest",
+            "nullable": true,
+            "type": "character(64)"
+          }
+        ],
+        "name": "identity_one_time_token",
+        "namespace": "public",
+        "version": 1
+      },
+      "public.identity_person": {
+        "columns": [
+          {
+            "name": "tenant_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "display_name",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "email",
+            "nullable": true,
+            "type": "text"
+          },
+          {
+            "name": "tz",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "created_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "born_on",
+            "nullable": true,
+            "type": "date"
+          }
+        ],
+        "name": "identity_person",
+        "namespace": "public",
+        "version": 1
+      },
+      "public.identity_role_assignment": {
+        "columns": [
+          {
+            "name": "tenant_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "person_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "role",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "granted_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "revoked_at",
+            "nullable": true,
+            "type": "timestamp with time zone"
+          }
+        ],
+        "name": "identity_role_assignment",
+        "namespace": "public",
+        "version": 0
+      },
+      "public.identity_session": {
+        "columns": [
+          {
+            "name": "tenant_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "person_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "created_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "expires_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "revoked_at",
+            "nullable": true,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "user_agent_hash",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "ip_hash",
+            "nullable": false,
+            "type": "text"
+          }
+        ],
+        "name": "identity_session",
+        "namespace": "public",
+        "version": 0
+      },
+      "public.identity_signup_attempt": {
+        "columns": [
+          {
+            "name": "address_hash",
+            "nullable": false,
+            "type": "character(64)"
+          },
+          {
+            "name": "window_started_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "attempts",
+            "nullable": false,
+            "type": "integer"
+          }
+        ],
+        "name": "identity_signup_attempt",
+        "namespace": "public",
+        "version": 0
+      },
+      "public.identity_tenant": {
+        "columns": [
+          {
+            "name": "tenant_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "name",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "tz",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "created_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "visibility",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "visibility_asked_at",
+            "nullable": true,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "visibility_decided_at",
+            "nullable": true,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "visibility_refusal",
+            "nullable": true,
+            "type": "text"
+          }
+        ],
+        "name": "identity_tenant",
+        "namespace": "public",
+        "version": 1
+      },
+      "public.jobs_effect": {
+        "columns": [
+          {
+            "name": "tenant_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "job",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "effect_key",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "produced_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          }
+        ],
+        "name": "jobs_effect",
+        "namespace": "public",
+        "version": 0
+      },
+      "public.jobs_lock": {
+        "columns": [
+          {
+            "name": "key",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "owner",
+            "nullable": true,
+            "type": "text"
+          },
+          {
+            "name": "expiration_time",
+            "nullable": true,
+            "type": "timestamp with time zone"
+          }
+        ],
+        "name": "jobs_lock",
+        "namespace": "public",
+        "version": 0
+      },
+      "public.jobs_run": {
+        "columns": [
+          {
+            "name": "job",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "attempt_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "started_at",
+            "nullable": true,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "finished_at",
+            "nullable": true,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "duration_ms",
+            "nullable": true,
+            "type": "bigint"
+          },
+          {
+            "name": "outcome",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "produced",
+            "nullable": false,
+            "type": "bigint"
+          },
+          {
+            "name": "repeated",
+            "nullable": false,
+            "type": "bigint"
+          },
+          {
+            "name": "runs",
+            "nullable": false,
+            "type": "bigint"
+          }
+        ],
+        "name": "jobs_run",
+        "namespace": "public",
+        "version": 0
+      },
+      "public.observability_product_event": {
+        "columns": [
+          {
+            "name": "tenant_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "type",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "version",
+            "nullable": false,
+            "type": "integer"
+          },
+          {
+            "name": "actor_role",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "occurred_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "recorded_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "fields",
+            "nullable": false,
+            "type": "jsonb"
+          }
+        ],
+        "name": "observability_product_event",
+        "namespace": "public",
+        "version": 0
+      },
+      "public.schema_version": {
+        "columns": [
+          {
+            "name": "version",
+            "nullable": false,
+            "type": "integer"
+          },
+          {
+            "name": "applied_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "checksum",
+            "nullable": false,
+            "type": "character(64)"
+          }
+        ],
+        "name": "schema_version",
+        "namespace": "public",
+        "version": 0
+      }
+    },
+    "types": {}
+  },
+  "hashsum": "13d76a42a28b3a8aefc2baaa114d274855e3afce26a13a04e7f918311a61c50b",
+  "queries": [
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "text"
+        }
+      ],
+      "cardinality": "many",
+      "name": "declare_tenant",
+      "returns": [
+        {
+          "name": "set_config",
+          "nullable": true,
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "nullable": true,
+          "type": "text"
+        }
+      ],
+      "cardinality": "many",
+      "name": "http_idempotency_key_complete",
+      "returns": []
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "nullable": true,
+          "type": "timestamp with time zone"
+        }
+      ],
+      "cardinality": "many",
+      "name": "identity_access_log_about_person",
+      "returns": [
+        {
+          "name": "actor_id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "resource_kind",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "outcome",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "uuid"
+        }
+      ],
+      "cardinality": "many",
+      "name": "identity_account_by_id",
+      "returns": [
+        {
+          "name": "id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "email_digest",
+          "nullable": true,
+          "type": "character(64)"
+        },
+        {
+          "name": "confirmed_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "confirmation_digest",
+          "nullable": true,
+          "type": "character(64)"
+        },
+        {
+          "name": "confirmation_expires_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "created_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "character"
+        }
+      ],
+      "cardinality": "many",
+      "name": "identity_account_by_mail",
+      "returns": [
+        {
+          "name": "id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "email_digest",
+          "nullable": true,
+          "type": "character(64)"
+        },
+        {
+          "name": "confirmed_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "confirmation_digest",
+          "nullable": true,
+          "type": "character(64)"
+        },
+        {
+          "name": "confirmation_expires_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "created_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "text"
+        }
+      ],
+      "cardinality": "many",
+      "name": "identity_credential_by_email",
+      "returns": [
+        {
+          "name": "person_id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "password_hash",
+          "nullable": true,
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "uuid"
+        }
+      ],
+      "cardinality": "many",
+      "name": "identity_credential_by_person",
+      "returns": [
+        {
+          "name": "password_hash",
+          "nullable": true,
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "nullable": true,
+          "type": "uuid"
+        }
+      ],
+      "cardinality": "many",
+      "name": "identity_guardian_consent_active",
+      "returns": [
+        {
+          "name": "id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "scope",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "basis",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "granted_by",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "granted_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "expires_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "nullable": true,
+          "type": "uuid"
+        }
+      ],
+      "cardinality": "many",
+      "name": "identity_guardianship_find_active",
+      "returns": [
+        {
+          "name": "granted_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "uuid"
+        }
+      ],
+      "cardinality": "many",
+      "name": "identity_guardianship_guardians_of",
+      "returns": [
+        {
+          "name": "guardian_id",
+          "nullable": true,
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "nullable": true,
+          "type": "timestamp with time zone"
+        }
+      ],
+      "cardinality": "many",
+      "name": "identity_guardianship_update_active",
+      "returns": []
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "nullable": true,
+          "type": "text"
+        }
+      ],
+      "cardinality": "many",
+      "name": "identity_login_attempt_forget",
+      "returns": []
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "nullable": true,
+          "type": "text"
+        }
+      ],
+      "cardinality": "many",
+      "name": "identity_login_attempt_seen",
+      "returns": [
+        {
+          "name": "window_started_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "attempts",
+          "nullable": true,
+          "type": "integer"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "text"
+        }
+      ],
+      "cardinality": "many",
+      "name": "identity_one_time_token_find",
+      "returns": [
+        {
+          "name": "id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "purpose",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "role",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "person_id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "invited_digest",
+          "nullable": true,
+          "type": "character(64)"
+        },
+        {
+          "name": "created_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "expires_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "used_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "character"
+        },
+        {
+          "nullable": true,
+          "type": "timestamp with time zone"
+        }
+      ],
+      "cardinality": "many",
+      "name": "identity_one_time_token_live_invitation",
+      "returns": [
+        {
+          "name": "id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "token_hash",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "role",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "created_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "expires_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "nullable": true,
+          "type": "timestamp with time zone"
+        }
+      ],
+      "cardinality": "many",
+      "name": "identity_one_time_token_mark_used",
+      "returns": []
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "uuid"
+        }
+      ],
+      "cardinality": "many",
+      "name": "identity_person_born_on",
+      "returns": [
+        {
+          "name": "born_on",
+          "nullable": true,
+          "type": "date"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "text"
+        }
+      ],
+      "cardinality": "many",
+      "name": "identity_person_knows_mail",
+      "returns": [
+        {
+          "name": "?column?",
+          "nullable": true,
+          "type": "integer"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "uuid"
+        }
+      ],
+      "cardinality": "many",
+      "name": "identity_role_assignment_of_person",
+      "returns": [
+        {
+          "name": "role",
+          "nullable": true,
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "uuid"
+        }
+      ],
+      "cardinality": "many",
+      "name": "identity_session_find",
+      "returns": [
+        {
+          "name": "person_id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "created_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "expires_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "revoked_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "user_agent_hash",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "ip_hash",
+          "nullable": true,
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "nullable": true,
+          "type": "timestamp with time zone"
+        }
+      ],
+      "cardinality": "many",
+      "name": "identity_session_revoke_all",
+      "returns": []
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "character"
+        }
+      ],
+      "cardinality": "many",
+      "name": "identity_signup_attempt_window",
+      "returns": [
+        {
+          "name": "window_started_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "attempts",
+          "nullable": true,
+          "type": "integer"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "uuid"
+        }
+      ],
+      "cardinality": "many",
+      "name": "identity_tenant_visibility",
+      "returns": [
+        {
+          "name": "tenant_id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "visibility",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "created_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "visibility_asked_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "visibility_decided_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "visibility_refusal",
+          "nullable": true,
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "nullable": true,
+          "type": "text"
+        }
+      ],
+      "cardinality": "many",
+      "name": "identity_tenant_visibility_save",
+      "returns": []
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "nullable": true,
+          "type": "bigint"
+        },
+        {
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "nullable": true,
+          "type": "bigint"
+        },
+        {
+          "nullable": true,
+          "type": "bigint"
+        }
+      ],
+      "cardinality": "many",
+      "name": "jobs_run_finished",
+      "returns": []
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "text"
+        }
+      ],
+      "cardinality": "many",
+      "name": "jobs_run_last",
+      "returns": [
+        {
+          "name": "started_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "finished_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "outcome",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "produced",
+          "nullable": true,
+          "type": "bigint"
+        },
+        {
+          "name": "repeated",
+          "nullable": true,
+          "type": "bigint"
+        }
+      ]
+    },
+    {
+      "args": [],
+      "cardinality": "many",
+      "name": "readiness_applied_migrations",
+      "returns": [
+        {
+          "name": "count",
+          "nullable": true,
+          "type": "bigint"
+        }
+      ]
+    }
+  ]
+}

@@ -3,8 +3,10 @@
 #include <stdexcept>
 #include <string>
 
-#include <userver/storages/postgres/query.hpp>
+#include <pdr/pg_client.hpp>
+#include <pdr/sql_queries.hpp>
 
+#include "infrastructure/db/columns.hpp"
 #include "infrastructure/db/timestamps.hpp"
 
 namespace pdr::identity {
@@ -12,44 +14,24 @@ namespace {
 
 using infrastructure::db::AsInstant;
 using infrastructure::db::AsTimestamptz;
+using infrastructure::db::Filled;
 using infrastructure::db::Timestamptz;
 
-const userver::storages::postgres::Query kActiveFor{
-    "SELECT id::text AS id, scope, basis, granted_by::text AS granted_by, granted_at, "
-    "expires_at "
-    "FROM identity_guardian_consent "
-    "WHERE guardian_id = $1::uuid AND student_id = $2::uuid AND revoked_at IS NULL",
-    userver::storages::postgres::Query::Name{"identity_guardian_consent_active"},
-};
-
-/// Отзыв — правка строки, а не новая рядом: частичный уникальный индекс не
-/// позволил бы двум действующим согласиям на пару и уровень, и правильно.
-const userver::storages::postgres::Query kSave{
-    "INSERT INTO identity_guardian_consent "
-    "(tenant_id, id, guardian_id, student_id, scope, basis, granted_at, granted_by, "
-    "expires_at, revoked_at, revoked_by) "
-    "VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5, $6, $7, $8::uuid, $9, $10, $11::uuid) "
-    "ON CONFLICT (tenant_id, id) DO UPDATE "
-    "SET revoked_at = excluded.revoked_at, revoked_by = excluded.revoked_by",
-    userver::storages::postgres::Query::Name{"identity_guardian_consent_save"},
-};
-
-GuardianConsent From(const userver::storages::postgres::Row& row,
+GuardianConsent From(const IdentityGuardianConsentActiveRow& row,
                      const core::TenantId& tenant,
                      const core::PersonId& guardian,
                      const core::PersonId& student) {
-    const auto id = ConsentId::Parse(row["id"].As<std::string>());
-    const auto scope = ParseGuardianScope(row["scope"].As<std::string>());
-    const auto basis = ParseConsentBasis(row["basis"].As<std::string>());
-    const auto granted_by = core::PersonId::Parse(row["granted_by"].As<std::string>());
+    const auto id = ConsentId::Parse(Filled(row.id, "id"));
+    const auto scope = ParseGuardianScope(Filled(row.scope, "scope"));
+    const auto basis = ParseConsentBasis(Filled(row.basis, "basis"));
+    const auto granted_by = core::PersonId::Parse(Filled(row.granted_by, "granted_by"));
     if (!id.has_value() || !scope.has_value() || !basis.has_value() || !granted_by.has_value()) {
         throw std::runtime_error{"identity_guardian_consent: строка не разбирается"};
     }
 
     std::optional<core::Instant> expires;
-    const auto stored = row["expires_at"].As<std::optional<Timestamptz>>();
-    if (stored.has_value()) {
-        expires = AsInstant(*stored);
+    if (row.expires_at.has_value()) {
+        expires = AsInstant(*row.expires_at);
     }
 
     return GuardianConsent::Restore(*id,
@@ -59,7 +41,7 @@ GuardianConsent From(const userver::storages::postgres::Row& row,
                                     *scope,
                                     *basis,
                                     *granted_by,
-                                    AsInstant(row["granted_at"].As<Timestamptz>()),
+                                    AsInstant(Filled(row.granted_at, "granted_at")),
                                     expires,
                                     std::nullopt,
                                     std::nullopt);
@@ -75,12 +57,13 @@ std::vector<GuardianConsent> PostgresGuardianConsents::ActiveFor(
     const core::TenantId& tenant,
     const core::PersonId& guardian,
     const core::PersonId& student) const {
-    const auto result =
-        scope_.Session().Execute(kActiveFor, guardian.ToString(), student.ToString());
+    const auto result = scope_.Session().Execute(
+        sql::kIdentityGuardianConsentActive, guardian.ToString(), student.ToString());
 
     std::vector<GuardianConsent> found;
     found.reserve(result.Size());
-    for (const auto& row : result) {
+    for (const auto& row :
+         result.AsSetOf<IdentityGuardianConsentActiveRow>(userver::storages::postgres::kRowTag)) {
         found.push_back(From(row, tenant, guardian, student));
     }
     return found;
@@ -112,7 +95,7 @@ void PostgresGuardianConsents::Save(const GuardianConsent& consent) {
         revoked_by = consent.RevokedBy()->ToString();
     }
 
-    scope_.Session().Execute(kSave,
+    scope_.Session().Execute(sql::kIdentityGuardianConsentSave,
                              consent.Tenant().ToString(),
                              consent.Id().ToString(),
                              consent.Guardian().ToString(),
