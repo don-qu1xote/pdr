@@ -5,14 +5,15 @@
 
 #include <pdr/sql_queries.hpp>
 
+#include "infrastructure/db/domain_types.hpp"
+
 namespace pdr::identity {
 PostgresRoleRepository::PostgresRoleRepository(
     infrastructure::db::ScopedTenantContext& scope) noexcept
     : scope_{scope} {}
 
 RoleSet PostgresRoleRepository::RolesOf(const core::TenantId&, const core::PersonId& person) const {
-    const auto result =
-        scope_.Session().Execute(sql::kIdentityRoleAssignmentOfPerson, person.ToString());
+    const auto result = scope_.Session().Execute(sql::kIdentityRoleAssignmentOfPerson, person);
 
     RoleSet roles;
     for (const auto& stored : result.AsSetOf<std::string>(userver::storages::postgres::kFieldTag)) {

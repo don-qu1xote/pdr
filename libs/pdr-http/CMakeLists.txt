@@ -74,4 +74,12 @@ if(PDR_BUILD_TESTS)
         tests/security_headers_test.cpp
     )
     pdr_adapter_test_libraries(pdr_http pdr_testing pdr_http_double)
+
+    # УРОВЕНЬ LIVE: состав выборки занятия ключа. Структура строки у этого
+    # запроса написана руками (у него `@no-dto`), а лишнюю колонку штатный
+    # разбор не ловит — только предупреждает. Значит, состав держится тестом.
+    if(userver_FOUND)
+        pdr_live_test_sources(tests/postgres_idempotency_row_test.cpp)
+        pdr_live_test_libraries(pdr_http_postgres)
+    endif()
 endif()

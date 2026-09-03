@@ -7,15 +7,13 @@
 #include <pdr/sql_queries.hpp>
 
 #include "infrastructure/db/columns.hpp"
-#include "infrastructure/db/timestamps.hpp"
+#include "infrastructure/db/domain_types.hpp"
 
 namespace pdr::identity {
 namespace {
 
 using infrastructure::db::AsInstant;
-using infrastructure::db::AsTimestamptz;
 using infrastructure::db::Filled;
-using infrastructure::db::Timestamptz;
 
 Practice Parse(const IdentityTenantVisibilityRow& row) {
     const auto tenant = core::TenantId::Parse(Filled(row.tenant_id, "tenant_id"));
@@ -59,11 +57,11 @@ core::Result<void> PostgresPractices::Open(const Tenant& tenant,
                                            const core::TimeZone& zone,
                                            const Practice& practice) {
     const auto added = scope_.Session().Execute(sql::kIdentityTenantOpen,
-                                                tenant.Id().ToString(),
+                                                tenant.Id(),
                                                 tenant.Name(),
                                                 zone.Name(),
-                                                std::string{Name(practice.Visible())},
-                                                AsTimestamptz(practice.OpenedAt()));
+                                                Name(practice.Visible()),
+                                                practice.OpenedAt());
     if (added.RowsAffected() == 0) {
         return core::Error{core::ErrorKind::kConflict,
                            "practice_already_open",
@@ -73,7 +71,7 @@ core::Result<void> PostgresPractices::Open(const Tenant& tenant,
 }
 
 std::optional<Practice> PostgresPractices::Find(const core::TenantId& tenant) const {
-    const auto result = scope_.Session().Execute(sql::kIdentityTenantVisibility, tenant.ToString());
+    const auto result = scope_.Session().Execute(sql::kIdentityTenantVisibility, tenant);
     if (result.IsEmpty()) {
         return std::nullopt;
     }
@@ -82,26 +80,16 @@ std::optional<Practice> PostgresPractices::Find(const core::TenantId& tenant) co
 }
 
 void PostgresPractices::Save(const Practice& practice) {
-    std::optional<Timestamptz> asked;
-    if (practice.AskedAt().has_value()) {
-        asked = AsTimestamptz(*practice.AskedAt());
-    }
-
-    std::optional<Timestamptz> decided;
-    if (practice.DecidedAt().has_value()) {
-        decided = AsTimestamptz(*practice.DecidedAt());
-    }
-
-    std::optional<std::string> refusal;
+    std::optional<std::string_view> refusal;
     if (practice.Refusal().has_value()) {
-        refusal = std::string{Name(*practice.Refusal())};
+        refusal = Name(*practice.Refusal());
     }
 
     scope_.Session().Execute(sql::kIdentityTenantVisibilitySave,
-                             practice.Tenant().ToString(),
-                             std::string{Name(practice.Visible())},
-                             asked,
-                             decided,
+                             practice.Tenant(),
+                             Name(practice.Visible()),
+                             practice.AskedAt(),
+                             practice.DecidedAt(),
                              refusal);
 }
 

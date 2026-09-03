@@ -11,15 +11,13 @@
 #include <userver/storages/postgres/cluster_types.hpp>
 
 #include "infrastructure/db/columns.hpp"
-#include "infrastructure/db/timestamps.hpp"
+#include "infrastructure/db/domain_types.hpp"
 
 namespace pdr::jobs {
 namespace {
 
 using infrastructure::db::AsInstant;
-using infrastructure::db::AsTimestamptz;
 using infrastructure::db::Filled;
-using infrastructure::db::Timestamptz;
 
 std::optional<Outcome> OutcomeFrom(const std::string& stored) {
     if (stored == "done") {
@@ -40,7 +38,7 @@ PostgresJobJournal::PostgresJobJournal(const infrastructure::db::UnscopedAccess&
     : access_{access} {}
 
 void PostgresJobJournal::Started(const JobName& job, core::Instant at) {
-    access_.Execute(sql::kJobsRunStarted, job.Value(), AsTimestamptz(at));
+    access_.Execute(sql::kJobsRunStarted, job.Value(), at);
 }
 
 void PostgresJobJournal::Finished(const JobName& job, const RunRecord& record) {
@@ -48,10 +46,10 @@ void PostgresJobJournal::Finished(const JobName& job, const RunRecord& record) {
         std::chrono::duration_cast<std::chrono::milliseconds>(record.Took()).count();
     access_.Execute(sql::kJobsRunFinished,
                     job.Value(),
-                    AsTimestamptz(record.StartedAt()),
-                    AsTimestamptz(record.FinishedAt()),
+                    record.StartedAt(),
+                    record.FinishedAt(),
                     static_cast<std::int64_t>(took_ms),
-                    std::string{Name(record.Result())},
+                    Name(record.Result()),
                     record.Produced(),
                     record.Repeated());
 }

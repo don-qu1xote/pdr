@@ -7,7 +7,7 @@
 #include <pdr/sql_queries.hpp>
 
 #include "infrastructure/db/columns.hpp"
-#include "infrastructure/db/timestamps.hpp"
+#include "infrastructure/db/domain_types.hpp"
 
 namespace pdr::identity {
 namespace {
@@ -26,8 +26,8 @@ PostgresAccessJournal::PostgresAccessJournal(
 std::vector<AccessRecord> PostgresAccessJournal::AboutPerson(const core::TenantId& tenant,
                                                              const core::PersonId& subject,
                                                              core::Instant since) const {
-    const auto result = scope_.Session().Execute(
-        sql::kIdentityAccessLogAboutPerson, subject.ToString(), AsTimestamptz(since));
+    const auto result =
+        scope_.Session().Execute(sql::kIdentityAccessLogAboutPerson, subject, since);
 
     std::vector<AccessRecord> found;
     found.reserve(result.Size());

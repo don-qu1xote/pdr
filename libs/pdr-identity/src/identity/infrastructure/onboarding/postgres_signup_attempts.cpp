@@ -6,15 +6,13 @@
 #include <pdr/sql_queries.hpp>
 
 #include "infrastructure/db/columns.hpp"
-#include "infrastructure/db/timestamps.hpp"
+#include "infrastructure/db/domain_types.hpp"
 
 namespace pdr::identity {
 namespace {
 
 using infrastructure::db::AsInstant;
-using infrastructure::db::AsTimestamptz;
 using infrastructure::db::Filled;
-using infrastructure::db::Timestamptz;
 
 }  // namespace
 
@@ -37,7 +35,7 @@ std::optional<AttemptWindow> PostgresSignupAttempts::Window(const Digest& addres
 void PostgresSignupAttempts::Save(const Digest& address, const AttemptWindow& window) {
     access_.Execute(sql::kIdentitySignupAttemptSave,
                     address.Value(),
-                    AsTimestamptz(window.StartedAt()),
+                    window.StartedAt(),
                     static_cast<std::int32_t>(window.Attempts()));
 }
 

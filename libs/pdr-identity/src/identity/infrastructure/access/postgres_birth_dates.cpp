@@ -8,13 +8,15 @@
 
 #include <userver/storages/postgres/io/date.hpp>
 
+#include "infrastructure/db/domain_types.hpp"
+
 namespace pdr::identity {
 PostgresBirthDates::PostgresBirthDates(infrastructure::db::ScopedTenantContext& scope) noexcept
     : scope_{scope} {}
 
 std::optional<BirthDate> PostgresBirthDates::Of(const core::TenantId&,
                                                 const core::PersonId& person) const {
-    const auto result = scope_.Session().Execute(sql::kIdentityPersonBornOn, person.ToString());
+    const auto result = scope_.Session().Execute(sql::kIdentityPersonBornOn, person);
     if (result.IsEmpty()) {
         return std::nullopt;
     }

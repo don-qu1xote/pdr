@@ -7,7 +7,7 @@
 #include <pdr/sql_queries.hpp>
 
 #include "infrastructure/db/columns.hpp"
-#include "infrastructure/db/timestamps.hpp"
+#include "infrastructure/db/domain_types.hpp"
 
 namespace pdr::identity {
 namespace {
@@ -57,8 +57,8 @@ std::vector<GuardianConsent> PostgresGuardianConsents::ActiveFor(
     const core::TenantId& tenant,
     const core::PersonId& guardian,
     const core::PersonId& student) const {
-    const auto result = scope_.Session().Execute(
-        sql::kIdentityGuardianConsentActive, guardian.ToString(), student.ToString());
+    const auto result =
+        scope_.Session().Execute(sql::kIdentityGuardianConsentActive, guardian, student);
 
     std::vector<GuardianConsent> found;
     found.reserve(result.Size());
@@ -82,31 +82,18 @@ std::optional<GuardianConsent> PostgresGuardianConsents::FindActive(const core::
 }
 
 void PostgresGuardianConsents::Save(const GuardianConsent& consent) {
-    std::optional<Timestamptz> expires;
-    if (consent.ExpiresAt().has_value()) {
-        expires = AsTimestamptz(*consent.ExpiresAt());
-    }
-    std::optional<Timestamptz> revoked;
-    if (consent.RevokedAt().has_value()) {
-        revoked = AsTimestamptz(*consent.RevokedAt());
-    }
-    std::optional<std::string> revoked_by;
-    if (consent.RevokedBy().has_value()) {
-        revoked_by = consent.RevokedBy()->ToString();
-    }
-
     scope_.Session().Execute(sql::kIdentityGuardianConsentSave,
-                             consent.Tenant().ToString(),
-                             consent.Id().ToString(),
-                             consent.Guardian().ToString(),
-                             consent.Student().ToString(),
-                             std::string{Name(consent.Scope())},
-                             std::string{Name(consent.Basis())},
-                             AsTimestamptz(consent.GrantedAt()),
-                             consent.GrantedBy().ToString(),
-                             expires,
-                             revoked,
-                             revoked_by);
+                             consent.Tenant(),
+                             consent.Id(),
+                             consent.Guardian(),
+                             consent.Student(),
+                             Name(consent.Scope()),
+                             Name(consent.Basis()),
+                             consent.GrantedAt(),
+                             consent.GrantedBy(),
+                             consent.ExpiresAt(),
+                             consent.RevokedAt(),
+                             consent.RevokedBy());
 }
 
 }  // namespace pdr::identity

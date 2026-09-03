@@ -2,12 +2,14 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 
 #include <pdr/sql_queries.hpp>
 
 #include <userver/storages/postgres/io/date.hpp>
 
 #include "core/types/ids.hpp"
+#include "infrastructure/db/domain_types.hpp"
 
 namespace pdr::identity {
 namespace {
@@ -15,6 +17,16 @@ namespace {
 /// Идентификатор строки роли. Метки в общем списке нет намеренно: на выданную
 /// роль не ссылается никто, идентификатор нужен только первичному ключу.
 using RoleAssignmentId = core::StrongId<struct RoleAssignmentTag>;
+
+/// Одна выдаваемая роль. Порядок полей — порядок массивов в
+/// db/sql/identity/identity_role_assignment_grant.sql: штатный
+/// `ExecuteDecomposeBulk` раскладывает структуру по колонкам ровно так.
+struct RoleGrant final {
+    core::TenantId tenant_id;
+    RoleAssignmentId id;
+    core::PersonId person_id;
+    std::string role;
+};
 
 }  // namespace
 
@@ -29,8 +41,8 @@ core::Result<void> PostgresParticipantDirectory::Enrol(const core::TenantId& ten
 
     const auto added = scope_.Session().Execute(
         sql::kIdentityPersonEnrol,
-        tenant.ToString(),
-        person.Id().ToString(),
+        tenant,
+        person.Id(),
         enrolment.display_name,
         person.Mail().has_value() ? std::optional<std::string>{person.Mail()->Value()}
                                   : std::nullopt,
@@ -44,15 +56,16 @@ core::Result<void> PostgresParticipantDirectory::Enrol(const core::TenantId& ten
                            "эта почта в кабинете уже занята"};
     }
 
+    std::vector<RoleGrant> granted;
     for (const auto role : kEveryRole) {
         if (!enrolment.roles.Has(role)) {
             continue;
         }
-        scope_.Session().Execute(sql::kIdentityRoleAssignmentGrant,
-                                 tenant.ToString(),
-                                 ids_.Next<RoleAssignmentId>().ToString(),
-                                 person.Id().ToString(),
-                                 std::string{Name(role)});
+        granted.push_back(
+            RoleGrant{tenant, ids_.Next<RoleAssignmentId>(), person.Id(), std::string{Name(role)}});
+    }
+    if (!granted.empty()) {
+        scope_.Session().ExecuteDecomposeBulk(sql::kIdentityRoleAssignmentGrant, granted);
     }
     return {};
 }

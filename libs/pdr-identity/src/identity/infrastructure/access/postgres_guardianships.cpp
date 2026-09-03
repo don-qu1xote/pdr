@@ -5,7 +5,7 @@
 
 #include <pdr/sql_queries.hpp>
 
-#include "infrastructure/db/timestamps.hpp"
+#include "infrastructure/db/domain_types.hpp"
 
 namespace pdr::identity {
 namespace {
@@ -36,8 +36,8 @@ PostgresGuardianships::PostgresGuardianships(infrastructure::db::ScopedTenantCon
 std::optional<Guardianship> PostgresGuardianships::FindActive(const core::TenantId& tenant,
                                                               const core::PersonId& guardian,
                                                               const core::PersonId& student) const {
-    const auto result = scope_.Session().Execute(
-        sql::kIdentityGuardianshipFindActive, guardian.ToString(), student.ToString());
+    const auto result =
+        scope_.Session().Execute(sql::kIdentityGuardianshipFindActive, guardian, student);
     if (result.IsEmpty()) {
         return std::nullopt;
     }
@@ -54,8 +54,7 @@ std::vector<core::PersonId> PostgresGuardianships::GuardiansOf(
     const core::TenantId& tenant, const core::PersonId& student) const {
     static_cast<void>(tenant);
 
-    const auto result =
-        scope_.Session().Execute(sql::kIdentityGuardianshipGuardiansOf, student.ToString());
+    const auto result = scope_.Session().Execute(sql::kIdentityGuardianshipGuardiansOf, student);
 
     std::vector<core::PersonId> found;
     found.reserve(result.Size());
@@ -66,27 +65,22 @@ std::vector<core::PersonId> PostgresGuardianships::GuardiansOf(
 }
 
 void PostgresGuardianships::Save(const Guardianship& guardianship) {
-    std::optional<Timestamptz> revoked;
-    if (guardianship.RevokedAt().has_value()) {
-        revoked = AsTimestamptz(*guardianship.RevokedAt());
-    }
-
     const auto changed = scope_.Session().Execute(sql::kIdentityGuardianshipUpdateActive,
-                                                  guardianship.Guardian().ToString(),
-                                                  guardianship.Student().ToString(),
-                                                  AsTimestamptz(guardianship.GrantedAt()),
-                                                  revoked);
+                                                  guardianship.Guardian(),
+                                                  guardianship.Student(),
+                                                  guardianship.GrantedAt(),
+                                                  guardianship.RevokedAt());
     if (changed.RowsAffected() > 0) {
         return;
     }
 
     scope_.Session().Execute(sql::kIdentityGuardianshipInsert,
-                             guardianship.Tenant().ToString(),
-                             ids_.Next<RowId>().ToString(),
-                             guardianship.Guardian().ToString(),
-                             guardianship.Student().ToString(),
-                             AsTimestamptz(guardianship.GrantedAt()),
-                             revoked);
+                             guardianship.Tenant(),
+                             ids_.Next<RowId>(),
+                             guardianship.Guardian(),
+                             guardianship.Student(),
+                             guardianship.GrantedAt(),
+                             guardianship.RevokedAt());
 }
 
 }  // namespace pdr::identity

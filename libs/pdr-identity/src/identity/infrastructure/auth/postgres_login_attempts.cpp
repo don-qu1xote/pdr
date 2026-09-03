@@ -7,15 +7,13 @@
 #include <pdr/sql_queries.hpp>
 
 #include "infrastructure/db/columns.hpp"
-#include "infrastructure/db/timestamps.hpp"
+#include "infrastructure/db/domain_types.hpp"
 
 namespace pdr::identity {
 namespace {
 
 using infrastructure::db::AsInstant;
-using infrastructure::db::AsTimestamptz;
 using infrastructure::db::Filled;
-using infrastructure::db::Timestamptz;
 
 /// Оба запроса — и учёт попытки, и её чтение — отдают одну пару колонок, и
 /// разбирается она одной структурой. Своей у `identity_login_attempt_register`
@@ -39,12 +37,8 @@ AttemptWindow PostgresLoginAttempts::Register(const core::TenantId& tenant,
                                               const Digest& of,
                                               core::Instant at,
                                               core::Instant::Duration window) {
-    const auto result = scope_.Session().Execute(sql::kIdentityLoginAttemptRegister,
-                                                 tenant.ToString(),
-                                                 std::string{Name(subject)},
-                                                 of.Value(),
-                                                 AsTimestamptz(at),
-                                                 AsTimestamptz(at - window));
+    const auto result = scope_.Session().Execute(
+        sql::kIdentityLoginAttemptRegister, tenant, Name(subject), of.Value(), at, at - window);
     return From(
         result.Front().As<IdentityLoginAttemptSeenRow>(userver::storages::postgres::kRowTag));
 }
@@ -52,8 +46,8 @@ AttemptWindow PostgresLoginAttempts::Register(const core::TenantId& tenant,
 AttemptWindow PostgresLoginAttempts::Seen(const core::TenantId&,
                                           AttemptSubject subject,
                                           const Digest& of) const {
-    const auto result = scope_.Session().Execute(
-        sql::kIdentityLoginAttemptSeen, std::string{Name(subject)}, of.Value());
+    const auto result =
+        scope_.Session().Execute(sql::kIdentityLoginAttemptSeen, Name(subject), of.Value());
     if (result.IsEmpty()) {
         return AttemptWindow::Restore(core::Instant::FromUnixMicros(0), 0);
     }
@@ -65,8 +59,7 @@ AttemptWindow PostgresLoginAttempts::Seen(const core::TenantId&,
 void PostgresLoginAttempts::Forget(const core::TenantId&,
                                    AttemptSubject subject,
                                    const Digest& of) {
-    scope_.Session().Execute(
-        sql::kIdentityLoginAttemptForget, std::string{Name(subject)}, of.Value());
+    scope_.Session().Execute(sql::kIdentityLoginAttemptForget, Name(subject), of.Value());
 }
 
 }  // namespace pdr::identity

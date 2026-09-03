@@ -5,12 +5,10 @@
 #include <pdr/sql_queries.hpp>
 
 #include "core/types/ids.hpp"
-#include "infrastructure/db/timestamps.hpp"
+#include "infrastructure/db/domain_types.hpp"
 
 namespace pdr::identity {
 namespace {
-
-using infrastructure::db::AsTimestamptz;
 
 /// Идентификатор строки журнала. Метки в общем списке `core/types/ids.hpp` для
 /// него нет намеренно: на строку журнала не ссылается никто — ни домен, ни
@@ -26,12 +24,12 @@ PostgresAccessLog::PostgresAccessLog(infrastructure::db::ScopedTenantContext& sc
 
 void PostgresAccessLog::Record(const AccessRecord& record) {
     scope_.Session().Execute(sql::kIdentityAccessLogRecord,
-                             record.Tenant().ToString(),
-                             ids_.Next<RowId>().ToString(),
-                             record.Actor().ToString(),
-                             record.Subject().ToString(),
-                             std::string{Name(record.Kind())},
-                             AsTimestamptz(record.At()));
+                             record.Tenant(),
+                             ids_.Next<RowId>(),
+                             record.Actor(),
+                             record.Subject(),
+                             Name(record.Kind()),
+                             record.At());
 }
 
 }  // namespace pdr::identity

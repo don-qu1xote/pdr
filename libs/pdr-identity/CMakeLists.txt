@@ -195,5 +195,12 @@ if(PDR_BUILD_TESTS)
             pdr_adapter_test_sources(tests/argon2_password_hasher_test.cpp)
             pdr_adapter_test_libraries(pdr_identity_passwords pdr_testing)
         endif()
+
+        # УРОВЕНЬ LIVE: отображение доменных типов на типы Postgres и вставка
+        # пачкой. Ни то ни другое не проверяется ни компилятором, ни фейком:
+        # «uuid доехал тем же значением» и «три роли вставились одним запросом»
+        # — свойства настоящего драйвера и настоящей базы.
+        pdr_live_test_sources(tests/postgres_directory_types_test.cpp)
+        pdr_live_test_libraries(pdr_identity_infrastructure)
     endif()
 endif()

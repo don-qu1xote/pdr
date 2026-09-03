@@ -167,6 +167,15 @@ jobs:
           python3 scripts/check_query_timeouts.py --selftest
           python3 scripts/check_query_timeouts.py
 
+      # Перевод доменного типа в тип базы написан один раз — в io-трейтах, а не
+      # в каждом вызове. Забытый `ToString()` не ошибка сборки, а ДРУГОЙ ТИП В
+      # БАЗЕ: текст вместо uuid. Такое находится на проде (PDR-DB-04).
+      - name: Перевод в тип базы написан один раз
+        run: |
+          set -eu
+          python3 scripts/check_db_conversions.py --selftest
+          python3 scripts/check_db_conversions.py
+
       # Инструмент порождения типов фронта: ставится по замку версий, иначе у
       # двоих получаются разные типы из одной схемы. Node на раннерах
       # ubuntu-latest предустановлен, нужен только сам инструмент.

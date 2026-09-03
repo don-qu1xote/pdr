@@ -11,7 +11,13 @@ ENV_PROFILE ?= local
 ENV_FILE := deploy/env/$(ENV_PROFILE).env
 COMPOSE := docker compose --env-file $(ENV_FILE) -f deploy/docker-compose.yml
 MIGRATIONS := db/migrations
+QUERIES := db/sql
 BUILD_DIR ?= build
+
+# Где стоит userver. Оттуда берётся разборщик схемы для make sql-dump —
+# своего у нас нет и не будет (ADR-0013).
+USERVER_DIR ?= /usr/lib/cmake/userver
+SQL_DUMP_VENV := $(BUILD_DIR)/venv-sql-dump
 
 # Подключение к базе профиля: psql и scripts/migrate.py читают обычные PG*.
 # Значения берутся из того же файла профиля, второго источника правды нет.
@@ -25,7 +31,7 @@ PG_ENV = set -a; . ./$(ENV_FILE); set +a; \
         product-events-lock product-events-export product-events-prune \
         idempotency-prune \
         account-export account-delete practice-queue ps check-env permissions-lock \
-        api-types
+        api-types sql-dump
 
 help:
 	@echo "Цели:"
@@ -48,6 +54,7 @@ help:
 	@echo "  make migrate-status   что применено, что ждёт"
 	@echo "  make schema-doc  пересобрать docs/architecture/schema.md"
 	@echo "  make api-types   пересобрать типы фронта из docs/api/openapi.yaml"
+	@echo "  make sql-dump    пересобрать слепок схемы для порождённых структур строк"
 	@echo "  make product-events-lock     пересобрать снимок опубликованных схем событий"
 	@echo "  make product-events-export OUT=<файл>   выгрузить продуктовый поток в CSV"
 	@echo "  make product-events-prune DAYS=<дней>   убрать записи старше срока"
@@ -328,6 +335,46 @@ test-unit:
 # он порождает заново и сравнивает побайтно.
 api-types: clients/node_modules
 	cd clients && npm run api-types
+
+# СЛЕПОК СХЕМЫ ДЛЯ ПОРОЖДЁННЫХ СТРУКТУР СТРОК.
+#
+# db/sql/schema.dto.json лежит в истории, и его сумма считается по МИГРАЦИЯМ и
+# файлам запросов. Правка колонки без пересборки слепка роняет СБОРКУ — не
+# проверочный скрипт и не тест на одной ветке, а сборку: порождать структуры не
+# из чего, и сказано это будет прямо.
+#
+# Цели нужна ЖИВАЯ БАЗА (make up): штатный разборщик заводит отдельную базу,
+# накатывает в неё миграции и ВЫПОЛНЯЕТ каждый запрос, чтобы узнать состав и
+# типы колонок. Запросы, которые он выполнить не может — наши проверки не
+# принимают образцовых значений, — помечены в своих файлах директивой @no-dto, и
+# причина написана там же.
+#
+# Зависимости разборщика — по ЕГО файлу (sqldto/shared/requirements.txt), а не по
+# нашему списку: иначе версии разъедутся и слепок у двоих получится разный.
+# Отличие ровно одно и оно штатное: контур ставится с extra postgresql-binary, а
+# не postgresql. Разница между ними — psycopg2-binary против psycopg2, то есть
+# готовое колесо против сборки из исходников, которой нужен pg_config.h. Оба
+# extra объявлены самим контуром; драйвер один и тот же.
+sql-dump: check-env
+	@test -d "$(USERVER_DIR)/scripts/sqldto" || { \
+		echo "userver не найден в $(USERVER_DIR); задайте USERVER_DIR"; exit 1; }
+	python3 -m venv $(SQL_DUMP_VENV)
+	$(SQL_DUMP_VENV)/bin/pip install --quiet --upgrade pip
+	$(SQL_DUMP_VENV)/bin/pip install --quiet \
+		-r $(USERVER_DIR)/scripts/sqldto/sqldto/shared/requirements.txt \
+		"psycopg2-binary>=2.8.0" "yandex-taxi-testsuite[postgresql-binary]"
+	$(PG_ENV) \
+	export POSTGRES_TEST_DSN="postgresql://$$PGUSER:$$PGPASSWORD@$$PGHOST:$$PGPORT/$$PGDATABASE"; \
+	cd $(USERVER_DIR)/scripts/sqldto && \
+	$(abspath $(SQL_DUMP_VENV))/bin/python -m sqldto.dumper.main \
+		--namespace pdr \
+		--dialect postgresql \
+		--output-dir $(abspath $(BUILD_DIR))/sql \
+		--dump-dir $(abspath $(QUERIES)) \
+		--migrations-dir $(abspath $(MIGRATIONS)) \
+		--queries-dir $(abspath $(QUERIES)) \
+		$(abspath $(QUERIES))/*/*.sql
+	@echo "Слепок пересобран: $(QUERIES)/schema.dto.json"
 
 # Инструмент порождения ставится ОДИН РАЗ и по замку версий: `npm ci`, а не
 # `npm install`, — иначе у двоих получаются разные типы из одной схемы, и

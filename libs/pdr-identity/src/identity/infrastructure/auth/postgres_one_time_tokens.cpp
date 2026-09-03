@@ -8,15 +8,13 @@
 #include <pdr/sql_queries.hpp>
 
 #include "infrastructure/db/columns.hpp"
-#include "infrastructure/db/timestamps.hpp"
+#include "infrastructure/db/domain_types.hpp"
 
 namespace pdr::identity {
 namespace {
 
 using infrastructure::db::AsInstant;
-using infrastructure::db::AsTimestamptz;
 using infrastructure::db::Filled;
-using infrastructure::db::Timestamptz;
 
 }  // namespace
 
@@ -25,14 +23,9 @@ PostgresOneTimeTokens::PostgresOneTimeTokens(
     : scope_{scope} {}
 
 void PostgresOneTimeTokens::Issue(const OneTimeToken& token) {
-    std::optional<std::string> role;
+    std::optional<std::string_view> role;
     if (token.InvitedAs().has_value()) {
-        role = std::string{Name(*token.InvitedAs())};
-    }
-
-    std::optional<std::string> person;
-    if (token.Person().has_value()) {
-        person = token.Person()->ToString();
+        role = Name(*token.InvitedAs());
     }
 
     std::optional<std::string> invited;
@@ -41,15 +34,15 @@ void PostgresOneTimeTokens::Issue(const OneTimeToken& token) {
     }
 
     scope_.Session().Execute(sql::kIdentityOneTimeTokenIssue,
-                             token.Tenant().ToString(),
-                             token.Id().ToString(),
-                             std::string{Name(token.Purpose())},
+                             token.Tenant(),
+                             token.Id(),
+                             Name(token.Purpose()),
                              token.Secret().Value(),
                              role,
-                             person,
+                             token.Person(),
                              invited,
-                             AsTimestamptz(token.CreatedAt()),
-                             AsTimestamptz(token.ExpiresAt()));
+                             token.CreatedAt(),
+                             token.ExpiresAt());
 }
 
 std::optional<OneTimeToken> PostgresOneTimeTokens::Find(const core::TenantId& tenant,
@@ -112,8 +105,8 @@ std::optional<OneTimeToken> PostgresOneTimeTokens::Find(const core::TenantId& te
 std::optional<OneTimeToken> PostgresOneTimeTokens::LiveInvitationTo(const core::TenantId& tenant,
                                                                     const Digest& invited,
                                                                     core::Instant now) const {
-    const auto result = scope_.Session().Execute(
-        sql::kIdentityOneTimeTokenLiveInvitation, invited.Value(), AsTimestamptz(now));
+    const auto result =
+        scope_.Session().Execute(sql::kIdentityOneTimeTokenLiveInvitation, invited.Value(), now);
     if (result.IsEmpty()) {
         return std::nullopt;
     }
@@ -140,8 +133,7 @@ std::optional<OneTimeToken> PostgresOneTimeTokens::LiveInvitationTo(const core::
 }
 
 void PostgresOneTimeTokens::MarkUsed(const OneTimeToken& token) {
-    scope_.Session().Execute(
-        sql::kIdentityOneTimeTokenMarkUsed, token.Id().ToString(), AsTimestamptz(*token.UsedAt()));
+    scope_.Session().Execute(sql::kIdentityOneTimeTokenMarkUsed, token.Id(), *token.UsedAt());
 }
 
 }  // namespace pdr::identity

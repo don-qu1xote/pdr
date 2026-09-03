@@ -7,6 +7,7 @@
 #include <pdr/sql_queries.hpp>
 
 #include "infrastructure/db/columns.hpp"
+#include "infrastructure/db/domain_types.hpp"
 
 namespace pdr::identity {
 namespace {
@@ -47,8 +48,7 @@ std::optional<ports::Credential> PostgresCredentialStore::FindByEmail(const core
 
 std::optional<PasswordHash> PostgresCredentialStore::FindFor(const core::TenantId&,
                                                              const core::PersonId& person) const {
-    const auto result =
-        scope_.Session().Execute(sql::kIdentityCredentialByPerson, person.ToString());
+    const auto result = scope_.Session().Execute(sql::kIdentityCredentialByPerson, person);
     if (result.IsEmpty()) {
         return std::nullopt;
     }
@@ -59,8 +59,7 @@ std::optional<PasswordHash> PostgresCredentialStore::FindFor(const core::TenantI
 void PostgresCredentialStore::Save(const core::TenantId& tenant,
                                    const core::PersonId& person,
                                    const PasswordHash& hash) {
-    scope_.Session().Execute(
-        sql::kIdentityCredentialSave, tenant.ToString(), person.ToString(), hash.Value());
+    scope_.Session().Execute(sql::kIdentityCredentialSave, tenant, person, hash.Value());
 }
 
 }  // namespace pdr::identity

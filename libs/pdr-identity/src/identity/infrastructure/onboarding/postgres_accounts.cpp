@@ -8,15 +8,13 @@
 #include <pdr/sql_queries.hpp>
 
 #include "infrastructure/db/columns.hpp"
-#include "infrastructure/db/timestamps.hpp"
+#include "infrastructure/db/domain_types.hpp"
 
 namespace pdr::identity {
 namespace {
 
 using infrastructure::db::AsInstant;
-using infrastructure::db::AsTimestamptz;
 using infrastructure::db::Filled;
-using infrastructure::db::Timestamptz;
 
 /// Два запроса — по почте и по идентификатору — отдают ОДИН состав колонок, и
 /// у каждого своя порождённая структура. Разбор один на оба: разойдись их
@@ -72,32 +70,22 @@ std::optional<Account> PostgresAccounts::FindByMail(const Digest& mail) const {
 }
 
 std::optional<Account> PostgresAccounts::FindById(const core::PersonId& id) const {
-    return Parse<IdentityAccountByIdRow>(access_.Execute(sql::kIdentityAccountById, id.ToString()));
+    return Parse<IdentityAccountByIdRow>(access_.Execute(sql::kIdentityAccountById, id));
 }
 
 void PostgresAccounts::Save(const Account& account) {
-    std::optional<Timestamptz> confirmed;
-    if (account.ConfirmedAt().has_value()) {
-        confirmed = AsTimestamptz(*account.ConfirmedAt());
-    }
-
     std::optional<std::string> confirmation;
     if (account.Confirmation().has_value()) {
         confirmation = account.Confirmation()->Value();
     }
 
-    std::optional<Timestamptz> expires;
-    if (account.ConfirmationExpiresAt().has_value()) {
-        expires = AsTimestamptz(*account.ConfirmationExpiresAt());
-    }
-
     access_.Execute(sql::kIdentityAccountSave,
-                    account.Id().ToString(),
+                    account.Id(),
                     account.Mail().Value(),
-                    confirmed,
+                    account.ConfirmedAt(),
                     confirmation,
-                    expires,
-                    AsTimestamptz(account.CreatedAt()));
+                    account.ConfirmationExpiresAt(),
+                    account.CreatedAt());
 }
 
 }  // namespace pdr::identity

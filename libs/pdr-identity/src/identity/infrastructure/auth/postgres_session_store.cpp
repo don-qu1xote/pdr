@@ -8,7 +8,7 @@
 #include <pdr/sql_queries.hpp>
 
 #include "infrastructure/db/columns.hpp"
-#include "infrastructure/db/timestamps.hpp"
+#include "infrastructure/db/domain_types.hpp"
 
 namespace pdr::identity {
 namespace {
@@ -33,24 +33,19 @@ PostgresSessionStore::PostgresSessionStore(infrastructure::db::ScopedTenantConte
     : scope_{scope} {}
 
 void PostgresSessionStore::Save(const Session& session) {
-    std::optional<Timestamptz> revoked;
-    if (session.RevokedAt().has_value()) {
-        revoked = AsTimestamptz(*session.RevokedAt());
-    }
-
     scope_.Session().Execute(sql::kIdentitySessionSave,
-                             session.Tenant().ToString(),
-                             session.Id().Secret().ToString(),
-                             session.Person().ToString(),
-                             AsTimestamptz(session.CreatedAt()),
-                             AsTimestamptz(session.ExpiresAt()),
-                             revoked,
+                             session.Tenant(),
+                             session.Id().Secret(),
+                             session.Person(),
+                             session.CreatedAt(),
+                             session.ExpiresAt(),
+                             session.RevokedAt(),
                              session.Seen().Agent().Value(),
                              session.Seen().Address().Value());
 }
 
 std::optional<Session> PostgresSessionStore::Find(const SessionId& id) const {
-    const auto result = scope_.Session().Execute(sql::kIdentitySessionFind, id.Secret().ToString());
+    const auto result = scope_.Session().Execute(sql::kIdentitySessionFind, id.Secret());
     if (result.IsEmpty()) {
         return std::nullopt;
     }
@@ -79,7 +74,7 @@ std::optional<Session> PostgresSessionStore::Find(const SessionId& id) const {
 void PostgresSessionStore::RevokeAllFor(const core::TenantId&,
                                         const core::PersonId& person,
                                         core::Instant at) {
-    scope_.Session().Execute(sql::kIdentitySessionRevokeAll, person.ToString(), AsTimestamptz(at));
+    scope_.Session().Execute(sql::kIdentitySessionRevokeAll, person, at);
 }
 
 }  // namespace pdr::identity

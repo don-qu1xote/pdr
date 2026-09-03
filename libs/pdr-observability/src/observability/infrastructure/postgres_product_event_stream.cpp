@@ -7,12 +7,10 @@
 #include <userver/formats/json/serialize.hpp>
 #include <userver/formats/json/value_builder.hpp>
 
-#include "infrastructure/db/timestamps.hpp"
+#include "infrastructure/db/domain_types.hpp"
 
 namespace pdr::observability {
 namespace {
-
-using infrastructure::db::AsTimestamptz;
 
 /// Идентификатор строки потока. Метки в общем списке `core/types/ids.hpp` для
 /// него нет намеренно: на запись потока не ссылается никто — выгрузка читает
@@ -60,12 +58,12 @@ PostgresProductEventStream::PostgresProductEventStream(
 
 void PostgresProductEventStream::Record(const ProductEvent& event) {
     scope_.Session().Execute(sql::kObservabilityProductEventRecord,
-                             event.Tenant().ToString(),
-                             ids_.Next<RowId>().ToString(),
+                             event.Tenant(),
+                             ids_.Next<RowId>(),
                              event.Type(),
                              event.Version(),
-                             std::string{Name(event.Actor())},
-                             AsTimestamptz(event.OccurredAt()),
+                             Name(event.Actor()),
+                             event.OccurredAt(),
                              FieldsOf(event.AllFields()));
 }
 
