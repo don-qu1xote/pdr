@@ -267,6 +267,8 @@ test: clients/node_modules
 	python3 scripts/check_testsuite.py
 	python3 scripts/check_handmade.py --selftest
 	python3 scripts/check_handmade.py
+	python3 scripts/check_userver_usage.py --selftest
+	python3 scripts/check_userver_usage.py
 	python3 scripts/dynamic_config_schemas.py --selftest
 	python3 scripts/check_dynamic_configs.py --selftest
 	python3 scripts/check_dynamic_configs.py

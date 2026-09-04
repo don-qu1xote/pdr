@@ -110,11 +110,16 @@ jobs:
           python3 scripts/check_table_owners.py --selftest
           python3 scripts/check_table_owners.py
 
+      # Две проверки одной таблицы ADR-0013, и у каждой свой предмет: первая ловит
+      # самоделку по имени механизма, вторая — блокирующий поток рантайм, SQL
+      # строкой, JSON на слое сценариев, свой вебсокет и свой реестр метрик.
       - name: Штатное вместо самодельного
         run: |
           set -eu
           python3 scripts/check_handmade.py --selftest
           python3 scripts/check_handmade.py
+          python3 scripts/check_userver_usage.py --selftest
+          python3 scripts/check_userver_usage.py
 
       # Запись без владельца, юрисдикции или «что сломается», число без пределов,
       # умолчание за собственными пределами и величина, которую никто не читает,

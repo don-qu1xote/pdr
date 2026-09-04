@@ -77,6 +77,8 @@ PRAGMAS = (
     "syntax=",
     "штатное-ok:",
     "контур-ok:",
+    "журнал-ok:",
+    "userver-ok:",
 )
 
 CODING = re.compile(r"coding[:=]\s*[-\w.]+")

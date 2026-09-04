@@ -284,6 +284,8 @@ test: clients/node_modules
 	python3 scripts/check_openapi.py
 	python3 scripts/check_product_events.py --selftest
 	python3 scripts/check_product_events.py
+	python3 scripts/check_log_fields.py --selftest
+	python3 scripts/check_log_fields.py
 	python3 scripts/check_glossary.py --selftest
 	python3 scripts/check_glossary.py
 	node scripts/check-copy.mjs --selftest
