@@ -2,6 +2,8 @@
 
 #include <pdr/sql_queries.hpp>
 
+#include "infrastructure/observe/span_tags.hpp"
+
 namespace pdr::infrastructure::db {
 
 TenantContext::TenantContext(userver::storages::postgres::ClusterPtr cluster)
@@ -13,6 +15,7 @@ ScopedTenantContext TenantContext::Open(
     const userver::storages::postgres::TransactionOptions& options) {
     auto transaction = cluster_->Begin(host, options);
     transaction.Execute(sql::kDeclareTenant, tenant.ToString());
+    observe::TagTenant(tenant);
 
     return ScopedTenantContext{std::move(transaction), tenant};
 }

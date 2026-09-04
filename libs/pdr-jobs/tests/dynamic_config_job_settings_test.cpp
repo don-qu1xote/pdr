@@ -11,6 +11,7 @@
 #include <userver/utest/log_capture_fixture.hpp>
 #include <userver/utest/utest.hpp>
 
+#include "infrastructure/observe/log_fields.hpp"
 #include "jobs/core/job_name.hpp"
 
 namespace pdr::jobs {
@@ -75,7 +76,15 @@ UTEST(DynamicConfigJobSettings, RefusesValueOutsideItsRangeAndKeepsTheOldOne) {
     EXPECT_TRUE(after.Value().Attempt() == 10min);
 }
 
+/// БЫЛО И СТАЛО — ПОЛЯМИ, А НЕ В ТЕКСТЕ.
+///
+/// Раньше этот тест искал подстроки в тексте сообщения и проходил бы при любой
+/// его перефразировке — и, что хуже, требовал бы вклеивать значения в текст.
+/// Теперь спрашивается ровно то, по чему ищут в час разбора: имя величины, имя
+/// задания и два значения полями с именами из реестра.
 UTEST_F(JournalTest, WritesWhatChangedFromWhatToWhat) {
+    namespace fields = ::pdr::infrastructure::observe;
+
     auto storage = userver::dynamic_config::MakeDefaultStorage(
         {{::dynamic_config::PDR_PERIODIC_JOBS, Entry(3600000, 600000, 86400000)}});
     const DynamicConfigJobSettings settings{storage.GetSource()};
@@ -84,12 +93,13 @@ UTEST_F(JournalTest, WritesWhatChangedFromWhatToWhat) {
 
     storage.Extend({{::dynamic_config::PDR_PERIODIC_JOBS, Entry(1800000, 600000, 86400000)}});
 
-    const auto records = GetLogCapture().Filter("было [");
+    const auto records = GetLogCapture().Filter("задание изменилось");
     ASSERT_FALSE(records.empty());
-    const auto& text = records.front().GetText();
-    EXPECT_NE(text.find("notifications.reminders"), std::string::npos);
-    EXPECT_NE(text.find("period_ms=3600000"), std::string::npos);
-    EXPECT_NE(text.find("period_ms=1800000"), std::string::npos);
+    const auto& record = records.front();
+    EXPECT_EQ(record.GetTag(fields::kConfigKeyField), "PDR_PERIODIC_JOBS");
+    EXPECT_EQ(record.GetTag(fields::kJobNameField), "notifications.reminders");
+    EXPECT_NE(record.GetTag(fields::kConfigWasField).find("period_ms=3600000"), std::string::npos);
+    EXPECT_NE(record.GetTag(fields::kConfigNowField).find("period_ms=1800000"), std::string::npos);
 }
 
 }  // namespace pdr::jobs

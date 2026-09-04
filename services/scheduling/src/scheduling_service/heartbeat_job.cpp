@@ -10,6 +10,7 @@
 #include <userver/testsuite/testpoint.hpp>
 
 #include "core/types/time.hpp"
+#include "infrastructure/observe/log_fields.hpp"
 
 namespace pdr::scheduling_service {
 namespace {
@@ -45,7 +46,8 @@ void HeartbeatJob::Perform(const jobs::WorkItem& item) {
     /// Оторванная от него задача при остановке процесса обращается к уже
     /// разрушенным зависимостям; здесь хранилище отменит и дождётся её само.
     tasks_.AsyncDetach("heartbeat-noted", [key] {
-        LOG_INFO() << "задание отработало: " << key;
+        LOG_INFO() << "задание отработало"
+                   << userver::logging::LogExtra{{{infrastructure::observe::kJobKeyField, key}}};
 
         /// Точка контроля, а не запись в журнал: набор дожидается ЕЁ, а не
         /// спит (docs/testing.md, scripts/check_testsuite.py).

@@ -6,6 +6,8 @@
 
 #include <userver/logging/log.hpp>
 
+#include "infrastructure/observe/log_fields.hpp"
+
 namespace pdr::infrastructure::http {
 
 DynamicConfigKeyLifetime::DynamicConfigKeyLifetime(userver::dynamic_config::Source source)
@@ -18,16 +20,24 @@ DynamicConfigKeyLifetime::~DynamicConfigKeyLifetime() {
 }
 
 void DynamicConfigKeyLifetime::OnConfigUpdate(const userver::dynamic_config::Diff& diff) {
-    const auto current = diff.current[::dynamic_config::PDR_IDEMPOTENCY].lifetime_hours;
+    const auto name = std::string{::dynamic_config::PDR_IDEMPOTENCY.GetName()};
+    const auto current =
+        std::to_string(diff.current[::dynamic_config::PDR_IDEMPOTENCY].lifetime_hours) + " часов";
     if (!diff.previous.has_value()) {
-        LOG_INFO() << "ключ повтора: первое применение — часов " << current;
+        LOG_INFO() << "ключ повтора: первое применение"
+                   << userver::logging::LogExtra{
+                          {{observe::kConfigKeyField, name}, {observe::kConfigNowField, current}}};
         return;
     }
 
-    const auto previous = (*diff.previous)[::dynamic_config::PDR_IDEMPOTENCY].lifetime_hours;
+    const auto previous =
+        std::to_string((*diff.previous)[::dynamic_config::PDR_IDEMPOTENCY].lifetime_hours) +
+        " часов";
     if (previous != current) {
-        LOG_INFO() << "ключ повтора: было [часов " << previous << "], стало [часов " << current
-                   << "]";
+        LOG_INFO() << "ключ повтора: было, стало"
+                   << userver::logging::LogExtra{{{observe::kConfigKeyField, name},
+                                                  {observe::kConfigWasField, previous},
+                                                  {observe::kConfigNowField, current}}};
     }
 }
 

@@ -2,17 +2,21 @@
 
 #include <cstdint>
 #include <exception>
+#include <string>
 
 #include <pdr/api/openapi.hpp>
 #include <pdr/sql_queries.hpp>
 
 #include <userver/components/component.hpp>
+#include <userver/components/statistics_storage.hpp>
 #include <userver/http/content_type.hpp>
 #include <userver/logging/log.hpp>
 #include <userver/server/http/http_request.hpp>
 #include <userver/server/http/http_status.hpp>
 #include <userver/storages/postgres/component.hpp>
 #include <userver/yaml_config/merge_schemas.hpp>
+
+#include "infrastructure/observe/log_fields.hpp"
 
 namespace pdr::scheduling_service {
 ReadinessHandler::ReadinessHandler(const userver::components::ComponentConfig& config,
@@ -21,7 +25,9 @@ ReadinessHandler::ReadinessHandler(const userver::components::ComponentConfig& c
       access_{
           context.FindComponent<userver::components::Postgres>(config["cluster"].As<std::string>())
               .GetCluster(),
-          infrastructure::db::UnscopedReason::kReadinessProbe} {}
+          infrastructure::db::UnscopedReason::kReadinessProbe},
+      alerts_{
+          context.FindComponent<userver::components::StatisticsStorage>().GetMetricsStorageRef()} {}
 
 std::string ReadinessHandler::HandleRequestThrow(
     const userver::server::http::HttpRequest& request,
@@ -37,15 +43,22 @@ std::string ReadinessHandler::HandleRequestThrow(
             access_.Execute(sql::kReadinessAppliedMigrations).AsSingleRow<std::int64_t>();
         answer.ready = applied > 0;
         answer.migrations = static_cast<int>(applied);
+        alerts_.Clear(infrastructure::observe::ServiceAlert::kStorageUnreachable);
         if (applied == 0) {
             request.SetResponseStatus(userver::server::http::HttpStatus::kServiceUnavailable);
             answer.why = "схема пуста: миграции не применены";
+            alerts_.Raise(infrastructure::observe::ServiceAlert::kMigrationsNotApplied);
+        } else {
+            alerts_.Clear(infrastructure::observe::ServiceAlert::kMigrationsNotApplied);
         }
     } catch (const std::exception& unreachable) {
         request.SetResponseStatus(userver::server::http::HttpStatus::kServiceUnavailable);
         answer.ready = false;
         answer.why = "хранилище недоступно";
-        LOG_WARNING() << "готовность: база не отвечает: " << unreachable.what();
+        alerts_.Raise(infrastructure::observe::ServiceAlert::kStorageUnreachable);
+        LOG_WARNING() << "готовность: база не отвечает"
+                      << userver::logging::LogExtra{{{infrastructure::observe::kStorageFailureField,
+                                                      std::string{unreachable.what()}}}};
     }
 
     return ToJsonString(answer);

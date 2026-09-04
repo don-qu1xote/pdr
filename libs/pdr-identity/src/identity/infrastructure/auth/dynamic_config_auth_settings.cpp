@@ -11,8 +11,12 @@
 
 #include <userver/logging/log.hpp>
 
+#include "infrastructure/observe/log_fields.hpp"
+
 namespace pdr::identity {
 namespace {
+
+namespace fields = ::pdr::infrastructure::observe;
 
 std::string Describe(const ::dynamic_config::pdr_sign_in_rules::VariableType& value) {
     return "memory_kib=" + std::to_string(value.memory_kib) +
@@ -41,16 +45,21 @@ std::string Describe(const ::dynamic_config::pdr_auth_lifetimes::VariableType& v
 template<class Config>
 void Journal(const userver::dynamic_config::Diff& diff,
              const userver::dynamic_config::Key<Config>& key) {
+    const auto name = std::string{key.GetName()};
     const auto current = Describe(diff.current[key]);
     if (!diff.previous.has_value()) {
-        LOG_INFO() << std::string{key.GetName()} << ": первое применение — " << current;
+        LOG_INFO() << "первое применение величины"
+                   << userver::logging::LogExtra{
+                          {{fields::kConfigKeyField, name}, {fields::kConfigNowField, current}}};
         return;
     }
 
     const auto previous = Describe((*diff.previous)[key]);
     if (previous != current) {
-        LOG_INFO() << std::string{key.GetName()} << ": было [" << previous << "], стало ["
-                   << current << "]";
+        LOG_INFO() << "величина изменилась"
+                   << userver::logging::LogExtra{{{fields::kConfigKeyField, name},
+                                                  {fields::kConfigWasField, previous},
+                                                  {fields::kConfigNowField, current}}};
     }
 }
 

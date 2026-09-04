@@ -1,10 +1,13 @@
 #include "infrastructure/http/outgoing.hpp"
 
+#include <string>
 #include <utility>
 
 #include <userver/clients/http/error.hpp>
 #include <userver/clients/http/response.hpp>
 #include <userver/logging/log.hpp>
+
+#include "infrastructure/observe/log_fields.hpp"
 
 namespace pdr::infrastructure::http {
 
@@ -23,7 +26,9 @@ Outgoing::Outgoing(std::string direction,
 
 std::optional<Outgoing::Answer> Outgoing::Send(Repeatable repeatable, Build build) const {
     if (!quota_.Obtain()) {
-        LOG_WARNING() << "квота направления исчерпана, наружу не идём: " << direction_;
+        LOG_WARNING() << "квота направления исчерпана, наружу не идём"
+                      << userver::logging::LogExtra{
+                             {{observe::kOutgoingDirectionField, direction_}}};
         return std::nullopt;
     }
 
@@ -44,7 +49,10 @@ std::optional<Outgoing::Answer> Outgoing::Send(Repeatable repeatable, Build buil
         return answer;
     } catch (const userver::clients::http::BaseException& failure) {
         budget_.AccountFail();
-        LOG_WARNING() << "направление не ответило: " << direction_ << ": " << failure.what();
+        LOG_WARNING() << "направление не ответило"
+                      << userver::logging::LogExtra{
+                             {{observe::kOutgoingDirectionField, direction_},
+                              {observe::kOutgoingFailureField, std::string{failure.what()}}}};
         return std::nullopt;
     }
 }

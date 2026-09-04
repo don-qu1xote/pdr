@@ -21,6 +21,7 @@
 #include <userver/yaml_config/schema.hpp>
 
 #include "infrastructure/http/outgoing.hpp"
+#include "infrastructure/observe/service_alerts.hpp"
 
 namespace pdr::infrastructure::http {
 
@@ -89,6 +90,7 @@ private:
     void DumpMetrics(userver::utils::statistics::Writer& writer) const;
 
     userver::clients::http::Client& client_;
+    observe::ServiceAlerts alerts_;
     std::unordered_map<std::string, std::unique_ptr<Direction>> directions_;
     userver::utils::statistics::Entry statistics_;
     userver::concurrent::AsyncEventSubscriberScope journal_;

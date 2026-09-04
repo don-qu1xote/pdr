@@ -10,6 +10,7 @@
 
 #include "application/verify_secrets.hpp"
 #include "core/secrets.hpp"
+#include "infrastructure/observe/log_fields.hpp"
 
 namespace pdr::scheduling_service {
 
@@ -22,7 +23,9 @@ SecretsGuard::SecretsGuard(const userver::components::ComponentConfig& config,
         throw std::runtime_error{"сервис не поднимается: " + checked.Failure().Detail()};
     }
 
-    LOG_INFO() << "секреты на месте: проверено " << core::kEverySecret.size();
+    LOG_INFO() << "секреты на месте"
+               << userver::logging::LogExtra{{{infrastructure::observe::kSecretsCheckedField,
+                                               static_cast<int>(core::kEverySecret.size())}}};
 }
 
 }  // namespace pdr::scheduling_service

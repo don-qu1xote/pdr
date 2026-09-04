@@ -54,7 +54,21 @@ if(userver_FOUND)
     # pdr_sql — порождённые запросы (корневой CMakeLists.txt). PUBLIC: их берут
     # все адаптеры дерева, а не только этот, и берут они РОВНО одну
     # библиотеку — вторую цель с теми же именами завести негде.
-    target_link_libraries(pdr_postgres PUBLIC pdr_core pdr_application pdr_sql userver::postgresql)
+    target_link_libraries(pdr_postgres
+        PUBLIC pdr_core pdr_application pdr_observe pdr_sql userver::postgresql)
+endif()
+
+# Наблюдаемость: теги спана и сигналы, которые сервис знает о себе сам.
+# Отдельная цель по той же причине, что pdr_clock: имена полей лежат в заголовке
+# без userver (их берут все), а постановка тега и подъём сигнала — это штатные
+# tracing::Span и alerts::Source, то есть userver.
+if(userver_FOUND)
+    add_library(pdr_observe STATIC
+        src/infrastructure/observe/service_alerts.cpp
+        src/infrastructure/observe/span_tags.cpp
+    )
+    target_include_directories(pdr_observe PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_link_libraries(pdr_observe PUBLIC pdr_core userver::core)
 endif()
 
 # Часы, которые умеет двигать контур. Отдельная цель, а не часть
@@ -101,8 +115,9 @@ if(PDR_BUILD_TESTS)
     # только там, где есть userver: криптографический источник берётся у него.
     if(userver_FOUND)
         pdr_adapter_test_sources(tests/crypto_secret_generator_test.cpp
+                                 tests/log_fields_test.cpp
                                  tests/userver_clock_test.cpp)
-        pdr_adapter_test_libraries(pdr_crypto pdr_clock pdr_testing)
+        pdr_adapter_test_libraries(pdr_crypto pdr_clock pdr_observe pdr_testing)
 
         # ВТОРАЯ ИНСТАНЦИАЦИЯ contract-набора хранилища — против настоящего
         # адаптера и живой базы. Первая гоняется на фейке и не требует ничего;

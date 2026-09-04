@@ -1,0 +1,169 @@
+# Реестр имён полей журнала ПДР.
+#
+# Запись журнала состоит из человеческого текста и ПОЛЕЙ. Текст читают глазами,
+# по полям ищут: `tenant_id=...` в час разбора либо находит всё про арендатора,
+# либо не находит ничего — смотря по тому, звалось ли поле одинаково во всех
+# тридцати местах. Поэтому имена лежат здесь, а не выбираются на месте.
+#
+# ДВА ИСТОЧНИКА, ОДНО ПРОСТРАНСТВО ИМЁН. Поле попадает в запись двумя путями:
+# тегом спана (tracing::Span::AddTag) — тогда оно есть у КАЖДОЙ записи внутри
+# спана, — или LogExtra на самой записи. В готовой записи они неразличимы,
+# значит и называться должны по одним правилам, и лежат в одном реестре.
+#
+# СВЯЗЬ С КОДОМ ДВУСТОРОННЯЯ. Имена объявлены один раз в
+# libs/pdr-core/src/infrastructure/observe/log_fields.hpp; поле в коде без
+# записи здесь и запись без поля в коде одинаково роняют сборку
+# (scripts/check_log_fields.py).
+#
+# ОБЯЗАТЕЛЬНЫЕ ПОЛЯ записи:
+#   description  что в поле лежит, словами для человека
+#   type         из закрытого списка ниже
+#   set_in       где поле ставится: файл или «спан» — чтобы искать не грепом
+#
+# ТИПЫ (закрытый список, проверяется scripts/check_log_fields.py):
+#   id     непрозрачный внутренний идентификатор: uuid арендатора, человека
+#   name   имя настройки, направления, задания — НЕ имя человека
+#   count  целое неотрицательное
+#   ms     миллисекунды
+#   flag   да или нет
+#   text   короткая строка от машины: код исхода, причина отказа, значение
+#          настройки. Ни ввода человека, ни его данных здесь не бывает
+#
+# ЧЕГО ЗДЕСЬ НЕ БЫВАЕТ И ПОЧЕМУ (PDR-SEC-05 действует и в журнале).
+#
+# Поля удобнее текста ровно тем же, чем опаснее: по `email=...` ищут так же
+# легко, как по `tenant_id=...`, — и выгружают так же легко. Перечень
+# (docs/legal/personal-data.md) обещает человеку сроки хранения по каждой
+# категории; поле журнала переживает их молча, потому что журнал живёт своим
+# сроком. Поэтому ни имени, ни почты, ни телефона, ни даты рождения, ни текста
+# сообщения, ни расшифровки, ни отпечатка пароля здесь нет — и завести их нельзя:
+# check_log_fields.py роняет сборку на самом ИМЕНИ поля, не дожидаясь, пока в
+# него что-нибудь положат.
+#
+# ИДЕНТИФИКАТОР — НЕ ИСКЛЮЧЕНИЕ ИЗ ЭТОГО, А ДРУГОЙ СЛУЧАЙ. `tenant_id` и
+# `actor_id` — внутренние uuid: сами по себе они не говорят о человеке ничего и
+# соединяются с ним только через базу, к которой у читателя журнала доступа нет.
+# Категория «технические записи» перечня названа человеку прямо, и срок у неё
+# свой — 30 дней. Продуктовым событиям идентификатор человека запрещён совсем
+# (configs/product-events.yaml), и это не противоречие: там поток живёт годами и
+# читается аналитиком, здесь — тридцать дней и дежурным.
+
+tenant_id:
+  description: >-
+    Арендатор, от чьего имени идёт работа. Тег спана, а не поле записи: ставится
+    один раз при открытии области и достаётся КАЖДОЙ записи внутри неё — включая
+    те, что напишет адаптер, ничего про арендатора не знающий.
+  type: id
+  set_in: спан, libs/pdr-core/src/infrastructure/db/tenant_context.cpp
+
+actor_id:
+  description: >-
+    Кто пришёл — человек, чьё удостоверение принял конвейер. Ставится там же,
+    где становится известен, и больше нигде: в форме запроса сразу после
+    опознания.
+  type: id
+  set_in: спан, libs/pdr-http/src/infrastructure/http/authorized_handler.hpp
+
+config_key:
+  description: имя динамической величины, чьё применение записывается
+  type: name
+  set_in: журналы динамического конфига
+
+config_was:
+  description: >-
+    значение величины ДО применения. Пусто у первого применения — тогда пишется
+    только config_now
+  type: text
+  set_in: журналы динамического конфига
+
+config_now:
+  description: значение величины ПОСЛЕ применения
+  type: text
+  set_in: журналы динамического конфига
+
+config_entry:
+  description: >-
+    ключ внутри величины-словаря: имя задания в PDR_PERIODIC_JOBS, имя
+    направления в PDR_OUTGOING_CALLS. У величин-скаляров пусто
+  type: name
+  set_in: журналы динамического конфига
+
+config_entries:
+  description: сколько ключей в величине-словаре применилось
+  type: count
+  set_in: журналы динамического конфига
+
+outgoing_direction:
+  description: имя направления наружу из PDR_OUTGOING_CALLS
+  type: name
+  set_in: libs/pdr-http/src/infrastructure/http/outgoing.cpp
+
+outgoing_failure:
+  description: >-
+    чем ответил штатный клиент, когда не ответило направление. Текст от
+    библиотеки, а не от чужого сервиса: тела чужого ответа здесь нет
+  type: text
+  set_in: libs/pdr-http/src/infrastructure/http/outgoing.cpp
+
+request_deadline_ms:
+  description: срок входящего запроса, с которым сверяются сроки направлений
+  type: ms
+  set_in: libs/pdr-http/src/infrastructure/http/outgoing_component.cpp
+
+job_name:
+  description: имя периодического задания
+  type: name
+  set_in: libs/pdr-jobs/src/jobs/infrastructure
+
+job_key:
+  description: >-
+    ключ единицы работы задания — тот же, по которому ставится след
+    идемпотентности. Считается из времени и арендатора, данных человека в нём нет
+  type: name
+  set_in: services/scheduling/src/scheduling_service/heartbeat_job.cpp
+
+job_outcome:
+  description: чем кончился прогон — done, lock_lost, timed_out
+  type: text
+  set_in: libs/pdr-jobs/src/jobs/infrastructure/periodic_job_component.cpp
+
+job_produced:
+  description: сколько действий прогон произвёл
+  type: count
+  set_in: libs/pdr-jobs/src/jobs/infrastructure/periodic_job_component.cpp
+
+job_repeated:
+  description: >-
+    сколько единиц работы прогон пропустил, найдя чужой след. Главное
+    наблюдаемое свидетельство идемпотентности
+  type: count
+  set_in: libs/pdr-jobs/src/jobs/infrastructure/periodic_job_component.cpp
+
+job_failure:
+  description: почему прогон не состоялся — настройка задания негодна
+  type: text
+  set_in: libs/pdr-jobs/src/jobs/infrastructure/periodic_job_component.cpp
+
+secrets_checked:
+  description: сколько секретов проверено при старте
+  type: count
+  set_in: services/scheduling/src/scheduling_service/secrets_guard.cpp
+
+storage_failure:
+  description: чем ответило хранилище, когда не ответило
+  type: text
+  set_in: services/scheduling/src/scheduling_service/readiness_handler.cpp
+
+policy_action:
+  description: >-
+    действие, у которого не нашлось политики. Имя действия из закрытого
+    перечня identity::Action, а не то, что просил человек
+  type: name
+  set_in: libs/pdr-identity/src/identity/infrastructure/access/logging_configuration_faults.cpp
+
+alert_name:
+  description: >-
+    имя поднятого сигнала — то же, что в alerts::Source и в
+    docs/architecture/observability.md
+  type: name
+  set_in: libs/pdr-core/src/infrastructure/observe/service_alerts.cpp

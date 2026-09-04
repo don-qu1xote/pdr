@@ -203,6 +203,15 @@ jobs:
           python3 scripts/check_product_events.py --selftest
           python3 scripts/check_product_events.py
 
+      # Значение, вклеенное в текст записи, имя поля литералом, расхождение
+      # реестра имён с кодом и поле, названное как персональные данные, роняют
+      # сборку здесь.
+      - name: Журнал полями, а не текстом
+        run: |
+          set -eu
+          python3 scripts/check_log_fields.py --selftest
+          python3 scripts/check_log_fields.py
+
       # Инженерный термин в тексте, который видит человек, — баг: словарь из
       # docs/product/glossary.md прогоняется по строкам клиента и по самим
       # утверждённым формулировкам. Процент при числе роняет сборку здесь же.

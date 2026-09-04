@@ -1,6 +1,8 @@
 #include "jobs/infrastructure/periodic_job_component.hpp"
 
 #include <chrono>
+#include <cstddef>
+#include <cstdint>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -20,8 +22,12 @@
 #include <userver/utils/statistics/storage.hpp>
 #include <userver/yaml_config/merge_schemas.hpp>
 
+#include "infrastructure/observe/log_fields.hpp"
+
 namespace pdr::jobs {
 namespace {
+
+namespace fields = ::pdr::infrastructure::observe;
 
 /// Срок жизни блокировки равен времени, отведённому на прогон: прогон, не
 /// уложившийся в него, прекращается сам, и блокировка честно уходит к другому.
@@ -89,7 +95,9 @@ PeriodicJobComponentBase::PeriodicJobComponentBase(
       ledger_{storage_},
       journal_{unscoped_},
       runner_{ledger_, journal_, clock_},
-      tasks_{context.FindComponent<userver::components::TestsuiteSupport>().GetTestsuiteTasks()} {
+      tasks_{context.FindComponent<userver::components::TestsuiteSupport>().GetTestsuiteTasks()},
+      alerts_{
+          context.FindComponent<userver::components::StatisticsStorage>().GetMetricsStorageRef()} {
     const auto settings = SettingsOf(settings_, job_);
     const auto lock_settings = AsLockSettings(settings);
 
@@ -158,10 +166,7 @@ void PeriodicJobComponentBase::RunOnce() {
     }
 
     auto span = userver::tracing::Span::MakeRootSpan(job_.Value());
-    const auto record = runner_.Execute(job_, settings.Value(), work_, by_request_);
-    span.AddTag("jobs_outcome", std::string{Name(record.Result())});
-    span.AddTag("jobs_produced", record.Produced());
-    span.AddTag("jobs_repeated", record.Repeated());
+    Account(span, runner_.Execute(job_, settings.Value(), work_, by_request_));
 }
 
 void PeriodicJobComponentBase::Work() {
@@ -172,19 +177,34 @@ void PeriodicJobComponentBase::Work() {
         }
 
         auto span = userver::tracing::Span::MakeRootSpan(job_.Value());
-        const auto record = runner_.Execute(job_, settings.Value(), work_, *lock_);
-        span.AddTag("jobs_outcome", std::string{Name(record.Result())});
-        span.AddTag("jobs_produced", record.Produced());
-        span.AddTag("jobs_repeated", record.Repeated());
+        Account(span, runner_.Execute(job_, settings.Value(), work_, *lock_));
 
         userver::engine::InterruptibleSleepFor(settings.Value().Period());
     }
 }
 
+void PeriodicJobComponentBase::Account(userver::tracing::Span& span, const RunRecord& record) {
+    span.AddTag(fields::kJobNameField, job_.Value());
+    span.AddTag(fields::kJobOutcomeField, std::string{Name(record.Result())});
+    span.AddTag(fields::kJobProducedField, record.Produced());
+    span.AddTag(fields::kJobRepeatedField, record.Repeated());
+
+    runs_.produced.Add(userver::utils::statistics::Rate{
+        static_cast<std::uint64_t>(record.Produced() > 0 ? record.Produced() : 0)});
+    runs_.repeated.Add(userver::utils::statistics::Rate{
+        static_cast<std::uint64_t>(record.Repeated() > 0 ? record.Repeated() : 0)});
+    runs_.outcome.at(static_cast<std::size_t>(record.Result())).Increment();
+    runs_.duration.Account(static_cast<double>(
+        std::chrono::duration_cast<std::chrono::milliseconds>(record.Took()).count()));
+}
+
 void PeriodicJobComponentBase::Watch() {
     const auto settings = settings_.For(job_);
     if (!settings.HasValue()) {
-        LOG_ERROR() << "jobs: " << settings.Failure().Detail();
+        LOG_ERROR() << "настройка задания негодна, наблюдать нечего"
+                    << userver::logging::LogExtra{
+                           {{fields::kJobNameField, job_.Value()},
+                            {fields::kJobFailureField, settings.Failure().Detail()}}};
         return;
     }
 
@@ -193,11 +213,28 @@ void PeriodicJobComponentBase::Watch() {
         {std::chrono::duration_cast<std::chrono::milliseconds>(settings.Value().Period()),
          {userver::utils::PeriodicTask::Flags::kChaotic}});
 
-    watched_.Assign(Watched{journal_.Last(job_), settings.Value().Enabled()});
+    const auto last = journal_.Last(job_);
+    const auto silent = settings.Value().Enabled() &&
+                        HasFallenSilent(last, clock_.Now(), settings.Value().SilenceAllowed());
+    if (silent) {
+        alerts_.Raise(fields::ServiceAlert::kJobHasFallenSilent,
+                      std::chrono::duration_cast<std::chrono::seconds>(settings.Value().Period()));
+    } else {
+        alerts_.Clear(fields::ServiceAlert::kJobHasFallenSilent);
+    }
+
+    watched_.Assign(Watched{last, settings.Value().Enabled()});
 }
 
 void PeriodicJobComponentBase::DumpMetrics(userver::utils::statistics::Writer& writer) const {
     writer["lock"] = *worker_;
+    writer["produced-total"] = runs_.produced;
+    writer["repeated-total"] = runs_.repeated;
+    writer["duration"] = runs_.duration;
+    for (const auto outcome : {Outcome::kDone, Outcome::kLockLost, Outcome::kTimedOut}) {
+        writer["runs"].ValueWithLabels(runs_.outcome.at(static_cast<std::size_t>(outcome)),
+                                       {{"outcome", std::string{Name(outcome)}}});
+    }
 
     const auto watched = watched_.ReadCopy();
     const auto settings = settings_.For(job_);

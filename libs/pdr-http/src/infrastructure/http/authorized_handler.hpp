@@ -22,6 +22,7 @@
 #include "infrastructure/http/request_body.hpp"
 #include "infrastructure/http/request_id.hpp"
 #include "infrastructure/http/security_headers.hpp"
+#include "infrastructure/observe/span_tags.hpp"
 
 namespace pdr::infrastructure::http {
 
@@ -199,6 +200,7 @@ public:
             return Refuse(response, admitted.refusal);
         }
         const Caller& caller = *admitted.caller;
+        observe::TagActor(caller.actor);
 
         if (!pdr::http::Mutating(Translate(request.GetMethod()))) {
             return Assemble(response,

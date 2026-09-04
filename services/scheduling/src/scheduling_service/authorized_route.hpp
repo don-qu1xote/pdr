@@ -41,6 +41,29 @@ public:
 
     static userver::yaml_config::Schema GetStaticConfigSchema();
 
+protected:
+    /// НИ ТЕЛА ЗАПРОСА, НИ ТЕЛА ОТВЕТА В ЖУРНАЛЕ НЕТ.
+    ///
+    /// Умолчание `HttpHandlerBase` — писать оба, и для служебной ручки это
+    /// разумно. Здесь через тело проходит пароль (`{"password": "..."}`), а
+    /// обратно — срок жизни сессии; перечень ПДн этого не разрешает, и обещанный
+    /// человеку срок хранения журнал переживает молча.
+    ///
+    /// Отключается ЗДЕСЬ, а не в каждой ручке, по той же причине, по какой
+    /// наследник у формы один: второе место, где решают, что писать в журнал,
+    /// разойдётся с первым, и разойдётся молча.
+    ///
+    /// Разбор запроса при этом не слепнет: у записи есть арендатор, актор, след
+    /// запроса, адрес, статус и время (docs/architecture/observability.md).
+    /// Не хватает ровно того, что нельзя хранить.
+    std::string GetRequestBodyForLogging(const userver::server::http::HttpRequest& request,
+                                         userver::server::request::RequestContext& context,
+                                         const std::string& request_body) const override;
+
+    std::string GetResponseDataForLogging(const userver::server::http::HttpRequest& request,
+                                          userver::server::request::RequestContext& context,
+                                          const std::string& response_data) const override;
+
 private:
     const infrastructure::http::OperationComponent& operation_;
 };

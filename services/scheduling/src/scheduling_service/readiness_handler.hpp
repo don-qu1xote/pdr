@@ -9,6 +9,7 @@
 #include <userver/yaml_config/schema.hpp>
 
 #include "infrastructure/db/unscoped_access.hpp"
+#include "infrastructure/observe/service_alerts.hpp"
 
 namespace pdr::scheduling_service {
 
@@ -20,6 +21,12 @@ namespace pdr::scheduling_service {
 ///
 /// Живость при этом остаётся соседней ручкой: недоступная база — повод не
 /// давать трафик, а не повод перезапускать процесс.
+///
+/// ОТСЮДА ЖЕ ПОДНИМАЮТСЯ ДВА СИГНАЛА. Снаружи «readiness отвечает 503» — одна
+/// картинка на четыре причины: пустая схема, недоступная база, незанятый порт и
+/// неподнявшийся процесс. Изнутри различить их нечего стоит, и разница между
+/// «выведено» и «известно» — это разница между догадкой дежурного и фактом
+/// (docs/architecture/observability.md).
 class ReadinessHandler final : public userver::server::handlers::HttpHandlerBase {
 public:
     static constexpr std::string_view kName = "handler-readiness";
@@ -35,6 +42,7 @@ public:
 
 private:
     infrastructure::db::UnscopedAccess access_;
+    infrastructure::observe::ServiceAlerts alerts_;
 };
 
 }  // namespace pdr::scheduling_service

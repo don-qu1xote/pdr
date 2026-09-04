@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <cstddef>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -19,6 +20,8 @@
 #include <userver/utils/statistics/writer.hpp>
 #include <userver/yaml_config/merge_schemas.hpp>
 
+#include "infrastructure/observe/log_fields.hpp"
+
 namespace pdr::infrastructure::http {
 namespace {
 
@@ -26,6 +29,30 @@ using Settings = ::dynamic_config::pdr_outgoing_calls::VariableTypeRaw::Extra;
 
 std::string Named() {
     return std::string{::dynamic_config::PDR_OUTGOING_CALLS.GetName()};
+}
+
+std::string Describe(const Settings& settings) {
+    return "timeout_ms=" + std::to_string(settings.timeout_ms) +
+           " attempts=" + std::to_string(settings.attempts) +
+           " retry_max_tokens=" + std::to_string(settings.retry_max_tokens) +
+           " rate_per_second=" + std::to_string(settings.rate_per_second) +
+           " rate_burst=" + std::to_string(settings.rate_burst);
+}
+
+/// `LogExtra::Extend` возвращает void, поэтому поля собираются здесь, а не
+/// дописываются на месте вызова цепочкой.
+userver::logging::LogExtra About(const std::string& entry,
+                                 std::optional<std::string> was,
+                                 std::optional<std::string> now) {
+    userver::logging::LogExtra fields{{observe::kConfigKeyField, Named()},
+                                      {observe::kConfigEntryField, entry}};
+    if (was.has_value()) {
+        fields.Extend(observe::kConfigWasField, std::move(*was));
+    }
+    if (now.has_value()) {
+        fields.Extend(observe::kConfigNowField, std::move(*now));
+    }
+    return fields;
 }
 
 userver::utils::RetryBudgetSettings BudgetOf(const Settings& settings) {
@@ -89,7 +116,9 @@ OutgoingCallsComponent::Direction::Direction(std::chrono::milliseconds timeout,
 OutgoingCallsComponent::OutgoingCallsComponent(const userver::components::ComponentConfig& config,
                                                const userver::components::ComponentContext& context)
     : ComponentBase{config, context},
-      client_{context.FindComponent<userver::components::HttpClient>().GetHttpClient()} {
+      client_{context.FindComponent<userver::components::HttpClient>().GetHttpClient()},
+      alerts_{
+          context.FindComponent<userver::components::StatisticsStorage>().GetMetricsStorageRef()} {
     auto source = context.FindComponent<userver::components::DynamicConfig>().GetSource();
     const auto snapshot = source.GetSnapshot();
     const auto deadline =
@@ -113,8 +142,11 @@ OutgoingCallsComponent::OutgoingCallsComponent(const userver::components::Compon
             "outgoing",
             [this](userver::utils::statistics::Writer& writer) { DumpMetrics(writer); });
 
-    LOG_INFO() << "направления наружу проверены: " << directions_.size() << ", срок запроса "
-               << deadline.count() << " мс";
+    LOG_INFO() << "направления наружу проверены"
+               << userver::logging::LogExtra{
+                      {observe::kConfigKeyField, Named()},
+                      {observe::kConfigEntriesField, static_cast<int>(directions_.size())},
+                      {observe::kRequestDeadlineField, static_cast<long>(deadline.count())}};
 
     journal_ = source.UpdateAndListen(
         this, "http-outgoing-calls", &OutgoingCallsComponent::OnConfigUpdate);
@@ -129,8 +161,10 @@ void OutgoingCallsComponent::OnConfigUpdate(const userver::dynamic_config::Diff&
     const auto deadline =
         std::chrono::milliseconds{diff.current[::dynamic_config::PDR_REQUEST_DEADLINE]};
     if (const auto wrong = WhatIsWrongWithDeadlines(TimeoutsOf(diff.current), deadline)) {
-        LOG_ERROR() << Named() << ": не применён целиком, направления работают по прежним числам — "
-                    << *wrong;
+        LOG_ERROR() << "величина не применена целиком, направления работают по прежним числам"
+                    << userver::logging::LogExtra{{observe::kConfigKeyField, Named()},
+                                                  {observe::kConfigNowField, *wrong}};
+        alerts_.Raise(observe::ServiceAlert::kOutgoingCallsRefused);
         return;
     }
 
@@ -138,8 +172,8 @@ void OutgoingCallsComponent::OnConfigUpdate(const userver::dynamic_config::Diff&
     for (const auto& [name, settings] : current) {
         const auto found = directions_.find(name);
         if (found == directions_.end()) {
-            LOG_WARNING() << Named() << ": направление " << name
-                          << " заводится на старте — до перезапуска наружу не ходит";
+            LOG_WARNING() << "направление заводится на старте — до перезапуска наружу не ходит"
+                          << About(name, std::nullopt, std::nullopt);
             continue;
         }
         auto& direction = *found->second;
@@ -155,7 +189,10 @@ void OutgoingCallsComponent::OnConfigUpdate(const userver::dynamic_config::Diff&
     }
 
     if (!diff.previous.has_value()) {
-        LOG_INFO() << Named() << ": первое применение, направлений " << directions_.size();
+        LOG_INFO() << "первое применение величины"
+                   << userver::logging::LogExtra{
+                          {observe::kConfigKeyField, Named()},
+                          {observe::kConfigEntriesField, static_cast<int>(directions_.size())}};
         return;
     }
 
@@ -163,18 +200,18 @@ void OutgoingCallsComponent::OnConfigUpdate(const userver::dynamic_config::Diff&
     for (const auto& [name, settings] : current) {
         const auto was = previous.find(name);
         if (was == previous.end()) {
-            LOG_INFO() << Named() << ": направление " << name << " заведено — " << settings;
+            LOG_INFO() << "направление заведено" << About(name, std::nullopt, Describe(settings));
         } else if (!(was->second == settings)) {
-            LOG_INFO() << Named() << ": направление " << name << " было [" << was->second
-                       << "], стало [" << settings << "]";
+            LOG_INFO() << "направление изменилось"
+                       << About(name, Describe(was->second), Describe(settings));
         }
     }
 
     for (const auto& [name, settings] : previous) {
         if (current.find(name) == current.end()) {
-            LOG_WARNING() << Named() << ": направление " << name
-                          << " убрано из конфига, но работает по прежним числам до перезапуска — "
-                          << settings;
+            LOG_WARNING() << "направление убрано из конфига, но работает по прежним числам "
+                             "до перезапуска"
+                          << About(name, Describe(settings), std::nullopt);
         }
     }
 }
