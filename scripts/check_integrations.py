@@ -41,6 +41,8 @@ import tempfile
 from pathlib import Path
 from typing import Sequence
 
+import yaml
+
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import migration_model as model  # noqa: E402
@@ -68,6 +70,27 @@ FOREIGN_ID = re.compile(r"^(external_id|.*_external_id|provider_id|.*_provider_i
 
 SOURCE_SUFFIXES = frozenset({".hpp", ".cpp"})
 SKIPPED = frozenset({".git", "build", "out", "_deps", "__pycache__"})
+
+SERVICES = Path("services")
+STATIC_CONFIG = Path("configs/static_config.yaml")
+
+DEADLINE = "PDR_REQUEST_DEADLINE"
+OUTGOING = "PDR_OUTGOING_CALLS"
+
+OUTGOING_COMPONENTS = {
+    "http-client": (
+        "штатный асинхронный клиент. Синхронный в корутинном рантайме блокирует поток "
+        "целиком, и один медленный чужой сервис останавливает всё, что делит с ним поток"
+    ),
+    "dns-client": (
+        "разрешение имён тем же контуром: getaddrinfo блокирующий, и в корутине он "
+        "стоит ровно столько же, сколько синхронный HTTP"
+    ),
+    "outgoing-calls": (
+        "единственная дверь наружу: у направления свой срок, свой бюджет повторов и своя "
+        "квота, а срок не меньше срока запроса роняет старт (PDR_OUTGOING_CALLS)"
+    ),
+}
 
 
 class RegistryError(Exception):
@@ -270,8 +293,79 @@ def check_foreign_keys(root: Path) -> list[str]:
     return violations
 
 
+def check_outgoing_components(root: Path) -> list[str]:
+    """У процесса заведены штатные компоненты выхода наружу.
+
+    Проверяется НАЛИЧИЕ, а не отсутствие чужого: чужое ловит
+    scripts/check_handmade.py по именам библиотек. Здесь другое: процесс без
+    `http-client` не может сходить наружу штатно вовсе, и первая же интеграция
+    подключит то, что подвернётся.
+    """
+    violations: list[str] = []
+    directory = root / SERVICES
+    if not directory.is_dir():
+        return violations
+
+    for service in sorted(directory.iterdir()):
+        config = service / STATIC_CONFIG
+        if not config.is_file():
+            continue
+
+        text = config.read_text(encoding="utf-8", errors="replace")
+        display = config.relative_to(root)
+        for name, reason in OUTGOING_COMPONENTS.items():
+            if re.search(rf"^\s*{re.escape(name)}:", text, re.M):
+                continue
+            violations.append(
+                f"{display}: не заведён компонент «{name}». {reason}"
+            )
+
+    return violations
+
+
+def check_outgoing_deadlines(root: Path) -> list[str]:
+    """Умолчание срока направления меньше умолчания срока запроса.
+
+    Ту же сверку делает компонент на старте, и негодная настройка не даёт
+    процессу подняться. Здесь она повторена по реестру ровно затем, чтобы
+    негодное умолчание было видно в ревью, а не в упавшем сервисе: правка
+    реестра и падение процесса разнесены во времени на целую выкладку.
+
+    Отсутствие величин здесь молчит намеренно: «читается, а в реестре нет» —
+    вопрос scripts/check_dynamic_configs.py, и отвечать на него дважды значит
+    получить два разных текста об одном и том же.
+    """
+    path = root / CONFIGS
+    if not path.is_file():
+        return []
+
+    try:
+        registry = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except yaml.YAMLError as error:
+        return [f"{CONFIGS}: реестр не разобран как YAML ({error})"]
+
+    deadline = (registry.get(DEADLINE) or {}).get("default")
+    directions = (registry.get(OUTGOING) or {}).get("default")
+    if not isinstance(deadline, int) or not isinstance(directions, dict):
+        return []
+
+    violations: list[str] = []
+    for name, settings in sorted(directions.items()):
+        timeout = (settings or {}).get("timeout_ms")
+        if not isinstance(timeout, int) or timeout < deadline:
+            continue
+        violations.append(
+            f"{CONFIGS}: у направления «{name}» умолчание срока {timeout} мс не меньше "
+            f"{DEADLINE} ({deadline} мс). С такой настройкой процесс не поднимется вовсе — "
+            f"вызов пережил бы собственный запрос"
+        )
+    return violations
+
+
 def check(root: Path) -> tuple[list[str], int]:
     violations = check_foreign_keys(root)
+    violations.extend(check_outgoing_components(root))
+    violations.extend(check_outgoing_deadlines(root))
 
     path = root / REGISTRY
     if not path.is_file():
@@ -331,7 +425,18 @@ SELFTEST_FILES = {
     "libs/pdr-x/src/x/application/ports/receipt_gateway.hpp": SELFTEST_PORT,
     "libs/pdr-x/src/x/infrastructure/real_receipt_gateway.hpp":
         "class RealReceiptGateway final : public ports::ReceiptGateway {};\n",
-    "configs/dynamic/registry.yaml": "PDR_OTHER:\n  default: 1\n",
+    "configs/dynamic/registry.yaml": (
+        "PDR_OTHER:\n"
+        "  default: 1\n"
+        "PDR_REQUEST_DEADLINE:\n"
+        "  default: 5000\n"
+        "PDR_OUTGOING_CALLS:\n"
+        "  default:\n"
+        "    payments:\n"
+        "      timeout_ms: 3000\n"
+        "    slow:\n"
+        "      timeout_ms: 5000\n"
+    ),
     "db/migrations/V001__init.sql": (
         "create table schema_version (version integer primary key, checksum char(64) not null);\n"
     ),
@@ -344,6 +449,22 @@ SELFTEST_FILES = {
     ),
 }
 
+SELFTEST_SERVICES = {
+    "services/alpha/configs/static_config.yaml": (
+        "components_manager:\n"
+        "    components:\n"
+        "        http-client: {}\n"
+        "        dns-client:\n"
+        "            fs-task-processor: fs-task-processor\n"
+        "        outgoing-calls: {}\n"
+    ),
+    "services/beta/configs/static_config.yaml": (
+        "components_manager:\n"
+        "    components:\n"
+        "        http-client: {}\n"
+    ),
+}
+
 SELFTEST_EXPECTED = (
     ("music", "неофициальная и при этом несущая"),
     ("music", "не заполнен"),
@@ -353,6 +474,9 @@ SELFTEST_EXPECTED = (
     ("receipts", "не инстанцирован набор"),
     ("PDR_INTEGRATIONS", "в реестре динамических значений нет"),
     ("billing_receipt_link.external_id", "первичный ключ"),
+    ("services/beta/configs/static_config.yaml", "«dns-client»"),
+    ("services/beta/configs/static_config.yaml", "«outgoing-calls»"),
+    ("slow", "не меньше PDR_REQUEST_DEADLINE"),
 )
 
 
@@ -364,7 +488,7 @@ def selftest() -> int:
     """
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
-        for name, content in SELFTEST_FILES.items():
+        for name, content in {**SELFTEST_FILES, **SELFTEST_SERVICES}.items():
             target = root / name
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content, encoding="utf-8")
@@ -396,6 +520,17 @@ def selftest() -> int:
             ");\n",
             encoding="utf-8",
         )
+        (root / "services/beta/configs/static_config.yaml").unlink()
+        (root / CONFIGS).write_text(
+            "PDR_REQUEST_DEADLINE:\n"
+            "  default: 5000\n"
+            "PDR_OUTGOING_CALLS:\n"
+            "  default:\n"
+            "    payments:\n"
+            "      timeout_ms: 3000\n",
+            encoding="utf-8",
+        )
+
         clean, rows = check(root)
         if clean or rows:
             print(f"самопроверка: чистый случай не прошёл: {clean}", file=sys.stderr)

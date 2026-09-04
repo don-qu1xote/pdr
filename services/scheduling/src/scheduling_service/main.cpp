@@ -12,6 +12,7 @@
 #include "identity/infrastructure/http/sign_in_operation.hpp"
 #include "infrastructure/db/tenant_context_component.hpp"
 #include "infrastructure/http/middlewares/links.hpp"
+#include "infrastructure/http/outgoing_component.hpp"
 #include "observability/infrastructure/product_events_component.hpp"
 #include "scheduling_service/authorized_route.hpp"
 #include "scheduling_service/health_handler.hpp"
@@ -54,6 +55,7 @@ int main(int argc, char* argv[]) {
             .Append<userver::server::handlers::Ping>()
 
             .Append<pdr::infrastructure::db::TenantContextComponent>()
+            .Append<pdr::infrastructure::http::OutgoingCallsComponent>()
             .Append<pdr::infrastructure::http::SecurityHeadersLinkFactory>()
             .Append<pdr::infrastructure::http::RequestIdLinkFactory>()
             .Append<pdr::infrastructure::http::RequestBodyLinkFactory>()

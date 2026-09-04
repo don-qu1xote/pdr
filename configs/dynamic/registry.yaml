@@ -493,6 +493,125 @@ PDR_AI_NODES:
           minimum: 0.0
           maximum: 1.0
 
+PDR_REQUEST_DEADLINE:
+  description: >-
+    Срок, за который ручка обязуется ответить, когда клиент не назвал свой
+    (заголовок X-YaTaxi-Client-TimeoutMs). Величина нужна не сама по себе: об неё
+    меряются сроки ИСХОДЯЩИХ вызовов, и вызов, переживающий собственный запрос,
+    не поднимается вовсе.
+  kind: техническая
+  owner: тот, кто держит сервис
+  jurisdiction: нет
+  breaks: >-
+    Слишком большой срок держит соединение и транзакцию арендатора там, где
+    клиент давно ушёл: пул кончается раньше, чем это заметят. Слишком маленький
+    обрывает работу, которая успела бы: человек видит отказ вместо ответа.
+    Меньше любого из сроков в PDR_OUTGOING_CALLS — процесс не поднимается, и это
+    проверяется на старте.
+  default: 5000
+  schema:
+    type: integer
+    minimum: 100
+    maximum: 60000
+
+PDR_OUTGOING_CALLS:
+  description: >-
+    Обращения наружу, по направлениям: срок ответа, бюджет повторов и квота
+    частоты. Ключ словаря — имя направления, то же, что имя интеграции в
+    docs/architecture/integrations.md. Общего срока на все направления нет
+    намеренно: у платёжного провайдера и у распознавания рукописного разное
+    представление о «долго».
+  kind: техническая
+  owner: тот, кто держит сервис
+  jurisdiction: нет
+  breaks: >-
+    timeout_ms не меньше PDR_REQUEST_DEADLINE — вызов переживает собственный
+    запрос и держит соединение впустую; процесс с такой настройкой не
+    поднимается вовсе. attempts больше единицы добивал бы лежащий сервис лавиной
+    повторов — на то и бюджет: он ограничивает ДОЛЮ повторов от потока, а не их
+    число, и при исчерпанном бюджете повтор не уходит в сеть. rate_per_second
+    выше квоты провайдера — он отвечает отказом на всё подряд, включая первое
+    обращение.
+  default:
+    payments:
+      timeout_ms: 3000
+      attempts: 3
+      retry_max_tokens: 100
+      retry_token_ratio: 0.1
+      rate_per_second: 20
+      rate_burst: 40
+    receipts:
+      timeout_ms: 3000
+      attempts: 3
+      retry_max_tokens: 100
+      retry_token_ratio: 0.1
+      rate_per_second: 5
+      rate_burst: 10
+    video:
+      timeout_ms: 2000
+      attempts: 3
+      retry_max_tokens: 100
+      retry_token_ratio: 0.1
+      rate_per_second: 20
+      rate_burst: 40
+    model:
+      timeout_ms: 4000
+      attempts: 3
+      retry_max_tokens: 100
+      retry_token_ratio: 0.1
+      rate_per_second: 10
+      rate_burst: 20
+    handwriting:
+      timeout_ms: 4000
+      attempts: 3
+      retry_max_tokens: 100
+      retry_token_ratio: 0.1
+      rate_per_second: 5
+      rate_burst: 10
+  schema:
+    type: object
+    additionalProperties:
+      type: object
+      additionalProperties: false
+      required:
+        - timeout_ms
+        - attempts
+        - retry_max_tokens
+        - retry_token_ratio
+        - rate_per_second
+        - rate_burst
+      properties:
+        timeout_ms:
+          description: сколько ждём ответа этого направления
+          type: integer
+          minimum: 50
+          maximum: 30000
+        attempts:
+          description: сколько обращений подряд разрешено; 1 — повторов нет
+          type: integer
+          minimum: 1
+          maximum: 5
+        retry_max_tokens:
+          description: размер бюджета повторов
+          type: integer
+          minimum: 1
+          maximum: 10000
+        retry_token_ratio:
+          description: сколько бюджета возвращает один удачный вызов
+          type: number
+          minimum: 0.01
+          maximum: 1
+        rate_per_second:
+          description: сколько обращений в секунду разрешено; 0 — без квоты
+          type: integer
+          minimum: 0
+          maximum: 100000
+        rate_burst:
+          description: сколько обращений подряд разрешено сверх ровного потока
+          type: integer
+          minimum: 0
+          maximum: 100000
+
 PDR_IDEMPOTENCY:
   description: >-
     Сколько часов ключ повтора защищает от второго выполнения операции. Клиент,

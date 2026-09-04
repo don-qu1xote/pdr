@@ -16,7 +16,8 @@ ADR-0014 требует пережить отказ внешнего серви�
   «когда-нибудь» условиями не считаются;
 * обращение наружу не появилось вне зарегистрированного адаптера интеграции.
   Это и есть незаметно возникшая жёсткая зависимость: строка, из-за которой
-  сквозной прогон без сети однажды покраснеет;
+  сквозной прогон без сети однажды покраснеет. Исключение ровно одно и названо
+  поимённо — общая дверь наружу (`DOOR` ниже);
 * фиксированный набор для замера качества не разошёлся со своей контрольной
   суммой: изменился набор — изменились все прошлые числа.
 
@@ -68,6 +69,29 @@ OUTBOUND = (
     ("::socket(", "системный сокет"),
     ("getaddrinfo", "разрешение имени"),
 )
+
+DOOR = {
+    "libs/pdr-http/src/infrastructure/http/outgoing.hpp":
+        "общая дверь наружу: срок, бюджет повторов и квота направления",
+    "libs/pdr-http/src/infrastructure/http/outgoing.cpp":
+        "она же, тело: единственное место, где зовётся perform()",
+    "libs/pdr-http/src/infrastructure/http/outgoing_component.hpp":
+        "компонент двери: направления и сверка сроков со сроком запроса",
+    "libs/pdr-http/src/infrastructure/http/outgoing_component.cpp":
+        "он же, тело: числа берутся из PDR_OUTGOING_CALLS",
+}
+"""Кому разрешено упоминать клиент HTTP, не будучи адаптером интеграции.
+
+Дыры это не открывает, и вот почему. Дверь сама никуда не ходит: она принимает
+запрос, СОБРАННЫЙ адаптером, и добавляет ему срок, бюджет и квоту. Прогона без
+сети она не касается — пока её никто не позвал, наружу не уходит ничего, а зовут
+её адаптеры, и адаптеры проверяются по-прежнему.
+
+Послабление ПОФАЙЛОВОЕ, а не покаталожное: сосед двери по каталогу ловится так
+же, как любой другой файл. Это проверено самопроверкой (`sneaky.cpp`), потому
+что послабление, разрешающее каталог, через полгода разрешает всё, что в нём
+завелось.
+"""
 
 SOURCE_SUFFIXES = frozenset({".hpp", ".cpp"})
 SEARCHED_ROOTS = ("libs", "services")
@@ -228,6 +252,8 @@ def check_outbound(root: Path) -> list[str]:
                 continue
             if str(relative) in allowed or str(relative.parent) in allowed:
                 continue
+            if str(relative) in DOOR:
+                continue
 
             body = path.read_text(encoding="utf-8", errors="replace")
             for token, what in OUTBOUND:
@@ -327,6 +353,7 @@ SELFTEST_EXPECTED = (
     ("vague", "без чисел"),
     ("orphan", "нет в таблице"),
     ("leaky.cpp", "обращение наружу"),
+    ("sneaky.cpp", "обращение наружу"),
     ("cases.jsonl", "разошёлся с set.sha256"),
 )
 
@@ -343,6 +370,14 @@ def selftest() -> int:
         leaky = root / "libs/pdr-notes/src/notes/application/leaky.cpp"
         leaky.parent.mkdir(parents=True)
         leaky.write_text("auto response = clients::http::Get(url);\n", encoding="utf-8")
+
+        for name in DOOR:
+            door = root / name
+            door.parent.mkdir(parents=True, exist_ok=True)
+            door.write_text("clients::http::Request request;\n", encoding="utf-8")
+
+        sneaky = (root / next(iter(DOOR))).parent / "sneaky.cpp"
+        sneaky.write_text("auto response = clients::http::Get(url);\n", encoding="utf-8")
 
         cases = root / EVAL / "handwriting" / "cases.jsonl"
         cases.parent.mkdir(parents=True)
@@ -362,7 +397,7 @@ def selftest() -> int:
                     print("    " + line, file=sys.stderr)
                 return 1
 
-        for clean in ("transcription_final", "text_generation"):
+        for clean in ("transcription_final", "text_generation", "outgoing"):
             if any(clean in line for line in violations):
                 print(f"самопроверка: правильный узел объявлен нарушением: {clean}",
                       file=sys.stderr)

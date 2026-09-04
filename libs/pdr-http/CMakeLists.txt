@@ -25,6 +25,8 @@ add_library(pdr_http STATIC
     src/infrastructure/http/middlewares/links.cpp
     src/infrastructure/http/middlewares/pipeline.cpp
     src/infrastructure/http/openapi_document.cpp
+    src/infrastructure/http/outgoing.cpp
+    src/infrastructure/http/outgoing_component.cpp
     src/infrastructure/http/problem.cpp
     src/infrastructure/http/request_body.cpp
     src/infrastructure/http/request_id.cpp
@@ -68,6 +70,7 @@ if(PDR_BUILD_TESTS)
         tests/authorized_handler_test.cpp
         tests/error_mapping_test.cpp
         tests/idempotency_test.cpp
+        tests/outgoing_test.cpp
         tests/problem_test.cpp
         tests/request_body_test.cpp
         tests/request_id_test.cpp

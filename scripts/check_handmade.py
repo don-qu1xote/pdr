@@ -15,7 +15,12 @@ userver всё это есть. Каждая самоделка потом тр�
 * периодическое задание на потоке: `std::thread`, `.detach()`,
   `std::this_thread::sleep_for`;
 * вторая библиотека вместо штатной: `nlohmann::json`, `rapidjson`,
-  `prometheus-cpp`, `opentelemetry`, `spdlog`.
+  `prometheus-cpp`, `opentelemetry`, `spdlog`, а также СИНХРОННЫЙ HTTP-клиент —
+  `libcurl`, `cpr`, `httplib`, `boost::beast`. Последний случай стоит отдельного
+  слова: синхронный клиент в корутинном рантайме блокирует поток целиком, и один
+  медленный чужой сервис останавливает всё, что делит с ним поток. Наружу ходят
+  штатным `clients::http` через одну дверь (PDR-ARCH-10,
+  docs/architecture/integrations.md).
 
 Ловит по ИМЕНАМ, и это осознанно: линтер закрывает случайную самоделку, а не
 саботаж. От намеренного обхода защищает не grep, а то, что отступление требует
@@ -70,7 +75,9 @@ THREAD_PERIODIC = re.compile(r"\b(?:std::thread|std::jthread|\.detach\(\)|"
 
 FOREIGN_LIBRARIES = re.compile(
     r"\b(?:nlohmann|rapidjson|jsoncpp|json11|picojson|boost::property_tree|"
-    r"prometheus|statsd|opentelemetry|spdlog|glog|easyloggingpp)\b"
+    r"prometheus|statsd|opentelemetry|spdlog|glog|easyloggingpp|"
+    r"curl_easy_\w+|curl_multi_\w+|CURLcode|CURLOPT_\w+|cpr|httplib|cpp_httplib|"
+    r"boost::beast)\b"
 )
 
 REPLACEMENTS = {
@@ -308,6 +315,19 @@ SELFTEST_FILES = {
         "#include <nlohmann/json.hpp>\n"
         "#include <spdlog/spdlog.h>\n"
     ),
+    "libs/pdr-core/src/infrastructure/outside.cpp": (
+        "#include <curl/curl.h>\n"
+        "void Ask() {\n"
+        "    auto* handle = curl_easy_init();\n"
+        "    curl_easy_setopt(handle, CURLOPT_URL, \"https://example.org\");\n"
+        "}\n"
+    ),
+    "libs/pdr-core/src/infrastructure/asked.cpp": (
+        "#include <userver/clients/http/client.hpp>\n"
+        "void Ask(userver::clients::http::Client& http) {\n"
+        "    http.CreateRequest().get(\"https://example.org\").perform();\n"
+        "}\n"
+    ),
     "libs/pdr-core/src/infrastructure/allowed.hpp": (
         "#pragma once\n"
         "class RingBuffer final {  // штатное-ok: ring-buffer — в userver его нет\n"
@@ -343,11 +363,12 @@ SELFTEST_EXPECTED = {
     ("ticker.cpp", "std::thread"),
     ("foreign.cpp", "nlohmann"),
     ("foreign.cpp", "spdlog"),
+    ("outside.cpp", "curl_easy_init"),
     ("undocumented.hpp", "без строки в"),
     ("0013-standard-over-handmade.md", "«forgotten» записано, а в коде его нет"),
 }
 
-SELFTEST_CLEAN = ("in_memory_bus.hpp", "talks.cpp", "allowed.hpp", "example-key")
+SELFTEST_CLEAN = ("in_memory_bus.hpp", "talks.cpp", "allowed.hpp", "asked.cpp", "example-key")
 
 
 def selftest() -> int:
