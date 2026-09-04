@@ -11,6 +11,7 @@ add_library(pdr_core STATIC
     src/core/money.cpp
     src/core/secrets.cpp
     src/core/types/ids.cpp
+    src/core/types/local_time.cpp
     src/core/types/time.cpp
 )
 target_include_directories(pdr_core PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
@@ -105,6 +106,7 @@ if(PDR_BUILD_TESTS)
     pdr_unit_test_sources(
         tests/errors_test.cpp
         tests/ids_test.cpp
+        tests/local_time_test.cpp
         tests/secrets_test.cpp
         tests/tenant_scope_test.cpp
         tests/time_test.cpp

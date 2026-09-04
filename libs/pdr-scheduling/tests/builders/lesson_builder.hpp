@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <stdexcept>
+#include <vector>
 
 #include "builders/identifiers.hpp"
 #include "builders/moment_builder.hpp"
@@ -53,7 +54,8 @@ public:
 
     Lesson Build() const {
         const auto now = now_.has_value() ? *now_ : starts_at_ - std::chrono::hours{24};
-        auto lesson = Lesson::Schedule(id_, tenant_, tutor_, student_, starts_at_, duration_, now);
+        auto lesson =
+            Lesson::Schedule(id_, tenant_, tutor_, {student_}, starts_at_, duration_, now);
         if (!lesson.HasValue()) {
             throw std::logic_error{"LessonBuilder: " + lesson.Failure().Code()};
         }

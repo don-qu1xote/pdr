@@ -27,7 +27,7 @@ core::Result<core::LessonId> BookLesson::Execute(const Request& request) const {
     const auto lesson = Lesson::Schedule(ids_.Next<core::LessonId>(),
                                          request.tenant,
                                          request.tutor,
-                                         request.student,
+                                         {request.student},
                                          request.starts_at,
                                          request.duration,
                                          now);
