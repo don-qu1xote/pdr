@@ -74,6 +74,7 @@ inline constexpr bool kIsStrongId<StrongId<Tag>> = true;
 using TenantId = StrongId<struct TenantTag>;
 using PersonId = StrongId<struct PersonTag>;
 using LessonId = StrongId<struct LessonTag>;
+using SeriesId = StrongId<struct SeriesTag>;
 using InvoiceId = StrongId<struct InvoiceTag>;
 using SkillId = StrongId<struct SkillTag>;
 using MaterialId = StrongId<struct MaterialTag>;

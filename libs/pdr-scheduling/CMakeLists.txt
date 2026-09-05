@@ -9,6 +9,7 @@ add_library(pdr_scheduling STATIC
     src/scheduling/core/availability.cpp
     src/scheduling/core/lesson.cpp
     src/scheduling/core/overlap.cpp
+    src/scheduling/core/recurrence.cpp
 )
 target_include_directories(pdr_scheduling PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_link_libraries(pdr_scheduling PUBLIC pdr_core pdr_events pdr_identity PRIVATE pdr_application)
@@ -23,6 +24,7 @@ if(PDR_BUILD_TESTS)
         tests/book_lesson_test.cpp
         tests/lesson_state_test.cpp
         tests/overlap_test.cpp
+        tests/recurrence_test.cpp
     )
     pdr_unit_test_includes(src tests)
     pdr_unit_test_libraries(pdr_scheduling)
