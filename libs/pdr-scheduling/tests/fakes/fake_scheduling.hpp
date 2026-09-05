@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "scheduling/application/ports/availability_repository.hpp"
+#include "scheduling/application/ports/lesson_history.hpp"
 #include "scheduling/application/ports/lesson_repository.hpp"
 #include "scheduling/application/ports/recurrence_repository.hpp"
 #include "scheduling/core/overlap.hpp"
@@ -60,6 +61,23 @@ public:
         });
     }
 
+    core::Result<void> SetState(const Lesson& lesson) override {
+        return Replace(lesson);
+    }
+
+    core::Result<void> Move(const Lesson& lesson) override {
+        for (const auto& other : kept_) {
+            if (other.Id() != lesson.Id() && other.Tenant() == lesson.Tenant() &&
+                other.Tutor() == lesson.Tutor() && Busy(other) && Busy(lesson) &&
+                Overlaps(other, lesson, core::Instant::Duration::zero())) {
+                return core::Error{core::ErrorKind::kConflict,
+                                   "slot_already_taken",
+                                   "это время у репетитора уже занято"};
+            }
+        }
+        return Replace(lesson);
+    }
+
     core::Result<void> Save(const Lesson& lesson) override {
         for (const auto& other : kept_) {
             if (other.Tenant() == lesson.Tenant() && other.Tutor() == lesson.Tutor() &&
@@ -79,6 +97,19 @@ public:
     }
 
 private:
+    /// Та же строка на новом месте: перенос и смена состояния не заводят
+    /// второго занятия — ровно как `update` в базе.
+    core::Result<void> Replace(const Lesson& lesson) {
+        for (auto& kept : kept_) {
+            if (kept.Tenant() == lesson.Tenant() && kept.Id() == lesson.Id()) {
+                kept = lesson;
+                return {};
+            }
+        }
+        return core::Error{
+            core::ErrorKind::kNotFound, "lesson_not_found", "такого занятия здесь нет"};
+    }
+
     /// Занятие, занимающее слот. Отменённое и не состоявшееся его освобождают —
     /// ровно как условие `where` у ограничения базы.
     static bool Busy(const Lesson& lesson) noexcept {
@@ -100,6 +131,34 @@ private:
     }
 
     std::vector<Lesson> kept_;
+};
+
+/// История занятия в памяти. Пишется только вперёд — как и в базе.
+class FakeLessonHistory final : public ports::LessonHistory {
+public:
+    core::Result<void> Record(const LessonHistoryEntry& entry) override {
+        kept_.push_back(entry);
+        return {};
+    }
+
+    std::vector<LessonHistoryEntry> Of(const core::TenantId& tenant,
+                                       const core::LessonId& lesson) const override {
+        std::vector<LessonHistoryEntry> found;
+        for (const auto& entry : kept_) {
+            if (entry.tenant == tenant && entry.lesson == lesson) {
+                found.push_back(entry);
+            }
+        }
+        std::stable_sort(found.begin(),
+                         found.end(),
+                         [](const LessonHistoryEntry& left, const LessonHistoryEntry& right) {
+                             return left.at < right.at;
+                         });
+        return found;
+    }
+
+private:
+    std::vector<LessonHistoryEntry> kept_;
 };
 
 /// Доступность в памяти. Записывается целиком — как и в базе.

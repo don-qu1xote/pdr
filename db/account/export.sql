@@ -63,6 +63,9 @@ select jsonb_pretty(jsonb_build_object(
         'scheduling_lesson_participant',
         coalesce((select jsonb_agg(to_jsonb(t) order by t.lesson_id, t.participant_id)
                     from scheduling_lesson_participant t), '[]'::jsonb),
+        'scheduling_lesson_history',
+        coalesce((select jsonb_agg(to_jsonb(t) order by t.lesson_id, t.at)
+                    from scheduling_lesson_history t), '[]'::jsonb),
         'scheduling_series',
         coalesce((select jsonb_agg(to_jsonb(t) order by t.starts_on, t.id)
                     from scheduling_series t), '[]'::jsonb),

@@ -51,9 +51,12 @@ UNCOVERED = {
         'jobs_run_last',
         'observability_product_event_record',
     },
-    'непроверенный путь: занятие переводят из состояния в состояние и серию правят '
-    'не ручками этого набора — отмена, перенос и подтверждение живут в своих '
-    'задачах, а запрос под них уже написан и проверен живым набором (PDR-SCHED-03)': {
+    'непроверенный путь: правила отмены, переноса и неявки написаны и проверены '
+    'доменом и живым набором, но ручек под них в этом процессе ещё нет — звать '
+    'эти запросы снаружи пока нечем (PDR-SCHED-05)': {
+        'scheduling_lesson_history_add',
+        'scheduling_lesson_history_of',
+        'scheduling_lesson_move',
         'scheduling_lesson_set_state',
         'scheduling_series_exception_record',
         'scheduling_series_exceptions_of',

@@ -4,86 +4,20 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <string_view>
 #include <vector>
 
 #include "core/errors.hpp"
+#include "core/money.hpp"
 #include "core/types/ids.hpp"
 #include "core/types/local_time.hpp"
 #include "core/types/time.hpp"
+#include "scheduling/core/cancellation_policy.hpp"
+#include "scheduling/core/lesson_history.hpp"
+#include "scheduling/core/lesson_state.hpp"
 
 namespace pdr::scheduling {
-
-/// Состояние занятия. Список закрытый, и свободного поля у состояния нет:
-/// строка в этом месте означает, что через полгода в базе окажется «held »,
-/// «HELD» и «проведено», а сравнивать их будет некому.
-enum class LessonState : std::uint8_t {
-    kPlanned,  ///< назначено, подтверждения ещё нет
-    kConfirmed,  ///< подтверждено — обеими сторонами или правилом
-    kHeld,       ///< состоялось
-    kCancelled,  ///< отменено до начала
-    kNoShow,     ///< никто не пришёл
-
-    /// ГРАНИЦА СПИСКА, а не состояние.
-    kBoundary,
-};
-
-std::string_view Name(LessonState state) noexcept;
-
-inline constexpr std::array<LessonState, 5> kEveryLessonState{
-    LessonState::kPlanned,
-    LessonState::kConfirmed,
-    LessonState::kHeld,
-    LessonState::kCancelled,
-    LessonState::kNoShow,
-};
-
-static_assert(kEveryLessonState.size() == static_cast<std::size_t>(LessonState::kBoundary),
-              "состояние заведено, а в kEveryLessonState его нет: обход пропустит его, и "
-              "«каждый недопустимый переход отклонён» станет непроверяемым");
-
-/// Что случилось с занятием. Событие — не состояние: «отменить» можно из двух
-/// состояний, и приводит оно в одно.
-enum class LessonEvent : std::uint8_t {
-    kConfirm,
-    kHold,
-    kCancel,
-    kMarkNoShow,
-
-    /// ГРАНИЦА СПИСКА, а не событие.
-    kBoundary,
-};
-
-std::string_view Name(LessonEvent event) noexcept;
-
-inline constexpr std::array<LessonEvent, 4> kEveryLessonEvent{
-    LessonEvent::kConfirm,
-    LessonEvent::kHold,
-    LessonEvent::kCancel,
-    LessonEvent::kMarkNoShow,
-};
-
-static_assert(kEveryLessonEvent.size() == static_cast<std::size_t>(LessonEvent::kBoundary),
-              "событие заведено, а в kEveryLessonEvent его нет: обход по всем парам "
-              "пропустит его, и недопустимый переход останется непроверенным");
-
-/// МАШИНА СОСТОЯНИЙ ЗАНЯТИЯ — ЯВНАЯ И ОДНА.
-///
-/// Разрешено ровно семь переходов:
-///
-///     Planned   + Confirm    -> Confirmed
-///     Planned   + Hold       -> Held
-///     Planned   + Cancel     -> Cancelled
-///     Planned   + MarkNoShow -> NoShow
-///     Confirmed + Hold       -> Held
-///     Confirmed + Cancel     -> Cancelled
-///     Confirmed + MarkNoShow -> NoShow
-///
-/// `Held`, `Cancelled` и `NoShow` — конечные: состоявшееся занятие не
-/// отменяется задним числом, отменённое не проводится. Всё, чего нет в списке,
-/// возвращает отказ `lesson_transition_not_allowed`, а не бросает исключение:
-/// «нажали отмену на уже проведённом» — обычный ответ домена, а не авария.
-core::Result<LessonState> Transition(LessonState from, LessonEvent event);
 
 /// Занятие в выставленном репетитором слоте.
 ///
@@ -117,6 +51,56 @@ public:
     /// Занятие после события. Возвращается НОВОЕ значение: занятие — величина, а
     /// не изменяемый объект, и «состояние поменялось у копии» здесь невыразимо.
     core::Result<Lesson> After(LessonEvent event) const;
+
+    /// Занятие после операции вместе с расчётом и записью в историю.
+    ///
+    /// Три вещи разом, потому что порознь они расходятся: состояние поменялось,
+    /// а удержание посчитали по старому; удержание посчитали, а в историю не
+    /// записали. Операция отдаёт всё, что она произвела, и вызывающему остаётся
+    /// сохранить это.
+    struct Change;
+
+    /// ОТМЕНА УЧЕНИКОМ. Внутри окна — бесплатно, позже — доля из политики.
+    core::Result<Change> CancelByStudent(const CancellationPolicy& policy,
+                                         const core::Money& price,
+                                         const core::PersonId& actor,
+                                         core::Instant now) const;
+
+    /// ОТМЕНА РЕПЕТИТОРОМ — ВСЕГДА БЕЗ УДЕРЖАНИЯ, КАКОЙ БЫ НИ БЫЛА ПОЛИТИКА.
+    ///
+    /// Политики в списке доводов поэтому нет вовсе: «независимо от политики» —
+    /// не оговорка в комментарии, а отсутствующий параметр, и обойти его нечем.
+    /// Валюта нужна затем, что нуль тоже в чём-то измеряется; цена — нет, её
+    /// здесь не на что умножать.
+    core::Result<Change> CancelByTutor(const core::CurrencyCode& currency,
+                                       const core::PersonId& actor,
+                                       core::Instant now) const;
+
+    /// ПЕРЕНОС — НЕ «ОТМЕНА ПЛЮС СОЗДАНИЕ». Возвращается ТО ЖЕ занятие: тот же
+    /// `LessonId`, та же оплата, тот же прогресс. Новое занятие на этом месте
+    /// разорвало бы связь и с тем и с другим, и восстановить её было бы нечем.
+    ///
+    /// Сколько переносов уже было, считается по ИСТОРИИ, а не приходит числом:
+    /// число можно передать не то, а история — то самое место, где перенос и
+    /// записан.
+    core::Result<Change> Reschedule(const CancellationPolicy& policy,
+                                    const core::Money& price,
+                                    const core::PersonId& actor,
+                                    core::Instant to,
+                                    core::Instant now,
+                                    std::span<const LessonHistoryEntry> history) const;
+
+    /// Занятие состоялось. Удержано всё — и это не удержание, а плата.
+    core::Result<Change> MarkHeld(const core::Money& price,
+                                  const core::PersonId& actor,
+                                  core::Instant now) const;
+
+    /// Никто не пришёл. Доля своя, отдельная от поздней отмены: не пришедший и
+    /// отменивший за час — разные поступки.
+    core::Result<Change> MarkNoShow(const CancellationPolicy& policy,
+                                    const core::Money& price,
+                                    const core::PersonId& actor,
+                                    core::Instant now) const;
 
     const core::LessonId& Id() const noexcept {
         return id_;
@@ -176,6 +160,13 @@ private:
     Duration duration_;
     core::TimeZone zone_;
     LessonState state_;
+};
+
+struct Lesson::Change final {
+    /// То же занятие в новом виде. `Id()` у него ТОТ ЖЕ — и у переноса тоже.
+    Lesson lesson;
+    CancellationOutcome outcome;
+    LessonHistoryEntry record;
 };
 
 }  // namespace pdr::scheduling

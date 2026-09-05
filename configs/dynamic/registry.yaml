@@ -207,7 +207,6 @@ PDR_BOOKING_WINDOWS:
   kind: продуктовая
   owner: владелец продукта
   jurisdiction: да
-  awaits: SCHED
   breaks: >-
     Окно записи слишком короткое — ученик не может записаться на завтра, и
     расписание пустует при живом спросе. Окно отмены слишком длинное — репетитор
@@ -230,6 +229,46 @@ PDR_BOOKING_WINDOWS:
         type: integer
         minimum: 0
         maximum: 336
+
+PDR_CANCELLATION_POLICY:
+  description: >-
+    Сколько удерживается при поздней отмене и при неявке и сколько переносов
+    прощается. Окна здесь нет намеренно: оно уже записано соседней величиной,
+    и второе его место разошлось бы с первым.
+    Это УМОЛЧАНИЕ ПЛОЩАДКИ: политика принадлежит тенанту и настраивается
+    репетитором, а сюда он не заглядывает.
+  kind: продуктовая
+  owner: владелец продукта
+  jurisdiction: да
+  breaks: >-
+    Удержание в сто процентов при неявке законно не везде, а нулевое означает,
+    что расписание репетитора можно занять и не прийти без последствий.
+    Бесплатных переносов много — отмена переименовывается в перенос и обходит
+    окно целиком; ни одного — переносить дешевле отменой, и расписание вместо
+    переносов заполняется отменами.
+  default:
+    {"late_retention_percent": 50, "no_show_retention_percent": 100,
+     "free_reschedules": 1}
+  schema:
+    type: object
+    additionalProperties: false
+    required: [late_retention_percent, no_show_retention_percent, free_reschedules]
+    properties:
+      late_retention_percent:
+        description: доля удержания при отмене позже окна
+        type: integer
+        minimum: 0
+        maximum: 100
+      no_show_retention_percent:
+        description: доля удержания при неявке
+        type: integer
+        minimum: 0
+        maximum: 100
+      free_reschedules:
+        description: сколько переносов проходит без удержания
+        type: integer
+        minimum: 0
+        maximum: 10
 
 PDR_LESSONS_PER_DAY_LIMIT:
   description: >-

@@ -13,15 +13,40 @@ struct Allowed final {
     LessonState to;
 };
 
-constexpr std::array<Allowed, 7> kAllowedTransitions{
+constexpr std::array<Allowed, 9> kAllowedTransitions{
     Allowed{LessonState::kPlanned, LessonEvent::kConfirm, LessonState::kConfirmed},
     Allowed{LessonState::kPlanned, LessonEvent::kHold, LessonState::kHeld},
     Allowed{LessonState::kPlanned, LessonEvent::kCancel, LessonState::kCancelled},
     Allowed{LessonState::kPlanned, LessonEvent::kMarkNoShow, LessonState::kNoShow},
+    Allowed{LessonState::kPlanned, LessonEvent::kReschedule, LessonState::kPlanned},
     Allowed{LessonState::kConfirmed, LessonEvent::kHold, LessonState::kHeld},
     Allowed{LessonState::kConfirmed, LessonEvent::kCancel, LessonState::kCancelled},
     Allowed{LessonState::kConfirmed, LessonEvent::kMarkNoShow, LessonState::kNoShow},
+    Allowed{LessonState::kConfirmed, LessonEvent::kReschedule, LessonState::kConfirmed},
 };
+
+core::Money Nothing(const core::CurrencyCode& currency) noexcept {
+    return core::Money::FromMinorUnits(0, currency);
+}
+
+core::Error NotCountable() {
+    return core::Error{core::ErrorKind::kValidation,
+                       "retention_not_countable",
+                       "доля от такой суммы не считается: слишком велика"};
+}
+
+Lesson::Change Made(Lesson lesson,
+                    core::Money retained,
+                    RetentionReason reason,
+                    LessonAction action,
+                    const core::PersonId& actor,
+                    core::Instant now,
+                    std::string details) {
+    LessonHistoryEntry record{lesson.Tenant(), lesson.Id(), actor, action, now, std::move(details)};
+    CancellationOutcome outcome{lesson.State(), std::move(retained), reason};
+
+    return Lesson::Change{std::move(lesson), std::move(outcome), std::move(record)};
+}
 
 }  // namespace
 
@@ -53,6 +78,8 @@ std::string_view Name(LessonEvent event) noexcept {
             return "cancel";
         case LessonEvent::kMarkNoShow:
             return "mark_no_show";
+        case LessonEvent::kReschedule:
+            return "reschedule";
         case LessonEvent::kBoundary:
             break;
     }
@@ -147,6 +174,148 @@ core::Result<Lesson> Lesson::After(LessonEvent event) const {
 
 core::TimeRange Lesson::Span() const {
     return core::TimeRange::Compose(starts_at_, EndsAt()).Value();
+}
+
+core::Result<Lesson::Change> Lesson::CancelByStudent(const CancellationPolicy& policy,
+                                                     const core::Money& price,
+                                                     const core::PersonId& actor,
+                                                     core::Instant now) const {
+    auto cancelled = After(LessonEvent::kCancel);
+    if (!cancelled.HasValue()) {
+        return cancelled.Failure();
+    }
+
+    if (policy.Free(starts_at_, now)) {
+        return Made(cancelled.Value(),
+                    Nothing(price.Currency()),
+                    RetentionReason::kInsideFreeWindow,
+                    LessonAction::kCancelledByStudent,
+                    actor,
+                    now,
+                    std::string{});
+    }
+
+    const auto retained = policy.LateRetention().Of(price);
+    if (!retained.has_value()) {
+        return NotCountable();
+    }
+
+    return Made(cancelled.Value(),
+                *retained,
+                RetentionReason::kLateCancellation,
+                LessonAction::kCancelledByStudent,
+                actor,
+                now,
+                std::string{});
+}
+
+core::Result<Lesson::Change> Lesson::CancelByTutor(const core::CurrencyCode& currency,
+                                                   const core::PersonId& actor,
+                                                   core::Instant now) const {
+    auto cancelled = After(LessonEvent::kCancel);
+    if (!cancelled.HasValue()) {
+        return cancelled.Failure();
+    }
+
+    return Made(cancelled.Value(),
+                Nothing(currency),
+                RetentionReason::kTutorCancelled,
+                LessonAction::kCancelledByTutor,
+                actor,
+                now,
+                std::string{});
+}
+
+core::Result<Lesson::Change> Lesson::Reschedule(const CancellationPolicy& policy,
+                                                const core::Money& price,
+                                                const core::PersonId& actor,
+                                                core::Instant to,
+                                                core::Instant now,
+                                                std::span<const LessonHistoryEntry> history) const {
+    const auto moved = After(LessonEvent::kReschedule);
+    if (!moved.HasValue()) {
+        return moved.Failure();
+    }
+    if (to <= now) {
+        return core::Error{core::ErrorKind::kValidation,
+                           "lesson_starts_in_past",
+                           "записаться назад во времени нельзя"};
+    }
+    if (to == starts_at_) {
+        return core::Error{core::ErrorKind::kValidation,
+                           "lesson_moved_nowhere",
+                           "занятие переносят на другое время, а не на то же самое"};
+    }
+
+    const Lesson placed{id_, tenant_, tutor_, participants_, to, duration_, zone_, state_};
+
+    const auto moves = std::count_if(history.begin(), history.end(), [](const auto& entry) {
+        return entry.action == LessonAction::kRescheduled;
+    });
+    const std::string details = "was=" + std::to_string(starts_at_.UnixMicros());
+
+    if (moves < policy.FreeReschedules() || policy.Free(starts_at_, now)) {
+        return Made(placed,
+                    Nothing(price.Currency()),
+                    RetentionReason::kFreeReschedule,
+                    LessonAction::kRescheduled,
+                    actor,
+                    now,
+                    details);
+    }
+
+    const auto retained = policy.LateRetention().Of(price);
+    if (!retained.has_value()) {
+        return NotCountable();
+    }
+
+    return Made(placed,
+                *retained,
+                RetentionReason::kLateReschedule,
+                LessonAction::kRescheduled,
+                actor,
+                now,
+                details);
+}
+
+core::Result<Lesson::Change> Lesson::MarkHeld(const core::Money& price,
+                                              const core::PersonId& actor,
+                                              core::Instant now) const {
+    auto held = After(LessonEvent::kHold);
+    if (!held.HasValue()) {
+        return held.Failure();
+    }
+
+    return Made(held.Value(),
+                price,
+                RetentionReason::kLessonHeld,
+                LessonAction::kHeld,
+                actor,
+                now,
+                std::string{});
+}
+
+core::Result<Lesson::Change> Lesson::MarkNoShow(const CancellationPolicy& policy,
+                                                const core::Money& price,
+                                                const core::PersonId& actor,
+                                                core::Instant now) const {
+    auto missed = After(LessonEvent::kMarkNoShow);
+    if (!missed.HasValue()) {
+        return missed.Failure();
+    }
+
+    const auto retained = policy.NoShowRetention().Of(price);
+    if (!retained.has_value()) {
+        return NotCountable();
+    }
+
+    return Made(missed.Value(),
+                *retained,
+                RetentionReason::kNoShow,
+                LessonAction::kNoShow,
+                actor,
+                now,
+                std::string{});
 }
 
 }  // namespace pdr::scheduling

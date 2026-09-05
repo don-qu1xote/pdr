@@ -51,6 +51,14 @@ public:
     /// Пересечение у репетитора запрещено ограничением
     /// `scheduling_lesson_no_overlap`. Фейк, который молча принимает такое
     /// занятие, делает unit-прогон зелёным на поведении, которого в проде нет.
+    core::Result<void> SetState(const Lesson& lesson) override {
+        return Replace(lesson);
+    }
+
+    core::Result<void> Move(const Lesson& lesson) override {
+        return Replace(lesson);
+    }
+
     core::Result<void> Save(const Lesson& lesson) override {
         for (const auto& kept : saved_) {
             if (kept.Tutor() == lesson.Tutor() && Overlaps(kept, lesson, kNoBuffer)) {
@@ -94,6 +102,17 @@ public:
     }
 
 private:
+    core::Result<void> Replace(const Lesson& lesson) {
+        for (auto& kept : saved_) {
+            if (kept.Id() == lesson.Id()) {
+                kept = lesson;
+                return {};
+            }
+        }
+        return core::Error{
+            core::ErrorKind::kNotFound, "lesson_not_found", "такого занятия здесь нет"};
+    }
+
     std::vector<Lesson> saved_;
 };
 

@@ -9,6 +9,7 @@
 add_library(pdr_core STATIC
     src/core/errors.cpp
     src/core/money.cpp
+    src/core/percent.cpp
     src/core/secrets.cpp
     src/core/types/ids.cpp
     src/core/types/local_time.cpp

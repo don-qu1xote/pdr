@@ -13,6 +13,7 @@
 #include "core/types/local_time.hpp"
 #include "scheduling/core/availability.hpp"
 #include "scheduling/core/lesson.hpp"
+#include "scheduling/core/lesson_history.hpp"
 #include "scheduling/core/recurrence.hpp"
 #include "scheduling_ground.hpp"
 
@@ -187,7 +188,113 @@ PDR_CONTRACT_TEST_P(LessonRepositoryContract, AnUnknownIdHoldsNothing) {
     EXPECT_FALSE(lessons.Find(ContractGround::Tenant(), this->world_.NextLessonId()).has_value());
 }
 
+PDR_CONTRACT_TEST_P(LessonRepositoryContract, StateChangesOnTheSameRow) {
+    auto& lessons = this->world_.Lessons();
+    const auto lesson =
+        ContractGround::ALesson(this->world_.NextLessonId(), ContractGround::Utc(2026, 3, 2, 15));
+    ASSERT_TRUE(lessons.Save(lesson).HasValue());
+
+    const auto cancelled = lesson.After(LessonEvent::kCancel);
+    ASSERT_TRUE(cancelled.HasValue());
+    ASSERT_TRUE(lessons.SetState(cancelled.Value()).HasValue());
+
+    const auto found = lessons.Find(ContractGround::Tenant(), lesson.Id());
+    ASSERT_TRUE(found.has_value());
+    EXPECT_EQ(found->State(), LessonState::kCancelled);
+}
+
+/// ПЕРЕНОС НЕ ЗАВОДИТ ВТОРОГО ЗАНЯТИЯ: строка та же, идентификатор тот же, и
+/// на старом месте занятия больше нет.
+PDR_CONTRACT_TEST_P(LessonRepositoryContract, AMovedLessonKeepsItsIdAndLeavesTheOldSlot) {
+    auto& lessons = this->world_.Lessons();
+    const auto was = ContractGround::Utc(2026, 3, 2, 15);
+    const auto now = ContractGround::Utc(2026, 3, 2, 17);
+    const auto lesson = ContractGround::ALesson(this->world_.NextLessonId(), was);
+    ASSERT_TRUE(lessons.Save(lesson).HasValue());
+
+    ASSERT_TRUE(lessons.Move(ContractGround::ALesson(lesson.Id(), now)).HasValue());
+
+    const auto found = lessons.Find(ContractGround::Tenant(), lesson.Id());
+    ASSERT_TRUE(found.has_value());
+    EXPECT_TRUE(found->StartsAt() == now);
+    EXPECT_FALSE(
+        lessons.FindAtSlot(ContractGround::Tenant(), ContractGround::Tutor(), was).has_value());
+}
+
+PDR_CONTRACT_TEST_P(LessonRepositoryContract, AMoveOntoATakenSlotIsRefused) {
+    auto& lessons = this->world_.Lessons();
+    const auto taken = ContractGround::Utc(2026, 3, 2, 15);
+    ASSERT_TRUE(
+        lessons.Save(ContractGround::ALesson(this->world_.NextLessonId(), taken)).HasValue());
+
+    const auto lesson =
+        ContractGround::ALesson(this->world_.NextLessonId(), ContractGround::Utc(2026, 3, 2, 17));
+    ASSERT_TRUE(lessons.Save(lesson).HasValue());
+
+    const auto refused = lessons.Move(ContractGround::ALesson(lesson.Id(), taken));
+
+    ASSERT_FALSE(refused.HasValue());
+    EXPECT_EQ(refused.Failure().Kind(), core::ErrorKind::kConflict);
+    EXPECT_EQ(refused.Failure().Code(), "slot_already_taken");
+}
+
+template<class World>
+class LessonHistoryContract : public ::testing::Test {
+protected:
+    World world_;
+};
+
+PDR_CONTRACT_SUITE_P(LessonHistoryContract);
+
+PDR_CONTRACT_TEST_P(LessonHistoryContract, WhatWasNeverDoneHasNoHistory) {
+    EXPECT_TRUE(
+        this->world_.History().Of(ContractGround::Tenant(), this->world_.NextLessonId()).empty());
+}
+
+/// История читается В ПОРЯДКЕ СОБЫТИЙ, а не в порядке записи: спор «я отменял
+/// заранее» разбирают по времени, и перемешанный список его не разбирает.
+PDR_CONTRACT_TEST_P(LessonHistoryContract, LinesComeBackOldestFirst) {
+    auto& lessons = this->world_.Lessons();
+    auto& history = this->world_.History();
+
+    const auto lesson =
+        ContractGround::ALesson(this->world_.NextLessonId(), ContractGround::Utc(2026, 3, 2, 15));
+    ASSERT_TRUE(lessons.Save(lesson).HasValue());
+
+    ASSERT_TRUE(history
+                    .Record(LessonHistoryEntry{ContractGround::Tenant(),
+                                               lesson.Id(),
+                                               ContractGround::Student(),
+                                               LessonAction::kRescheduled,
+                                               ContractGround::Utc(2026, 3, 1, 12),
+                                               "was=1"})
+                    .HasValue());
+    ASSERT_TRUE(history
+                    .Record(LessonHistoryEntry{ContractGround::Tenant(),
+                                               lesson.Id(),
+                                               ContractGround::Tutor(),
+                                               LessonAction::kCancelledByTutor,
+                                               ContractGround::Utc(2026, 3, 1, 9),
+                                               ""})
+                    .HasValue());
+
+    const auto written = history.Of(ContractGround::Tenant(), lesson.Id());
+
+    ASSERT_EQ(written.size(), 2U);
+    EXPECT_EQ(written.front().action, LessonAction::kCancelledByTutor);
+    EXPECT_TRUE(written.front().actor == ContractGround::Tutor());
+    EXPECT_EQ(written.back().action, LessonAction::kRescheduled);
+    EXPECT_EQ(written.back().details, "was=1");
+}
+
+PDR_CONTRACT_REGISTER_P(LessonHistoryContract,
+                        WhatWasNeverDoneHasNoHistory,
+                        LinesComeBackOldestFirst);
+
 PDR_CONTRACT_REGISTER_P(LessonRepositoryContract,
+                        StateChangesOnTheSameRow,
+                        AMovedLessonKeepsItsIdAndLeavesTheOldSlot,
+                        AMoveOntoATakenSlotIsRefused,
                         SavedLessonIsFoundAtItsSlot,
                         SavedLessonIsFoundByItsId,
                         AnUnknownIdHoldsNothing,
@@ -417,4 +524,5 @@ PDR_CONTRACT_REGISTER_P(RecurrenceRepositoryContract,
 #define PDR_SCHEDULING_CONTRACT(prefix, world)                                                   \
     PDR_CONTRACT_INSTANTIATE_P(prefix, LessonRepositoryContract, ::testing::Types<world>);       \
     PDR_CONTRACT_INSTANTIATE_P(prefix, AvailabilityRepositoryContract, ::testing::Types<world>); \
-    PDR_CONTRACT_INSTANTIATE_P(prefix, RecurrenceRepositoryContract, ::testing::Types<world>)
+    PDR_CONTRACT_INSTANTIATE_P(prefix, RecurrenceRepositoryContract, ::testing::Types<world>);   \
+    PDR_CONTRACT_INSTANTIATE_P(prefix, LessonHistoryContract, ::testing::Types<world>)

@@ -37,6 +37,10 @@ public:
                                       const core::PersonId& participant,
                                       const core::TimeRange& window) const override;
 
+    core::Result<void> SetState(const Lesson& lesson) override;
+
+    core::Result<void> Move(const Lesson& lesson) override;
+
     core::Result<void> Save(const Lesson& lesson) override;
 
 private:

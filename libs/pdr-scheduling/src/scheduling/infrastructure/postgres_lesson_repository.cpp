@@ -219,6 +219,28 @@ std::vector<Lesson> PostgresLessonRepository::OfParticipant(const core::TenantId
     return Assemble<SchedulingLessonOfParticipantRow>(scope_, tenant, rows);
 }
 
+core::Result<void> PostgresLessonRepository::SetState(const Lesson& lesson) {
+    scope_.Session().Execute(sql::kSchedulingLessonSetState,
+                             lesson.Tenant(),
+                             lesson.Id(),
+                             std::string{Name(lesson.State())});
+    return {};
+}
+
+core::Result<void> PostgresLessonRepository::Move(const Lesson& lesson) {
+    try {
+        scope_.Session().Execute(sql::kSchedulingLessonMove,
+                                 lesson.Tenant(),
+                                 lesson.Id(),
+                                 lesson.StartsAt(),
+                                 lesson.EndsAt());
+    } catch (const userver::storages::postgres::ExclusionViolation&) {
+        return core::Error{
+            core::ErrorKind::kConflict, "slot_already_taken", "это время у репетитора уже занято"};
+    }
+    return {};
+}
+
 core::Result<void> PostgresLessonRepository::Save(const Lesson& lesson) {
     try {
         scope_.Session().Execute(sql::kSchedulingLessonSave,

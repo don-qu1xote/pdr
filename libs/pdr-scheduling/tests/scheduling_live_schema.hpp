@@ -18,13 +18,19 @@ namespace pdr::scheduling::testing {
 
 /// `Cluster::Execute` готовит запрос, а готовый запрос состоит ровно из одной
 /// команды, — поэтому файл разбирается на команды. Разбор простой намеренно: в
-/// V013 нет ни долларовых кавычек, ни точек с запятой внутри строк, и
-/// усложнять его до настоящего разборщика значило бы заводить вторую
+/// миграциях расписания нет ни долларовых кавычек, ни точек с запятой внутри
+/// строк, и усложнять его до настоящего разборщика значило бы заводить вторую
 /// применялку миграций.
+///
+/// Миграций уже две, и читаются они ПО ПОРЯДКУ: история занятия ссылается на
+/// само занятие внешним ключом, и в обратном порядке схема не создаётся.
 inline std::vector<std::string> StatementsOfSchedulingMigration() {
-    std::ifstream file{std::string{PDR_SOURCE_DIR} + "/db/migrations/V013__scheduling.sql"};
     std::stringstream whole;
-    whole << file.rdbuf();
+    for (const auto* name :
+         {"/db/migrations/V013__scheduling.sql", "/db/migrations/V014__lesson_history.sql"}) {
+        std::ifstream file{std::string{PDR_SOURCE_DIR} + name};
+        whole << file.rdbuf() << ";\n";
+    }
 
     std::string text;
     std::string line;
@@ -58,7 +64,8 @@ inline bool BlankStatement(const std::string& statement) {
 /// её никто не создавал.
 inline void ApplySchedulingSchema(const userver::storages::postgres::ClusterPtr& cluster) {
     cluster->Execute(userver::storages::postgres::ClusterHostType::kMaster,
-                     "DROP TABLE IF EXISTS scheduling_series_exception, "
+                     "DROP TABLE IF EXISTS scheduling_lesson_history, "
+                     "scheduling_series_exception, "
                      "scheduling_series_participant, scheduling_series, "
                      "scheduling_lesson_participant, scheduling_lesson, "
                      "scheduling_availability_exception, scheduling_availability CASCADE");

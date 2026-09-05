@@ -874,6 +874,53 @@
         "namespace": "public",
         "version": 0
       },
+      "public.scheduling_lesson_history": {
+        "columns": [
+          {
+            "name": "tenant_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "lesson_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "actor_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "action",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "details",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "created_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          }
+        ],
+        "name": "scheduling_lesson_history",
+        "namespace": "public",
+        "version": 0
+      },
       "public.scheduling_lesson_participant": {
         "columns": [
           {
@@ -1037,7 +1084,7 @@
     },
     "types": {}
   },
-  "hashsum": "985fa34e78f3a5e6c226dd12b5e75b916f7bb673f6a887e3ae225f73069fc0f6",
+  "hashsum": "ef0af93d3ab9dcb89ad4306199a18709674508b1a25adcfc970496e7041d0b3c",
   "queries": [
     {
       "args": [
@@ -1950,6 +1997,42 @@
         },
         {
           "name": "state",
+          "nullable": true,
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "nullable": true,
+          "type": "uuid"
+        }
+      ],
+      "cardinality": "many",
+      "name": "scheduling_lesson_history_of",
+      "returns": [
+        {
+          "name": "actor_id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "action",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "details",
           "nullable": true,
           "type": "text"
         }

@@ -30,9 +30,11 @@ const std::set<std::pair<LessonState, LessonEvent>> kAllowed{
     {LessonState::kPlanned, LessonEvent::kHold},
     {LessonState::kPlanned, LessonEvent::kCancel},
     {LessonState::kPlanned, LessonEvent::kMarkNoShow},
+    {LessonState::kPlanned, LessonEvent::kReschedule},
     {LessonState::kConfirmed, LessonEvent::kHold},
     {LessonState::kConfirmed, LessonEvent::kCancel},
     {LessonState::kConfirmed, LessonEvent::kMarkNoShow},
+    {LessonState::kConfirmed, LessonEvent::kReschedule},
 };
 
 }  // namespace

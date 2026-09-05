@@ -23,6 +23,7 @@
 #include "fakes/fake_id_generator.hpp"
 #include "infrastructure/db/tenant_context.hpp"
 #include "scheduling/infrastructure/postgres_availability_repository.hpp"
+#include "scheduling/infrastructure/postgres_lesson_history.hpp"
 #include "scheduling/infrastructure/postgres_lesson_repository.hpp"
 #include "scheduling/infrastructure/postgres_recurrence_repository.hpp"
 #include "scheduling_contract.hpp"
@@ -42,7 +43,8 @@ public:
                                  userver::storages::postgres::TransactionOptions{})},
           lessons_{scope_},
           availability_{scope_, ids_},
-          series_{scope_} {}
+          series_{scope_},
+          history_{scope_, ids_} {}
 
     ports::LessonRepository& Lessons() noexcept {
         return lessons_;
@@ -52,6 +54,9 @@ public:
     }
     ports::RecurrenceRepository& Series() noexcept {
         return series_;
+    }
+    ports::LessonHistory& History() noexcept {
+        return history_;
     }
 
     core::LessonId NextLessonId() {
@@ -77,6 +82,7 @@ private:
     PostgresLessonRepository lessons_;
     PostgresAvailabilityRepository availability_;
     PostgresRecurrenceRepository series_;
+    PostgresLessonHistory history_;
     int issued_{100};
 };
 

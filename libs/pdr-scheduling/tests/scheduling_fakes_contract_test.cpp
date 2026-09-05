@@ -24,6 +24,9 @@ public:
     ports::RecurrenceRepository& Series() noexcept {
         return series_;
     }
+    ports::LessonHistory& History() noexcept {
+        return history_;
+    }
 
     core::LessonId NextLessonId() {
         return pdr::testing::Numbered<core::LessonId>(++issued_);
@@ -37,6 +40,7 @@ private:
     FakeLessons lessons_;
     FakeAvailability availability_;
     FakeSeries series_;
+    FakeLessonHistory history_;
     int issued_{100};
 };
 

@@ -4,7 +4,7 @@
      правка переживёт ровно до следующей пересборки. Изменить схему — значит
      написать новую миграцию. -->
 
-Собрано из миграций: 13. Таблиц: 26.
+Собрано из миграций: 14. Таблиц: 27.
 
 Правила, которым подчиняется каждая колонка, — в
 [migrations.md](migrations.md). Как устроена изоляция арендаторов и почему у
@@ -704,6 +704,39 @@
 
 * `scheduling_lesson_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
 
+### scheduling_lesson_history
+
+Кто, что и когда сделал с занятием. Пишется только вперёд: правок и удалений у истории не бывает.
+
+Заведена миграцией `V014__lesson_history.sql`.
+
+| Колонка | Тип | Определение |
+| --- | --- | --- |
+| `tenant_id` | `uuid` | uuid not null |
+| `id` | `uuid` | uuid not null |
+| `lesson_id` | `uuid` | uuid not null |
+| `actor_id` | `uuid` | uuid not null |
+| `action` | `text` | text not null |
+| `at` | `timestamptz` | timestamptz not null |
+| `details` | `text` | text not null default |
+| `created_at` | `timestamptz` | timestamptz not null default now() |
+
+Ограничения:
+
+* `constraint scheduling_lesson_history_pk primary key (tenant_id, id)`
+* `constraint scheduling_lesson_history_lesson foreign key (tenant_id, lesson_id) references scheduling_lesson (tenant_id, id) on delete cascade`
+* `constraint scheduling_lesson_history_action_known check (action in ( , , , , , , ))`
+
+Индексы:
+
+* `scheduling_lesson_history_by_lesson` — обычный, `(tenant_id, lesson_id, at)`
+
+Построчная защита включена и форсирована.
+
+Политики:
+
+* `scheduling_lesson_history_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
+
 ### scheduling_lesson_participant
 
 Кто занимается на этом занятии. Отдельная таблица, потому что участник в домене — вектор.
@@ -850,3 +883,4 @@
 1. `V011__consent.sql` — identity_consent
 1. `V012__system_tenant.sql` — без новых таблиц
 1. `V013__scheduling.sql` — scheduling_availability, scheduling_availability_exception, scheduling_lesson, scheduling_lesson_participant, scheduling_series, scheduling_series_participant, scheduling_series_exception
+1. `V014__lesson_history.sql` — scheduling_lesson_history

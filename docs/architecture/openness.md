@@ -117,6 +117,7 @@
 | `scheduling_availability_exception` | дни, которые живут не по недельному правилу: выходные и иные часы |
 | `scheduling_lesson` | занятия: начало и конец, зона задумки, состояние |
 | `scheduling_lesson_participant` | кто занимается на каждом занятии |
+| `scheduling_lesson_history` | кто, что и когда делал с занятием: записал, перенёс, отменил |
 | `scheduling_series` | регулярные занятия правилом RRULE, а не развёрнутым списком |
 | `scheduling_series_participant` | кто занимается в серии |
 | `scheduling_series_exception` | отменённые и перенесённые вхождения серии |

@@ -6,13 +6,16 @@
 
 add_library(pdr_scheduling STATIC
     src/scheduling/application/book_lesson.cpp
+    src/scheduling/application/cancel_lesson.cpp
     src/scheduling/application/create_series.cpp
     src/scheduling/application/get_availability.cpp
     src/scheduling/application/get_lesson.cpp
     src/scheduling/application/list_lessons.cpp
     src/scheduling/application/set_availability.cpp
     src/scheduling/core/availability.cpp
+    src/scheduling/core/cancellation_policy.cpp
     src/scheduling/core/lesson.cpp
+    src/scheduling/core/lesson_history.cpp
     src/scheduling/core/overlap.cpp
     src/scheduling/core/recurrence.cpp
 )
@@ -23,14 +26,17 @@ target_link_libraries(pdr_scheduling PUBLIC pdr_core pdr_events pdr_identity PRI
 # собирается и проверяется без userver, а хранение требует его целиком.
 if(userver_FOUND)
     add_library(pdr_scheduling_postgres STATIC
+        src/scheduling/infrastructure/dynamic_config_cancellation_policies.cpp
         src/scheduling/infrastructure/postgres_availability_repository.cpp
+        src/scheduling/infrastructure/postgres_lesson_history.cpp
         src/scheduling/infrastructure/postgres_lesson_repository.cpp
         src/scheduling/infrastructure/postgres_recurrence_repository.cpp
     )
     target_include_directories(pdr_scheduling_postgres
                                PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_link_libraries(pdr_scheduling_postgres
-                          PUBLIC pdr_scheduling pdr_postgres pdr_application userver::postgresql)
+                          PUBLIC pdr_scheduling pdr_postgres pdr_application pdr_observe
+                                 pdr_dynamic_configs userver::postgresql)
 
     # РУЧКИ РАСПИСАНИЯ — отдельной целью, как и у identity: форма запроса, типы
     # контракта и опознание пришедшего нужны только им, а домену — нет.
@@ -62,6 +68,8 @@ if(PDR_BUILD_TESTS)
         tests/book_lesson_test.cpp
         tests/list_lessons_test.cpp
         tests/get_lesson_test.cpp
+        tests/cancel_lesson_test.cpp
+        tests/cancellation_test.cpp
         tests/create_series_test.cpp
         tests/set_availability_test.cpp
         tests/lesson_state_test.cpp
@@ -72,6 +80,14 @@ if(PDR_BUILD_TESTS)
     )
     pdr_unit_test_includes(src tests)
     pdr_unit_test_libraries(pdr_scheduling)
+
+    # УРОВЕНЬ ADAPTER: разбор динамического значения. Ни компилятор, ни фейк не
+    # скажут, что доля в полтораста процентов доедет до домена, — это говорит
+    # только настоящий разборщик штатного dynamic_config.
+    if(userver_FOUND)
+        pdr_adapter_test_sources(tests/dynamic_config_cancellation_policies_test.cpp)
+        pdr_adapter_test_libraries(pdr_scheduling_postgres pdr_testing)
+    endif()
 
     # УРОВЕНЬ LIVE: те же утверждения contract-набора, но против настоящих
     # адаптеров и живой базы. Схему живой набор берёт из db/migrations, а не из

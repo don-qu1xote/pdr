@@ -63,7 +63,7 @@ notes.note_published:
 
 scheduling.lesson_cancelled:
   description: Занятие отменено — тем, кто отменил, и за столько-то часов до начала.
-  closes: [booking_windows]
+  closes: [booking_windows, cancellation_policy]
   version: 1
   fields:
     hours_before_start:
@@ -78,7 +78,7 @@ scheduling.lesson_cancelled:
 
 scheduling.lesson_rescheduled:
   description: Занятие перенесено на другое время без отмены.
-  closes: [booking_windows]
+  closes: [booking_windows, cancellation_policy]
   version: 1
   fields:
     hours_before_start:
