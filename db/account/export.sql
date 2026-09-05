@@ -50,7 +50,28 @@ select jsonb_pretty(jsonb_build_object(
                     from identity_access_log t), '[]'::jsonb),
         'observability_product_event',
         coalesce((select jsonb_agg(to_jsonb(t) order by t.recorded_at, t.id)
-                    from observability_product_event t), '[]'::jsonb)
+                    from observability_product_event t), '[]'::jsonb),
+        'scheduling_availability',
+        coalesce((select jsonb_agg(to_jsonb(t) order by t.tutor_id, t.weekday, t.from_minute)
+                    from scheduling_availability t), '[]'::jsonb),
+        'scheduling_availability_exception',
+        coalesce((select jsonb_agg(to_jsonb(t) order by t.tutor_id, t.on_date)
+                    from scheduling_availability_exception t), '[]'::jsonb),
+        'scheduling_lesson',
+        coalesce((select jsonb_agg(to_jsonb(t) order by t.starts_at, t.id)
+                    from scheduling_lesson t), '[]'::jsonb),
+        'scheduling_lesson_participant',
+        coalesce((select jsonb_agg(to_jsonb(t) order by t.lesson_id, t.participant_id)
+                    from scheduling_lesson_participant t), '[]'::jsonb),
+        'scheduling_series',
+        coalesce((select jsonb_agg(to_jsonb(t) order by t.starts_on, t.id)
+                    from scheduling_series t), '[]'::jsonb),
+        'scheduling_series_participant',
+        coalesce((select jsonb_agg(to_jsonb(t) order by t.series_id, t.participant_id)
+                    from scheduling_series_participant t), '[]'::jsonb),
+        'scheduling_series_exception',
+        coalesce((select jsonb_agg(to_jsonb(t) order by t.series_id, t.occurrence_on)
+                    from scheduling_series_exception t), '[]'::jsonb)
     )
 ));
 

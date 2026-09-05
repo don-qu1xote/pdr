@@ -111,6 +111,7 @@ public:
                                          std::vector<core::PersonId> participants,
                                          core::Instant starts_at,
                                          Duration duration,
+                                         core::TimeZone zone,
                                          core::Instant now);
 
     /// Занятие после события. Возвращается НОВОЕ значение: занятие — величина, а
@@ -131,6 +132,16 @@ public:
     }
     core::Instant StartsAt() const noexcept {
         return starts_at_;
+    }
+
+    /// ЗОНА, В КОТОРОЙ ЗАНЯТИЕ ЗАДУМАНО, А НЕ ЗОНА ПОКАЗА.
+    ///
+    /// Момент отвечает на «когда», зона — на «во сколько это было по часам
+    /// того, кто назначал». Занятие в 18:00 по Берлину, перенесённое
+    /// государством на час, обязано остаться в 18:00 по Берлину, и без зоны
+    /// рядом с моментом это невыразимо (PDR-DB-01, docs/architecture/migrations.md).
+    const core::TimeZone& Zone() const noexcept {
+        return zone_;
     }
     Duration LessonDuration() const noexcept {
         return duration_;
@@ -154,6 +165,7 @@ private:
            std::vector<core::PersonId> participants,
            core::Instant starts_at,
            Duration duration,
+           core::TimeZone zone,
            LessonState state);
 
     core::LessonId id_;
@@ -162,6 +174,7 @@ private:
     std::vector<core::PersonId> participants_;
     core::Instant starts_at_;
     Duration duration_;
+    core::TimeZone zone_;
     LessonState state_;
 };
 

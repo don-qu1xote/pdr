@@ -1,5 +1,6 @@
 #include "scheduling/application/book_lesson.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <optional>
 #include <vector>
@@ -13,6 +14,7 @@
 #include "fakes/fake_clock.hpp"
 #include "fakes/fake_id_generator.hpp"
 #include "identity/contract.hpp"
+#include "scheduling/core/overlap.hpp"
 
 namespace pdr::scheduling {
 namespace {
@@ -20,6 +22,8 @@ namespace {
 using namespace std::chrono_literals;
 using pdr::scheduling::testing::LessonBuilder;
 using pdr::testing::Numbered;
+
+constexpr auto kNoBuffer = core::Instant::Duration::zero();
 
 /// Дубль чужого контракта. Обратите внимание: тест знает об identity ровно
 /// столько же, сколько сам модуль, — один заголовок.
@@ -57,8 +61,47 @@ public:
         return std::nullopt;
     }
 
-    void Save(const Lesson& lesson) override {
+    /// ФЕЙК ОТКАЗЫВАЕТ ТАМ ЖЕ, ГДЕ ОТКАЖЕТ БАЗА.
+    ///
+    /// Пересечение у репетитора запрещено ограничением
+    /// `scheduling_lesson_no_overlap`. Фейк, который молча принимает такое
+    /// занятие, делает unit-прогон зелёным на поведении, которого в проде нет.
+    core::Result<void> Save(const Lesson& lesson) override {
+        for (const auto& kept : saved_) {
+            if (kept.Tutor() == lesson.Tutor() && Overlaps(kept, lesson, kNoBuffer)) {
+                return core::Error{core::ErrorKind::kConflict,
+                                   "slot_already_taken",
+                                   "это время у репетитора уже занято"};
+            }
+        }
         saved_.push_back(lesson);
+        return {};
+    }
+
+    std::vector<Lesson> OfTutor(const core::TenantId&,
+                                const core::PersonId& tutor,
+                                const core::TimeRange& window) const override {
+        std::vector<Lesson> found;
+        for (const auto& lesson : saved_) {
+            if (lesson.Tutor() == tutor && window.Contains(lesson.StartsAt())) {
+                found.push_back(lesson);
+            }
+        }
+        return found;
+    }
+
+    std::vector<Lesson> OfParticipant(const core::TenantId&,
+                                      const core::PersonId& participant,
+                                      const core::TimeRange& window) const override {
+        std::vector<Lesson> found;
+        for (const auto& lesson : saved_) {
+            const auto& people = lesson.Participants();
+            if (std::find(people.begin(), people.end(), participant) != people.end() &&
+                window.Contains(lesson.StartsAt())) {
+                found.push_back(lesson);
+            }
+        }
+        return found;
     }
 
     const std::vector<Lesson>& Saved() const noexcept {
@@ -72,7 +115,13 @@ private:
 class BookLessonTest : public ::testing::Test {
 protected:
     BookLesson::Request Request() const {
-        return {tenant_, student_, tutor_, student_, clock_.Now() + 48h, 60min};
+        return {tenant_,
+                student_,
+                tutor_,
+                student_,
+                clock_.Now() + 48h,
+                60min,
+                core::TimeZone::Parse("Europe/Moscow").value()};
     }
 
     BookLesson Booking(const identity::Contract& identity) {

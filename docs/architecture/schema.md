@@ -4,7 +4,7 @@
      правка переживёт ровно до следующей пересборки. Изменить схему — значит
      написать новую миграцию. -->
 
-Собрано из миграций: 12. Таблиц: 19.
+Собрано из миграций: 13. Таблиц: 26.
 
 Правила, которым подчиняется каждая колонка, — в
 [migrations.md](migrations.md). Как устроена изоляция арендаторов и почему у
@@ -605,6 +605,222 @@
 
 * `observability_product_event_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
 
+### scheduling_availability
+
+Когда репетитор готов работать: день недели и часы ПО ЕГО ЧАСАМ. Зона рядом, потому что «с десяти» — это утверждение про его часы.
+
+Заведена миграцией `V013__scheduling.sql`.
+
+| Колонка | Тип | Определение |
+| --- | --- | --- |
+| `tenant_id` | `uuid` | uuid not null |
+| `id` | `uuid` | uuid not null |
+| `tutor_id` | `uuid` | uuid not null |
+| `weekday` | `smallint` | smallint not null |
+| `from_minute` | `smallint` | smallint not null |
+| `to_minute` | `smallint` | smallint not null |
+| `tz` | `text` | text not null |
+| `created_at` | `timestamptz` | timestamptz not null default now() |
+
+Ограничения:
+
+* `constraint scheduling_availability_pk primary key (tenant_id, id)`
+* `constraint scheduling_availability_weekday_known check (weekday between 0 and 6)`
+* `constraint scheduling_availability_from_on_the_clock check (from_minute between 0 and 1439)`
+* `constraint scheduling_availability_to_on_the_clock check (to_minute between 1 and 1440)`
+* `constraint scheduling_availability_forward check (to_minute > from_minute)`
+* `constraint scheduling_availability_tz_named check (length(btrim(tz)) > 0)`
+
+Индексы:
+
+* `scheduling_availability_by_tutor` — обычный, `(tenant_id, tutor_id)`
+
+Построчная защита включена и форсирована.
+
+Политики:
+
+* `scheduling_availability_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
+
+### scheduling_availability_exception
+
+День, который живёт не по правилу: выходной (без часов) или иные часы. Сильнее недельного правила.
+
+Заведена миграцией `V013__scheduling.sql`.
+
+| Колонка | Тип | Определение |
+| --- | --- | --- |
+| `tenant_id` | `uuid` | uuid not null |
+| `tutor_id` | `uuid` | uuid not null |
+| `on_date` | `date` | date not null |
+| `starts_at` | `timestamptz` | timestamptz |
+| `ends_at` | `timestamptz` | timestamptz |
+| `created_at` | `timestamptz` | timestamptz not null default now() |
+
+Ограничения:
+
+* `constraint scheduling_availability_exception_pk primary key (tenant_id, tutor_id, on_date)`
+* `constraint scheduling_availability_exception_whole check ((starts_at is null) = (ends_at is null))`
+* `constraint scheduling_availability_exception_forward check (ends_at is null or ends_at > starts_at)`
+
+Построчная защита включена и форсирована.
+
+Политики:
+
+* `scheduling_availability_exception_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
+
+### scheduling_lesson
+
+Занятие: два момента в UTC, зона задумки рядом и состояние из закрытого списка. Пересечения у репетитора запрещены самой базой.
+
+Заведена миграцией `V013__scheduling.sql`.
+
+| Колонка | Тип | Определение |
+| --- | --- | --- |
+| `tenant_id` | `uuid` | uuid not null |
+| `id` | `uuid` | uuid not null |
+| `series_id` | `uuid` | uuid |
+| `tutor_id` | `uuid` | uuid not null |
+| `starts_at` | `timestamptz` | timestamptz not null |
+| `ends_at` | `timestamptz` | timestamptz not null |
+| `tz` | `text` | text not null |
+| `state` | `text` | text not null |
+| `created_at` | `timestamptz` | timestamptz not null default now() |
+
+Ограничения:
+
+* `constraint scheduling_lesson_pk primary key (tenant_id, id)`
+* `constraint scheduling_lesson_forward check (ends_at > starts_at)`
+* `constraint scheduling_lesson_tz_named check (length(btrim(tz)) > 0)`
+* `constraint scheduling_lesson_state_known check (state in ( , , , , ))`
+* `constraint scheduling_lesson_no_overlap exclude using gist ( tenant_id with =, tutor_id with =, tstzrange(starts_at, ends_at) with && ) where (state in ( , ))`
+
+Индексы:
+
+* `scheduling_lesson_by_tutor` — обычный, `(tenant_id, tutor_id, starts_at)`
+
+Построчная защита включена и форсирована.
+
+Политики:
+
+* `scheduling_lesson_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
+
+### scheduling_lesson_participant
+
+Кто занимается на этом занятии. Отдельная таблица, потому что участник в домене — вектор.
+
+Заведена миграцией `V013__scheduling.sql`.
+
+| Колонка | Тип | Определение |
+| --- | --- | --- |
+| `tenant_id` | `uuid` | uuid not null |
+| `lesson_id` | `uuid` | uuid not null |
+| `participant_id` | `uuid` | uuid not null |
+
+Ограничения:
+
+* `constraint scheduling_lesson_participant_pk primary key (tenant_id, lesson_id, participant_id)`
+* `constraint scheduling_lesson_participant_lesson foreign key (tenant_id, lesson_id) references scheduling_lesson (tenant_id, id) on delete cascade`
+
+Индексы:
+
+* `scheduling_lesson_by_participant` — обычный, `(tenant_id, participant_id, lesson_id)`
+
+Построчная защита включена и форсирована.
+
+Политики:
+
+* `scheduling_lesson_participant_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
+
+### scheduling_series
+
+Регулярные занятия правилом RRULE, а не списком. Время задано по часам репетитора: минуты от полуночи плюс зона.
+
+Заведена миграцией `V013__scheduling.sql`.
+
+| Колонка | Тип | Определение |
+| --- | --- | --- |
+| `tenant_id` | `uuid` | uuid not null |
+| `id` | `uuid` | uuid not null |
+| `tutor_id` | `uuid` | uuid not null |
+| `rrule` | `text` | text not null |
+| `starts_on` | `date` | date not null |
+| `at_minute` | `smallint` | smallint not null |
+| `tz` | `text` | text not null |
+| `duration_minutes` | `integer` | integer not null |
+| `created_at` | `timestamptz` | timestamptz not null default now() |
+
+Ограничения:
+
+* `constraint scheduling_series_pk primary key (tenant_id, id)`
+* `constraint scheduling_series_rrule_written check (length(btrim(rrule)) > 0)`
+* `constraint scheduling_series_at_on_the_clock check (at_minute between 0 and 1439)`
+* `constraint scheduling_series_tz_named check (length(btrim(tz)) > 0)`
+* `constraint scheduling_series_duration_positive check (duration_minutes > 0)`
+
+Индексы:
+
+* `scheduling_series_by_tutor` — обычный, `(tenant_id, tutor_id)`
+
+Построчная защита включена и форсирована.
+
+Политики:
+
+* `scheduling_series_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
+
+### scheduling_series_exception
+
+Отменённое или перенесённое вхождение серии. Опознаётся местной датой: момент при переводе часов меняется, дата — нет.
+
+Заведена миграцией `V013__scheduling.sql`.
+
+| Колонка | Тип | Определение |
+| --- | --- | --- |
+| `tenant_id` | `uuid` | uuid not null |
+| `series_id` | `uuid` | uuid not null |
+| `occurrence_on` | `date` | date not null |
+| `kind` | `text` | text not null |
+| `moved_to` | `timestamptz` | timestamptz |
+| `moved_minutes` | `integer` | integer |
+| `created_at` | `timestamptz` | timestamptz not null default now() |
+
+Ограничения:
+
+* `constraint scheduling_series_exception_pk primary key (tenant_id, series_id, occurrence_on)`
+* `constraint scheduling_series_exception_series foreign key (tenant_id, series_id) references scheduling_series (tenant_id, id) on delete cascade`
+* `constraint scheduling_series_exception_kind_known check (kind in ( , ))`
+* `constraint scheduling_series_exception_place_matches_kind check ((kind = ) = (moved_to is not null))`
+* `constraint scheduling_series_exception_moved_length check (moved_minutes is null or moved_minutes > 0)`
+* `constraint scheduling_series_exception_length_needs_place check (moved_minutes is null or moved_to is not null)`
+
+Построчная защита включена и форсирована.
+
+Политики:
+
+* `scheduling_series_exception_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
+
+### scheduling_series_participant
+
+Кто занимается по этой серии. Отдельная таблица по той же причине, что и у занятия.
+
+Заведена миграцией `V013__scheduling.sql`.
+
+| Колонка | Тип | Определение |
+| --- | --- | --- |
+| `tenant_id` | `uuid` | uuid not null |
+| `series_id` | `uuid` | uuid not null |
+| `participant_id` | `uuid` | uuid not null |
+
+Ограничения:
+
+* `constraint scheduling_series_participant_pk primary key (tenant_id, series_id, participant_id)`
+* `constraint scheduling_series_participant_series foreign key (tenant_id, series_id) references scheduling_series (tenant_id, id) on delete cascade`
+
+Построчная защита включена и форсирована.
+
+Политики:
+
+* `scheduling_series_participant_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
+
 ### schema_version
 
 Применённые миграции: версия, момент применения в UTC и контрольная сумма файла.
@@ -633,3 +849,4 @@
 1. `V010__idempotency.sql` — http_idempotency_key
 1. `V011__consent.sql` — identity_consent
 1. `V012__system_tenant.sql` — без новых таблиц
+1. `V013__scheduling.sql` — scheduling_availability, scheduling_availability_exception, scheduling_lesson, scheduling_lesson_participant, scheduling_series, scheduling_series_participant, scheduling_series_exception

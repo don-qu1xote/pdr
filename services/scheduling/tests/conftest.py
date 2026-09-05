@@ -59,6 +59,29 @@ UNCOVERED = {
         'jobs_run_last',
         'observability_product_event_record',
     },
+    'непроверенный путь: хранение расписания собрано и проверено против живой базы '
+    '(contract-набор, гонка за слот и план запроса), но ручек расписания в этом '
+    'процессе ещё нет — звать эти запросы снаружи пока нечем (PDR-SCHED-03)': {
+        'scheduling_availability_add',
+        'scheduling_availability_clear',
+        'scheduling_availability_exceptions_add',
+        'scheduling_availability_exceptions_clear',
+        'scheduling_availability_exceptions_of_tutor',
+        'scheduling_availability_of_tutor',
+        'scheduling_lesson_at_slot',
+        'scheduling_lesson_of_participant',
+        'scheduling_lesson_of_tutor',
+        'scheduling_lesson_participants_add',
+        'scheduling_lesson_participants_of',
+        'scheduling_lesson_save',
+        'scheduling_lesson_set_state',
+        'scheduling_series_create',
+        'scheduling_series_exception_record',
+        'scheduling_series_exceptions_of',
+        'scheduling_series_find',
+        'scheduling_series_participants_add',
+        'scheduling_series_participants_of',
+    },
 }
 """Запросы, которых этот прогон не выполняет, — поимённо и с причиной.
 

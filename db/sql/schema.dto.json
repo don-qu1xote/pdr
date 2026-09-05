@@ -738,6 +738,280 @@
         "namespace": "public",
         "version": 0
       },
+      "public.scheduling_availability": {
+        "columns": [
+          {
+            "name": "tenant_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "tutor_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "weekday",
+            "nullable": false,
+            "type": "smallint"
+          },
+          {
+            "name": "from_minute",
+            "nullable": false,
+            "type": "smallint"
+          },
+          {
+            "name": "to_minute",
+            "nullable": false,
+            "type": "smallint"
+          },
+          {
+            "name": "tz",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "created_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          }
+        ],
+        "name": "scheduling_availability",
+        "namespace": "public",
+        "version": 0
+      },
+      "public.scheduling_availability_exception": {
+        "columns": [
+          {
+            "name": "tenant_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "tutor_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "on_date",
+            "nullable": false,
+            "type": "date"
+          },
+          {
+            "name": "starts_at",
+            "nullable": true,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "ends_at",
+            "nullable": true,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "created_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          }
+        ],
+        "name": "scheduling_availability_exception",
+        "namespace": "public",
+        "version": 0
+      },
+      "public.scheduling_lesson": {
+        "columns": [
+          {
+            "name": "tenant_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "series_id",
+            "nullable": true,
+            "type": "uuid"
+          },
+          {
+            "name": "tutor_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "starts_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "ends_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "tz",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "state",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "created_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          }
+        ],
+        "name": "scheduling_lesson",
+        "namespace": "public",
+        "version": 0
+      },
+      "public.scheduling_lesson_participant": {
+        "columns": [
+          {
+            "name": "tenant_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "lesson_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "participant_id",
+            "nullable": false,
+            "type": "uuid"
+          }
+        ],
+        "name": "scheduling_lesson_participant",
+        "namespace": "public",
+        "version": 0
+      },
+      "public.scheduling_series": {
+        "columns": [
+          {
+            "name": "tenant_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "tutor_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "rrule",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "starts_on",
+            "nullable": false,
+            "type": "date"
+          },
+          {
+            "name": "at_minute",
+            "nullable": false,
+            "type": "smallint"
+          },
+          {
+            "name": "tz",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "duration_minutes",
+            "nullable": false,
+            "type": "integer"
+          },
+          {
+            "name": "created_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          }
+        ],
+        "name": "scheduling_series",
+        "namespace": "public",
+        "version": 0
+      },
+      "public.scheduling_series_exception": {
+        "columns": [
+          {
+            "name": "tenant_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "series_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "occurrence_on",
+            "nullable": false,
+            "type": "date"
+          },
+          {
+            "name": "kind",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "moved_to",
+            "nullable": true,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "moved_minutes",
+            "nullable": true,
+            "type": "integer"
+          },
+          {
+            "name": "created_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          }
+        ],
+        "name": "scheduling_series_exception",
+        "namespace": "public",
+        "version": 0
+      },
+      "public.scheduling_series_participant": {
+        "columns": [
+          {
+            "name": "tenant_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "series_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "participant_id",
+            "nullable": false,
+            "type": "uuid"
+          }
+        ],
+        "name": "scheduling_series_participant",
+        "namespace": "public",
+        "version": 0
+      },
       "public.schema_version": {
         "columns": [
           {
@@ -763,7 +1037,7 @@
     },
     "types": {}
   },
-  "hashsum": "417271534dd2357fa265c3174e700cf2c89f856fdef5b7ae7572835cb5cb6589",
+  "hashsum": "288255d16215d6e120a2d1d158d4775927aee03583dead03e90141dd87b1fd2f",
   "queries": [
     {
       "args": [
@@ -1500,6 +1774,380 @@
           "name": "count",
           "nullable": true,
           "type": "bigint"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "nullable": true,
+          "type": "uuid"
+        }
+      ],
+      "cardinality": "many",
+      "name": "scheduling_availability_exceptions_of_tutor",
+      "returns": [
+        {
+          "name": "on_date",
+          "nullable": true,
+          "type": "date"
+        },
+        {
+          "name": "starts_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "ends_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "nullable": true,
+          "type": "uuid"
+        }
+      ],
+      "cardinality": "many",
+      "name": "scheduling_availability_of_tutor",
+      "returns": [
+        {
+          "name": "id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "weekday",
+          "nullable": true,
+          "type": "smallint"
+        },
+        {
+          "name": "from_minute",
+          "nullable": true,
+          "type": "smallint"
+        },
+        {
+          "name": "to_minute",
+          "nullable": true,
+          "type": "smallint"
+        },
+        {
+          "name": "tz",
+          "nullable": true,
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "nullable": true,
+          "type": "timestamp with time zone"
+        }
+      ],
+      "cardinality": "many",
+      "name": "scheduling_lesson_at_slot",
+      "returns": [
+        {
+          "name": "id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "tutor_id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "series_id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "starts_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "ends_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "tz",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "state",
+          "nullable": true,
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "nullable": true,
+          "type": "timestamp with time zone"
+        }
+      ],
+      "cardinality": "many",
+      "name": "scheduling_lesson_of_participant",
+      "returns": [
+        {
+          "name": "id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "tutor_id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "series_id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "starts_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "ends_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "tz",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "state",
+          "nullable": true,
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "nullable": true,
+          "type": "timestamp with time zone"
+        }
+      ],
+      "cardinality": "many",
+      "name": "scheduling_lesson_of_tutor",
+      "returns": [
+        {
+          "name": "id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "tutor_id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "series_id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "starts_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "ends_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "tz",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "state",
+          "nullable": true,
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "nullable": true,
+          "type": "uuid[]"
+        }
+      ],
+      "cardinality": "many",
+      "name": "scheduling_lesson_participants_of",
+      "returns": [
+        {
+          "name": "lesson_id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "participant_id",
+          "nullable": true,
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "nullable": true,
+          "type": "uuid"
+        }
+      ],
+      "cardinality": "many",
+      "name": "scheduling_series_exceptions_of",
+      "returns": [
+        {
+          "name": "occurrence_on",
+          "nullable": true,
+          "type": "date"
+        },
+        {
+          "name": "kind",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "moved_to",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "moved_minutes",
+          "nullable": true,
+          "type": "integer"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "nullable": true,
+          "type": "uuid"
+        }
+      ],
+      "cardinality": "many",
+      "name": "scheduling_series_find",
+      "returns": [
+        {
+          "name": "tutor_id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "rrule",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "starts_on",
+          "nullable": true,
+          "type": "date"
+        },
+        {
+          "name": "at_minute",
+          "nullable": true,
+          "type": "smallint"
+        },
+        {
+          "name": "tz",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "duration_minutes",
+          "nullable": true,
+          "type": "integer"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "nullable": true,
+          "type": "uuid"
+        }
+      ],
+      "cardinality": "many",
+      "name": "scheduling_series_participants_of",
+      "returns": [
+        {
+          "name": "participant_id",
+          "nullable": true,
+          "type": "text"
         }
       ]
     }

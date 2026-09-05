@@ -30,12 +30,16 @@ core::Result<core::LessonId> BookLesson::Execute(const Request& request) const {
                                          {request.student},
                                          request.starts_at,
                                          request.duration,
+                                         request.zone,
                                          now);
     if (!lesson.HasValue()) {
         return lesson.Failure();
     }
 
-    lessons_.Save(lesson.Value());
+    const auto saved = lessons_.Save(lesson.Value());
+    if (!saved.HasValue()) {
+        return saved.Failure();
+    }
 
     bus_.Publish(pdr::events::scheduling::LessonBooked{
         pdr::events::Envelope{request.tenant, now},

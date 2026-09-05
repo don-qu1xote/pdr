@@ -134,6 +134,13 @@ function(pdr_live_test_libraries)
     set_property(GLOBAL APPEND PROPERTY PDR_LIVE_TEST_LIBRARIES ${ARGN})
 endfunction()
 
+function(pdr_live_test_includes)
+    foreach(directory IN LISTS ARGN)
+        set_property(GLOBAL APPEND PROPERTY PDR_LIVE_TEST_INCLUDES
+                     "${CMAKE_CURRENT_SOURCE_DIR}/${directory}")
+    endforeach()
+endfunction()
+
 # userver ищется РОВНО ОДИН РАЗ и здесь.
 #
 # Это не стиль, а требование: импортированные цели, которые создаёт
@@ -289,6 +296,17 @@ if(PDR_BUILD_TESTS)
         target_link_libraries(pdr_live_tests
                               PRIVATE ${live_libraries} userver::utest
                                       userver::postgresql-utest)
+
+        # Живому набору нужен путь к дереву: схему он берёт из НАСТОЯЩИХ
+        # db/migrations, а не из своей копии. Вторая копия схемы расходится с
+        # первой в тот день, когда правку внесли в одну, и прогон остаётся
+        # зелёным на схеме, которой в установке нет.
+        target_compile_definitions(pdr_live_tests PRIVATE PDR_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+
+        get_property(live_includes GLOBAL PROPERTY PDR_LIVE_TEST_INCLUDES)
+        if(live_includes)
+            target_include_directories(pdr_live_tests PRIVATE ${live_includes})
+        endif()
 
         # Базу поднимает и гасит штатный контур, а не conftest и не docker
         # compose. Адрес её при этом он не сообщает: `ClusterLocal` ждёт

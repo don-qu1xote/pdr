@@ -2,6 +2,7 @@
 
 #include <chrono>
 #include <stdexcept>
+#include <utility>
 #include <vector>
 
 #include "builders/identifiers.hpp"
@@ -47,6 +48,14 @@ public:
 
     /// «Сейчас» для проверки «занятие не в прошлом». По умолчанию — сутки до
     /// начала: занятие назначено заранее, как оно и бывает.
+    /// Зона, в которой занятие задумано. По умолчанию Москва — рынок
+    /// российский, и зона без переводов часов делает ожидаемые значения
+    /// очевидными в любом тесте, которому она безразлична.
+    LessonBuilder& InZone(core::TimeZone zone) noexcept {
+        zone_ = std::move(zone);
+        return *this;
+    }
+
     LessonBuilder& AsOf(core::Instant now) noexcept {
         now_ = now;
         return *this;
@@ -55,7 +64,7 @@ public:
     Lesson Build() const {
         const auto now = now_.has_value() ? *now_ : starts_at_ - std::chrono::hours{24};
         auto lesson =
-            Lesson::Schedule(id_, tenant_, tutor_, {student_}, starts_at_, duration_, now);
+            Lesson::Schedule(id_, tenant_, tutor_, {student_}, starts_at_, duration_, zone_, now);
         if (!lesson.HasValue()) {
             throw std::logic_error{"LessonBuilder: " + lesson.Failure().Code()};
         }
@@ -69,6 +78,7 @@ private:
     core::PersonId student_{pdr::testing::Numbered<core::PersonId>(20)};
     core::Instant starts_at_{pdr::testing::MomentBuilder{}.Utc(2026, 3, 2).At(18, 0).Build()};
     Lesson::Duration duration_{std::chrono::minutes{60}};
+    core::TimeZone zone_{*core::TimeZone::Parse("Europe/Moscow")};
     std::optional<core::Instant> now_;
 };
 

@@ -28,6 +28,11 @@ public:
         core::PersonId student;
         core::Instant starts_at;
         Lesson::Duration duration;
+
+        /// Зона, в которой человек назвал время. Не зона показа: занятие,
+        /// назначенное на 18:00 по Берлину, обязано остаться в 18:00 по
+        /// Берлину и после перевода часов.
+        core::TimeZone zone;
     };
 
     BookLesson(ports::LessonRepository& lessons,

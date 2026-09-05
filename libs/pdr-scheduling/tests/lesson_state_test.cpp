@@ -21,6 +21,10 @@ using pdr::testing::Numbered;
 /// Таблица в lesson.cpp — это код; здесь — то, чего от него ждут. Сверять код с
 /// самим собой бессмысленно: тест, читающий ту же таблицу, зелен при любой её
 /// правке, включая ошибочную.
+core::TimeZone Moscow() {
+    return core::TimeZone::Parse("Europe/Moscow").value();
+}
+
 const std::set<std::pair<LessonState, LessonEvent>> kAllowed{
     {LessonState::kPlanned, LessonEvent::kConfirm},
     {LessonState::kPlanned, LessonEvent::kHold},
@@ -126,7 +130,7 @@ TEST(LessonParticipants, RefuseAnEmptyOrCrowdedLesson) {
     const auto starts = pdr::testing::MomentBuilder{}.Utc(2026, 3, 2).At(18, 0).Build();
     const auto now = starts - 24h;
 
-    const auto empty = Lesson::Schedule(id, tenant, tutor, {}, starts, 60min, now);
+    const auto empty = Lesson::Schedule(id, tenant, tutor, {}, starts, 60min, Moscow(), now);
     ASSERT_FALSE(empty.HasValue());
     EXPECT_EQ(empty.Failure().Code(), "lesson_participants_not_one");
 
@@ -137,6 +141,7 @@ TEST(LessonParticipants, RefuseAnEmptyOrCrowdedLesson) {
                          {Numbered<core::PersonId>(20), Numbered<core::PersonId>(21)},
                          starts,
                          60min,
+                         Moscow(),
                          now);
     ASSERT_FALSE(crowded.HasValue());
     EXPECT_EQ(crowded.Failure().Code(), "lesson_participants_not_one");
@@ -152,6 +157,7 @@ TEST(LessonParticipants, RefuseTheTutorAmongThem) {
                                         {tutor},
                                         starts,
                                         60min,
+                                        Moscow(),
                                         starts - 24h);
 
     ASSERT_FALSE(wrong.HasValue());

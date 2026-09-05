@@ -78,6 +78,7 @@ Lesson::Lesson(core::LessonId id,
                std::vector<core::PersonId> participants,
                core::Instant starts_at,
                Duration duration,
+               core::TimeZone zone,
                LessonState state)
     : id_{std::move(id)},
       tenant_{std::move(tenant)},
@@ -85,6 +86,7 @@ Lesson::Lesson(core::LessonId id,
       participants_{std::move(participants)},
       starts_at_{starts_at},
       duration_{duration},
+      zone_{std::move(zone)},
       state_{state} {}
 
 core::Result<Lesson> Lesson::Schedule(core::LessonId id,
@@ -93,6 +95,7 @@ core::Result<Lesson> Lesson::Schedule(core::LessonId id,
                                       std::vector<core::PersonId> participants,
                                       core::Instant starts_at,
                                       Duration duration,
+                                      core::TimeZone zone,
                                       core::Instant now) {
     if (duration <= Duration::zero()) {
         return core::Error{core::ErrorKind::kValidation,
@@ -129,6 +132,7 @@ core::Result<Lesson> Lesson::Schedule(core::LessonId id,
                   std::move(participants),
                   starts_at,
                   duration,
+                  std::move(zone),
                   LessonState::kPlanned};
 }
 
@@ -138,7 +142,7 @@ core::Result<Lesson> Lesson::After(LessonEvent event) const {
         return next.Failure();
     }
 
-    return Lesson{id_, tenant_, tutor_, participants_, starts_at_, duration_, next.Value()};
+    return Lesson{id_, tenant_, tutor_, participants_, starts_at_, duration_, zone_, next.Value()};
 }
 
 core::TimeRange Lesson::Span() const {

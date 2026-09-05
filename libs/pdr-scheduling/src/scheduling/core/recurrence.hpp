@@ -119,10 +119,10 @@ struct RecurrenceException final {
     ExceptionKind kind{ExceptionKind::kCancelled};
 
     /// Куда перенесено. Обязательно у `kMoved` и пусто у `kCancelled`.
-    std::optional<core::Instant> moved_to;
+    std::optional<core::Instant> moved_to{};
 
     /// Новая длительность, если она поменялась вместе с местом.
-    std::optional<Lesson::Duration> moved_duration;
+    std::optional<Lesson::Duration> moved_duration{};
 
     friend bool operator==(const RecurrenceException&, const RecurrenceException&) = default;
 };
