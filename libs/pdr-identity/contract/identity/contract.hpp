@@ -25,6 +25,7 @@ enum class Action : std::uint8_t {
     kCancelLesson,
     kRescheduleLesson,
     kViewSchedule,
+    kSetAvailability,
 
     kViewInvoice,
     kPayInvoice,
@@ -67,19 +68,16 @@ std::string_view Name(Action action) noexcept;
 std::optional<Action> ParseAction(std::string_view text);
 
 /// Все действия подряд. Единственный способ обойти реестр целиком.
-inline constexpr std::array<Action, 24> kEveryAction{
-    Action::kBookLesson,          Action::kCancelLesson,
-    Action::kRescheduleLesson,    Action::kViewSchedule,
-    Action::kViewInvoice,         Action::kPayInvoice,
-    Action::kIssueRefund,         Action::kSetTariff,
-    Action::kViewMaterial,        Action::kEditMaterial,
-    Action::kPublishMaterial,     Action::kAssignPlan,
-    Action::kViewProgress,        Action::kRecordAttempt,
-    Action::kExportProgress,      Action::kViewTenantProgress,
-    Action::kViewLessonRecording, Action::kViewLessonTranscript,
-    Action::kViewAccessJournal,   Action::kManageGuardianAccess,
-    Action::kWriteReview,         Action::kManageAutoPayment,
-    Action::kInvitePeople,        Action::kManagePractice,
+inline constexpr std::array<Action, 25> kEveryAction{
+    Action::kBookLesson,           Action::kCancelLesson,       Action::kRescheduleLesson,
+    Action::kViewSchedule,         Action::kSetAvailability,    Action::kViewInvoice,
+    Action::kPayInvoice,           Action::kIssueRefund,        Action::kSetTariff,
+    Action::kViewMaterial,         Action::kEditMaterial,       Action::kPublishMaterial,
+    Action::kAssignPlan,           Action::kViewProgress,       Action::kRecordAttempt,
+    Action::kExportProgress,       Action::kViewTenantProgress, Action::kViewLessonRecording,
+    Action::kViewLessonTranscript, Action::kViewAccessJournal,  Action::kManageGuardianAccess,
+    Action::kWriteReview,          Action::kManageAutoPayment,  Action::kInvitePeople,
+    Action::kManagePractice,
 };
 
 static_assert(kEveryAction.size() == static_cast<std::size_t>(Action::kBoundary),

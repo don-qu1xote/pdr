@@ -205,6 +205,8 @@ std::string_view Title(Action action) noexcept {
             return "Перенести занятие";
         case Action::kViewSchedule:
             return "Смотреть расписание";
+        case Action::kSetAvailability:
+            return "Задать часы работы";
         case Action::kViewInvoice:
             return "Смотреть счёт";
         case Action::kPayInvoice:

@@ -188,9 +188,13 @@ public:
         response.SetHeader(std::string{kRequestIdHeader}, done.request_id);
 
         const Occasion occasion{request.GetRequestPath(), done.request_id};
+        const bool mutating = pdr::http::Mutating(Translate(request.GetMethod()));
 
         std::string field;
-        const auto body = ParseBody<Body>(done.body, field);
+        const auto body =
+            ParseBody<Body>(!mutating && done.body.empty() ? std::string_view{kNoBody}
+                                                           : std::string_view{done.body},
+                            field);
         if (!body.HasValue()) {
             return Refuse(response, Malformed(body.Failure(), field, occasion));
         }
@@ -202,7 +206,7 @@ public:
         const Caller& caller = *admitted.caller;
         observe::TagActor(caller.actor);
 
-        if (!pdr::http::Mutating(Translate(request.GetMethod()))) {
+        if (!mutating) {
             return Assemble(response,
                             Plain(request, caller, body.Value(), done.request_id),
                             occasion,
@@ -426,6 +430,18 @@ private:
 
     static constexpr int kOk = 200;
 
+    /// ТЕЛА У ЧИТАЮЩЕГО ОБРАЩЕНИЯ НЕТ, а разбор всё равно один на все ручки.
+    ///
+    /// `GET` тела не носит, и пустая строка разборщику не JSON: ручка получила
+    /// бы `request_not_json` вместо ответа. Схема у такого обращения при этом
+    /// есть и пустая (`components/schemas/Nothing`) — «здесь тела не бывает»
+    /// выражается пустым объектом, а не отсутствием схемы, и присланное поле
+    /// по-прежнему отвергается.
+    ///
+    /// Подставляется только НЕменяющему обращению с пустым телом: у `POST`
+    /// пустое тело остаётся отказом, и отказом с прежним кодом.
+    static constexpr std::string_view kNoBody = "{}";
+
     Database& database_;
     Keys& keys_;
     const application::ports::Clock& clock_;
@@ -458,9 +474,16 @@ protected:
     /// Чего эта ручка хочет. Спрашивается у политики, а не решается здесь.
     virtual identity::Action Wants() const = 0;
 
-    /// Над чем. Собирается из уже разобранного тела и из того, кто пришёл;
-    /// хождений в базу здесь нет — до области арендатора ещё не дошли.
-    virtual identity::Resource About(const Caller& caller, const Body& body) const = 0;
+    /// Над чем. Собирается из адреса, из уже разобранного тела и из того, кто
+    /// пришёл; хождений в базу здесь нет — до области арендатора ещё не дошли.
+    ///
+    /// АДРЕС ЗДЕСЬ НЕ ЛИШНИЙ. У читающего обращения тела не бывает вовсе, и
+    /// ресурс оно называет путём и запросом — «расписание такого-то». Без
+    /// запроса такая ручка спрашивала бы политику о том, чего в вопросе нет, и
+    /// получала бы отказ всем, кроме владельца практики.
+    virtual identity::Resource About(const Request& request,
+                                     const Caller& caller,
+                                     const Body& body) const = 0;
 
 private:
     Admission Admit(const Request& request,
@@ -475,7 +498,7 @@ private:
 
         const Caller& caller = who.Value();
         const auto decision =
-            permissions_.Decide(caller.tenant, caller.actor, Wants(), About(caller, body));
+            permissions_.Decide(caller.tenant, caller.actor, Wants(), About(request, caller, body));
         if (!decision.allowed) {
             return Admission{std::nullopt, AsProblem(decision, occasion)};
         }

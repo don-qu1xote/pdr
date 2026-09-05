@@ -166,8 +166,31 @@ PDR_CONTRACT_TEST_P(LessonRepositoryContract, ABackToBackLessonIsAccepted) {
                     .HasValue());
 }
 
+PDR_CONTRACT_TEST_P(LessonRepositoryContract, SavedLessonIsFoundByItsId) {
+    auto& lessons = this->world_.Lessons();
+    const auto starts = ContractGround::Utc(2026, 3, 2, 15);
+    const auto lesson = ContractGround::ALesson(this->world_.NextLessonId(), starts);
+    ASSERT_TRUE(lessons.Save(lesson).HasValue());
+
+    const auto found = lessons.Find(ContractGround::Tenant(), lesson.Id());
+    ASSERT_TRUE(found.has_value());
+    EXPECT_TRUE(found->Id() == lesson.Id());
+    EXPECT_TRUE(found->Tutor() == ContractGround::Tutor());
+    EXPECT_TRUE(found->StartsAt() == starts);
+    ASSERT_EQ(found->Participants().size(), 1U);
+    EXPECT_TRUE(found->Participants().front() == ContractGround::Student());
+}
+
+PDR_CONTRACT_TEST_P(LessonRepositoryContract, AnUnknownIdHoldsNothing) {
+    auto& lessons = this->world_.Lessons();
+
+    EXPECT_FALSE(lessons.Find(ContractGround::Tenant(), this->world_.NextLessonId()).has_value());
+}
+
 PDR_CONTRACT_REGISTER_P(LessonRepositoryContract,
                         SavedLessonIsFoundAtItsSlot,
+                        SavedLessonIsFoundByItsId,
+                        AnUnknownIdHoldsNothing,
                         AnEmptySlotHoldsNothing,
                         TheTutorSeesHisLessonsInTheWindowAndOnlyThem,
                         TheParticipantSeesTheSameLessons,

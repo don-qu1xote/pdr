@@ -5,19 +5,12 @@
 namespace pdr::scheduling {
 
 BookLesson::BookLesson(ports::LessonRepository& lessons,
-                       const identity::Contract& identity,
                        const application::ports::Clock& clock,
                        const application::ports::IdGenerator& ids,
                        events::Bus& bus) noexcept
-    : lessons_{lessons}, identity_{identity}, clock_{clock}, ids_{ids}, bus_{bus} {}
+    : lessons_{lessons}, clock_{clock}, ids_{ids}, bus_{bus} {}
 
-core::Result<core::LessonId> BookLesson::Execute(const Request& request) const {
-    if (!identity_.MayActFor(request.tenant, request.actor, request.student)) {
-        return core::Error{core::ErrorKind::kForbidden,
-                           "not_allowed_to_act_for_student",
-                           "записывать за ученика вправе он сам или его опекун"};
-    }
-
+core::Result<Lesson> BookLesson::Execute(const Request& request) const {
     if (lessons_.FindAtSlot(request.tenant, request.tutor, request.starts_at).has_value()) {
         return core::Error{
             core::ErrorKind::kConflict, "slot_already_taken", "это время у репетитора уже занято"};
@@ -49,7 +42,7 @@ core::Result<core::LessonId> BookLesson::Execute(const Request& request) const {
         request.starts_at,
     });
 
-    return lesson.Value().Id();
+    return lesson.Value();
 }
 
 }  // namespace pdr::scheduling

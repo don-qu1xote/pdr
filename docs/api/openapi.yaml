@@ -37,6 +37,11 @@ tags:
     description: Единственная дверь, у которой сессии ещё нет — она её создаёт.
   - name: Спецификация
     description: Тот же документ, что здесь, для инструментов.
+  - name: Расписание
+    description: |
+      Занятия, серии и доступность репетитора. Права на КАЖДОЕ обращение
+      спрашиваются у политики: репетитор, ученик и опекун ходят по одним и тем
+      же адресам и видят разное.
 
 paths:
   /ping:
@@ -186,6 +191,286 @@ paths:
         '500':
           $ref: '#/components/responses/Broken'
 
+  /api/v1/availability:
+    get:
+      tags: [Расписание]
+      operationId: getAvailability
+      summary: Когда репетитор готов работать
+      description: |
+        ЧЬЯ ДОСТУПНОСТЬ — говорит параметр `whose`; без него отвечают про самого
+        спрашивающего. Права спрашиваются у политики: свою доступность видит
+        репетитор, чужую — владелец практики.
+
+        ОТСУТСТВИЕ ДОСТУПНОСТИ И ПУСТАЯ ДОСТУПНОСТЬ — РАЗНЫЕ ОТВЕТЫ. Не задавал
+        — приходит `404`: занятия к нему просто требуют подтверждения. Задал и
+        стёр всё — приходит `200` с пустыми списками: он не работает никогда.
+        Слить их в один ответ значило бы не дать репетитору сказать «не работаю».
+      parameters:
+        - $ref: '#/components/parameters/Whose'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/ClientTimeout'
+      responses:
+        '200':
+          description: Доступность репетитора
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Availability'
+        '400':
+          $ref: '#/components/responses/Malformed'
+        '401':
+          $ref: '#/components/responses/Unidentified'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/Missing'
+        '422':
+          $ref: '#/components/responses/Refused'
+        '498':
+          $ref: '#/components/responses/Expired'
+        '500':
+          $ref: '#/components/responses/Broken'
+    put:
+      tags: [Расписание]
+      operationId: setAvailability
+      summary: Записать доступность целиком
+      description: |
+        ЦЕЛИКОМ, А НЕ ПО ПРАВИЛУ, и это форма самого обращения: `PUT` заменяет
+        доступность на присланную. Экран работает так же — репетитор правит
+        расписание и сохраняет, — а обращение «добавить одно правило» заставило
+        бы клиента помнить порядок операций и оставляло бы половину расписания
+        записанной, когда связь оборвалась посередине.
+      parameters:
+        - $ref: '#/components/parameters/Whose'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/ClientTimeout'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Availability'
+      responses:
+        '200':
+          description: Доступность записана
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+            Idempotency-Replayed:
+              $ref: '#/components/headers/IdempotencyReplayed'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Availability'
+        '400':
+          $ref: '#/components/responses/Malformed'
+        '401':
+          $ref: '#/components/responses/Unidentified'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Refused'
+        '498':
+          $ref: '#/components/responses/Expired'
+        '500':
+          $ref: '#/components/responses/Broken'
+
+  /api/v1/lessons:
+    get:
+      tags: [Расписание]
+      operationId: listLessons
+      summary: Занятия за отрезок
+      description: |
+        ОДИН АДРЕС НА ТРОИХ — репетитора, ученика и опекуна. Разные у них не
+        обращения, а права: `whose` называет человека, чьё расписание просят, а
+        `side` — какой стороной занятий он в нём стоит. Политика решает по этой
+        паре, и решает по-разному: свои занятия видит каждый, чужие — только
+        опекун своего подопечного и владелец практики.
+
+        ДВЕ СТОРОНЫ, А НЕ ОДНА ВЫБОРКА «ПРО ЧЕЛОВЕКА»: один и тот же человек
+        ведёт свои занятия и учится на чужих, и это два разных расписания. Под
+        каждую сторону в базе заведён свой индекс, и третьей стороны нет,
+        потому что третьего запроса нет.
+
+        ЗАНЯТИЙ СЕРИИ ЗДЕСЬ НЕТ. Серия хранится правилом, а не строками
+        (PDR-SCHED-02), и её вхождения считаются, а не читаются; считать их
+        нечем, пока в дереве нет порта правил часовых поясов.
+      parameters:
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - $ref: '#/components/parameters/Side'
+        - $ref: '#/components/parameters/Whose'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/ClientTimeout'
+      responses:
+        '200':
+          description: Занятия по возрастанию начала
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Lessons'
+        '400':
+          $ref: '#/components/responses/Malformed'
+        '401':
+          $ref: '#/components/responses/Unidentified'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/Refused'
+        '498':
+          $ref: '#/components/responses/Expired'
+        '500':
+          $ref: '#/components/responses/Broken'
+    post:
+      tags: [Расписание]
+      operationId: createLesson
+      summary: Записать ученика на занятие
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/ClientTimeout'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewLesson'
+      responses:
+        '200':
+          description: Занятие записано
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+            Idempotency-Replayed:
+              $ref: '#/components/headers/IdempotencyReplayed'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Lesson'
+        '400':
+          $ref: '#/components/responses/Malformed'
+        '401':
+          $ref: '#/components/responses/Unidentified'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Refused'
+        '498':
+          $ref: '#/components/responses/Expired'
+        '500':
+          $ref: '#/components/responses/Broken'
+
+  /api/v1/lessons/{lesson}:
+    get:
+      tags: [Расписание]
+      operationId: getLesson
+      summary: Одно занятие
+      description: |
+        ЧЬЁ РАСПИСАНИЕ СМОТРЯТ — сказано теми же `whose` и `side`, что и у
+        выборки за отрезок, и не для симметрии: права спрашиваются про
+        расписание человека, а «чьё это занятие» до чтения неизвестно. Спросить
+        политику дважды — один раз ни о чём, второй по прочитанному — значит
+        завести две проверки прав, которые разойдутся.
+
+        Занятия, которого в названном расписании нет, ЗДЕСЬ НЕТ ТАК ЖЕ, как
+        несуществующего: иначе по коду ответа перебираются чужие занятия.
+      parameters:
+        - $ref: '#/components/parameters/Lesson'
+        - $ref: '#/components/parameters/Side'
+        - $ref: '#/components/parameters/Whose'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/ClientTimeout'
+      responses:
+        '200':
+          description: Занятие
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Lesson'
+        '400':
+          $ref: '#/components/responses/Malformed'
+        '401':
+          $ref: '#/components/responses/Unidentified'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/Missing'
+        '422':
+          $ref: '#/components/responses/Refused'
+        '498':
+          $ref: '#/components/responses/Expired'
+        '500':
+          $ref: '#/components/responses/Broken'
+
+  /api/v1/lesson-series:
+    post:
+      tags: [Расписание]
+      operationId: createSeries
+      summary: Завести регулярные занятия
+      description: |
+        СЕРИЯ ЗАВОДИТСЯ ПРАВИЛОМ, и занятий после этого обращения не появляется
+        ни одного: сорок строк, созданных при заведении, расходятся с правилом
+        на первом же переносе. Вхождения серии считаются по запросу.
+
+        Правило приходит строкой RRULE — тем подмножеством RFC 5545, которым
+        пользуется репетиторство: недельная частота, интервал, дни недели и один
+        конец из двух. Часть вне подмножества — названный отказ, а не тихий
+        пропуск.
+
+        ВРЕМЯ СЕРИИ — МЕСТНОЕ, а не UTC: «каждый вторник в 18:00» это
+        утверждение про часы репетитора, и после перевода часов занятие остаётся
+        в 18:00 у него.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/ClientTimeout'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewSeries'
+      responses:
+        '200':
+          description: Серия заведена
+          headers:
+            X-Request-Id:
+              $ref: '#/components/headers/RequestId'
+            Idempotency-Replayed:
+              $ref: '#/components/headers/IdempotencyReplayed'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Series'
+        '400':
+          $ref: '#/components/responses/Malformed'
+        '401':
+          $ref: '#/components/responses/Unidentified'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/Refused'
+        '498':
+          $ref: '#/components/responses/Expired'
+        '500':
+          $ref: '#/components/responses/Broken'
+
 components:
   parameters:
     Tenant:
@@ -193,6 +478,57 @@ components:
       in: path
       required: true
       description: Кабинет, в который входят. Идентификатор арендатора.
+      schema:
+        $ref: '#/components/schemas/Uuid'
+
+    Whose:
+      name: whose
+      in: query
+      required: false
+      description: |
+        Чьё расписание. Без него — расписание самого спрашивающего.
+
+        Отдельный параметр, а не догадка по ролям: опекун смотрит подопечного,
+        владелец практики — репетитора, и «чьё» из роли не выводится. Права на
+        названного человека спрашиваются у политики.
+      schema:
+        $ref: '#/components/schemas/Uuid'
+
+    Side:
+      name: side
+      in: query
+      required: true
+      description: |
+        Какой стороной названный человек стоит в этих занятиях: ведёт их или
+        занимается. Два разных расписания одного человека, и под каждое в базе
+        заведён свой индекс.
+      schema:
+        $ref: '#/components/schemas/LessonSide'
+
+    From:
+      name: from
+      in: query
+      required: true
+      description: |
+        Начало отрезка включительно: микросекунды от начала эпохи в UTC. Число,
+        а не строка: у клиента и у сервера разные представления о том, как
+        записать момент, а у числа их нет.
+      schema:
+        $ref: '#/components/schemas/Moment'
+
+    To:
+      name: to
+      in: query
+      required: true
+      description: Конец отрезка НЕ включительно, теми же микросекундами.
+      schema:
+        $ref: '#/components/schemas/Moment'
+
+    Lesson:
+      name: lesson
+      in: path
+      required: true
+      description: Занятие.
       schema:
         $ref: '#/components/schemas/Uuid'
 
@@ -296,6 +632,30 @@ components:
         Кто вы. 401 говорит клиенту войти заново, 403 — что входить бесполезно;
         родом доменной ошибки это не выражается, поэтому шаг опознания отвечает
         отдельно.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+
+    Forbidden:
+      description: |
+        Нельзя. 403 отличается от 401 тем, что входить заново бесполезно: дело
+        не в том, кто вы, а в том, что это не ваше.
+      headers:
+        X-Request-Id:
+          $ref: '#/components/headers/RequestId'
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+
+    Missing:
+      description: |
+        Такого здесь нет. Чужой кабинет отвечает тем же самым: иначе по коду
+        ответа перебирается то, чего видеть нельзя.
       headers:
         X-Request-Id:
           $ref: '#/components/headers/RequestId'
@@ -421,6 +781,324 @@ components:
         migrations: 0
         why: 'схема пуста: миграции не применены'
 
+    Moment:
+      type: integer
+      format: int64
+      description: |
+        Момент: микросекунды от начала эпохи в UTC. Число, а не строка — у
+        клиента и у сервера разные представления о том, как записать момент, а у
+        числа их нет. `format: int64` не украшение: микросекунды эпохи не
+        вмещаются в тридцать два бита уже сегодня.
+      example: 1780000000000000
+
+    Zone:
+      type: string
+      minLength: 1
+      maxLength: 64
+      description: |
+        Имя зоны IANA. Хранится РЯДОМ С МОМЕНТОМ, а не вместо него: занятие в
+        18:00 по Берлину, перенесённое государством на час, обязано остаться в
+        18:00 по Берлину, и без зоны рядом это невыразимо.
+      example: Europe/Moscow
+
+    CalendarDate:
+      type: string
+      pattern: '^\d{4}-\d{2}-\d{2}$'
+      description: |
+        Календарная дата без времени и без зоны. Не момент: пока не сказано, в
+        какой зоне, она не превращается ни в какое мгновение.
+      example: '2026-03-02'
+
+    ClockTime:
+      type: string
+      pattern: '^\d{2}:\d{2}$'
+      description: |
+        Время на часах: часы и минуты. Секунд нет — занятия не назначают на
+        18:30:17, а лишняя точность требует решать, что с ней делать при
+        сравнении.
+      example: '18:00'
+
+    Minutes:
+      type: integer
+      minimum: 1
+      maximum: 1440
+      description: Длительность занятия в минутах.
+      example: 60
+
+    Weekday:
+      type: integer
+      minimum: 0
+      maximum: 6
+      description: |
+        День недели, воскресенье — ноль. Та же нумерация, что у
+        `std::chrono::weekday` и в схеме базы: вторая нумерация того же самого
+        разошлась бы с первой в тот день, когда поправили одну.
+      example: 2
+
+    LessonSide:
+      type: string
+      description: |
+        Сторона занятия: `tutor` — ведёт, `participant` — занимается. Не роль в
+        кабинете: один и тот же человек ведёт свои занятия и учится на чужих.
+      enum:
+        - tutor
+        - participant
+      example: tutor
+
+    LessonState:
+      type: string
+      description: |
+        Состояние занятия. Список закрытый: свободная строка в этом месте
+        означает, что через полгода в базе окажутся «held », «HELD» и
+        «проведено», а сравнивать их будет некому.
+      enum:
+        - planned
+        - confirmed
+        - held
+        - cancelled
+        - no_show
+      example: planned
+
+    Nothing:
+      type: object
+      additionalProperties: false
+      description: |
+        ТЕЛА У ЭТОГО ОБРАЩЕНИЯ НЕТ. Схема всё равно есть и всё равно пустая: тело
+        разбирает форма запроса, одна на все ручки, и «здесь тела не бывает» она
+        выражает пустым объектом, а не отсутствием схемы. Присланное поле
+        отвергается — `additionalProperties: false` тут и работает.
+      example: {}
+
+    AvailabilityRule:
+      type: object
+      additionalProperties: false
+      required: [weekday, from, to, tz]
+      description: Когда репетитор готов работать по этому дню недели.
+      properties:
+        weekday:
+          $ref: '#/components/schemas/Weekday'
+        from:
+          $ref: '#/components/schemas/ClockTime'
+        to:
+          $ref: '#/components/schemas/ClockTime'
+        tz:
+          $ref: '#/components/schemas/Zone'
+      example:
+        weekday: 2
+        from: '10:00'
+        to: '18:00'
+        tz: Europe/Moscow
+
+    AvailabilityException:
+      type: object
+      additionalProperties: false
+      required: [date]
+      description: |
+        День, который живёт не по недельному правилу. БЕЗ ЧАСОВ — ВЫХОДНОЙ, и это
+        не «забыли заполнить»: «в этот день не работаю» и «в этот день работаю с
+        двух до четырёх» — разные ответы, и первый обязан выражаться.
+
+        Часы здесь моментами, а не показаниями часов: исключение назначают на
+        конкретный день, и зона у него уже есть — та, в которой стоит правило.
+      properties:
+        date:
+          $ref: '#/components/schemas/CalendarDate'
+        from:
+          $ref: '#/components/schemas/Moment'
+        to:
+          $ref: '#/components/schemas/Moment'
+      example:
+        date: '2026-03-09'
+
+    Availability:
+      type: object
+      additionalProperties: false
+      required: [rules, exceptions]
+      description: |
+        Доступность репетитора целиком: недельные правила и исключения по датам.
+        Исключение сильнее правила — на дату с исключением правила дня недели не
+        смотрят вовсе.
+      properties:
+        rules:
+          type: array
+          maxItems: 128
+          items:
+            $ref: '#/components/schemas/AvailabilityRule'
+        exceptions:
+          type: array
+          maxItems: 512
+          items:
+            $ref: '#/components/schemas/AvailabilityException'
+      example:
+        rules:
+          - weekday: 2
+            from: '10:00'
+            to: '18:00'
+            tz: Europe/Moscow
+        exceptions: []
+
+    Lesson:
+      type: object
+      additionalProperties: false
+      required: [id, tutor, participants, starts_at, ends_at, tz, state]
+      description: |
+        Занятие. ДВА МОМЕНТА, а не момент и длительность: ограничение
+        непересечения в базе строится на отрезке, и длительность из пары моментов
+        получается вычитанием.
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        tutor:
+          $ref: '#/components/schemas/Uuid'
+        participants:
+          type: array
+          minItems: 1
+          maxItems: 32
+          description: |
+            Кто занимается. МАССИВ, А НЕ ОДИН УЧЕНИК: групповые занятия
+            появятся, и переделывать под них контракт — это ломать клиентов.
+            Сегодняшнее правило домена ограничивает список единицей, и это
+            правило, а не форма.
+          items:
+            $ref: '#/components/schemas/Uuid'
+        starts_at:
+          $ref: '#/components/schemas/Moment'
+        ends_at:
+          $ref: '#/components/schemas/Moment'
+        tz:
+          $ref: '#/components/schemas/Zone'
+        state:
+          $ref: '#/components/schemas/LessonState'
+      example:
+        id: 018f2b3c-4d5e-4f60-8a71-b2c3d4e5f607
+        tutor: 018f2b3c-4d5e-4f60-8a71-b2c3d4e5f601
+        participants: [018f2b3c-4d5e-4f60-8a71-b2c3d4e5f602]
+        starts_at: 1780000000000000
+        ends_at: 1780003600000000
+        tz: Europe/Moscow
+        state: planned
+
+    Lessons:
+      type: object
+      additionalProperties: false
+      required: [lessons]
+      description: |
+        Занятия по возрастанию начала. ОБЪЕКТ, А НЕ ГОЛЫЙ МАССИВ: массив на
+        верхнем уровне некуда расширить, не сломав клиентов, — а расширять
+        придётся, как только появится постраничность.
+      properties:
+        lessons:
+          type: array
+          maxItems: 2000
+          items:
+            $ref: '#/components/schemas/Lesson'
+      example:
+        lessons: []
+
+    NewLesson:
+      type: object
+      additionalProperties: false
+      required: [tutor, student, starts_at, minutes, tz]
+      description: |
+        Запись ученика на занятие. Зона — та, в которой человек НАЗВАЛ время, а
+        не та, в которой он его смотрит.
+      properties:
+        tutor:
+          $ref: '#/components/schemas/Uuid'
+        student:
+          $ref: '#/components/schemas/Uuid'
+        starts_at:
+          $ref: '#/components/schemas/Moment'
+        minutes:
+          $ref: '#/components/schemas/Minutes'
+        tz:
+          $ref: '#/components/schemas/Zone'
+      example:
+        tutor: 018f2b3c-4d5e-4f60-8a71-b2c3d4e5f601
+        student: 018f2b3c-4d5e-4f60-8a71-b2c3d4e5f602
+        starts_at: 1780000000000000
+        minutes: 60
+        tz: Europe/Moscow
+
+    NewSeries:
+      type: object
+      additionalProperties: false
+      required: [tutor, student, rrule, starts_on, at, minutes, tz]
+      description: Регулярные занятия правилом.
+      properties:
+        tutor:
+          $ref: '#/components/schemas/Uuid'
+        student:
+          $ref: '#/components/schemas/Uuid'
+        rrule:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: |
+            Правило повторения строкой RFC 5545 — поддержанным подмножеством:
+            `FREQ=WEEKLY`, `INTERVAL`, `BYDAY` и один конец из двух (`COUNT`
+            либо `UNTIL`). Всё остальное отклоняется вслух.
+          example: FREQ=WEEKLY;INTERVAL=1;BYDAY=TU;COUNT=8
+        starts_on:
+          $ref: '#/components/schemas/CalendarDate'
+        at:
+          $ref: '#/components/schemas/ClockTime'
+        minutes:
+          $ref: '#/components/schemas/Minutes'
+        tz:
+          $ref: '#/components/schemas/Zone'
+      example:
+        tutor: 018f2b3c-4d5e-4f60-8a71-b2c3d4e5f601
+        student: 018f2b3c-4d5e-4f60-8a71-b2c3d4e5f602
+        rrule: FREQ=WEEKLY;INTERVAL=1;BYDAY=TU;COUNT=8
+        starts_on: '2026-03-03'
+        at: '18:00'
+        minutes: 60
+        tz: Europe/Moscow
+
+    Series:
+      type: object
+      additionalProperties: false
+      required: [id, tutor, participants, rrule, starts_on, at, minutes, tz]
+      description: |
+        Заведённая серия. ЗАНЯТИЙ В НЕЙ НЕТ И НЕ БУДЕТ: она хранится правилом, а
+        вхождения считаются по запросу.
+      properties:
+        id:
+          $ref: '#/components/schemas/Uuid'
+        tutor:
+          $ref: '#/components/schemas/Uuid'
+        participants:
+          type: array
+          minItems: 1
+          maxItems: 32
+          items:
+            $ref: '#/components/schemas/Uuid'
+        rrule:
+          type: string
+          minLength: 1
+          maxLength: 256
+          description: |
+            То же правило, каким его прочитал разбор. Может отличаться от
+            присланного порядком частей: строку собирает домен, а не эхо запроса.
+        starts_on:
+          $ref: '#/components/schemas/CalendarDate'
+        at:
+          $ref: '#/components/schemas/ClockTime'
+        minutes:
+          $ref: '#/components/schemas/Minutes'
+        tz:
+          $ref: '#/components/schemas/Zone'
+      example:
+        id: 018f2b3c-4d5e-4f60-8a71-b2c3d4e5f608
+        tutor: 018f2b3c-4d5e-4f60-8a71-b2c3d4e5f601
+        participants: [018f2b3c-4d5e-4f60-8a71-b2c3d4e5f602]
+        rrule: FREQ=WEEKLY;INTERVAL=1;BYDAY=TU;COUNT=8
+        starts_on: '2026-03-03'
+        at: '18:00'
+        minutes: 60
+        tz: Europe/Moscow
+
     SignInRequest:
       type: object
       additionalProperties: false
@@ -538,3 +1216,23 @@ components:
         - urn:pdr:error:cabinet_unknown
         - urn:pdr:error:sign_in_refused
         - urn:pdr:error:sign_in_throttled
+        - urn:pdr:error:foreign_tenant
+        - urn:pdr:error:role_missing
+        - urn:pdr:error:not_yours
+        - urn:pdr:error:scope_missing
+        - urn:pdr:error:student_grew_up
+        - urn:pdr:error:too_young
+        - urn:pdr:error:slot_already_taken
+        - urn:pdr:error:lesson_not_found
+        - urn:pdr:error:lesson_duration_not_positive
+        - urn:pdr:error:lesson_starts_in_past
+        - urn:pdr:error:availability_not_set
+        - urn:pdr:error:time_zone_unknown
+        - urn:pdr:error:request_argument_invalid
+        - urn:pdr:error:schedule_window_over_horizon
+        - urn:pdr:error:availability_window_not_forward
+        - urn:pdr:error:availability_exception_repeated
+        - urn:pdr:error:recurrence_days_empty
+        - urn:pdr:error:recurrence_interval_out_of_range
+        - urn:pdr:error:recurrence_count_out_of_range
+        - urn:pdr:error:recurrence_ends_before_it_starts

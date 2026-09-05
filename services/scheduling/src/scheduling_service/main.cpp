@@ -14,6 +14,9 @@
 #include "infrastructure/http/middlewares/links.hpp"
 #include "infrastructure/http/outgoing_component.hpp"
 #include "observability/infrastructure/product_events_component.hpp"
+#include "scheduling/infrastructure/http/availability_operations.hpp"
+#include "scheduling/infrastructure/http/lesson_operations.hpp"
+#include "scheduling/infrastructure/http/series_operation.hpp"
 #include "scheduling_service/authorized_route.hpp"
 #include "scheduling_service/health_handler.hpp"
 #include "scheduling_service/heartbeat_job.hpp"
@@ -39,7 +42,13 @@
 /// повторный компонент — не предупреждение, а падение при старте.
 ///
 /// Своего в списке — только то, чего у userver нет: дверь к базе, проверка
-/// секретов, права, поток продуктовых событий, задание и три ручки.
+/// секретов, права, поток продуктовых событий, задание, три ручки состояния и
+/// операции расписания.
+///
+/// ОПЕРАЦИЙ МНОГО, А НАСЛЕДНИК HttpHandlerBase ОДИН. `AuthorizedRoute`
+/// регистрируется столько раз, сколько маршрутов, — под разными именами; какую
+/// операцию звать, сказано в его статическом конфиге. Второй наследник ловится
+/// scripts/check_http_form.py.
 ///
 /// Ручка `handler-ping` остаётся ШТАТНОЙ и на месте: /health и /readiness
 /// написаны ПОВЕРХ неё, а не вместо (ADR-0013). Она отвечает балансеру, они —
@@ -66,12 +75,25 @@ int main(int argc, char* argv[]) {
             .Append<pdr::identity::SignInOperation>()
             .Append<pdr::observability::ProductEventsComponent>()
 
+            .Append<pdr::scheduling::http::GetAvailabilityOperation>()
+            .Append<pdr::scheduling::http::SetAvailabilityOperation>()
+            .Append<pdr::scheduling::http::ListLessonsOperation>()
+            .Append<pdr::scheduling::http::CreateLessonOperation>()
+            .Append<pdr::scheduling::http::GetLessonOperation>()
+            .Append<pdr::scheduling::http::CreateSeriesOperation>()
+
             .Append<pdr::scheduling_service::SecretsGuard>()
             .Append<pdr::scheduling_service::HeartbeatJob>()
             .Append<pdr::scheduling_service::HealthHandler>()
             .Append<pdr::scheduling_service::ReadinessHandler>()
             .Append<pdr::scheduling_service::OpenApiHandler>()
-            .Append<pdr::scheduling_service::AuthorizedRoute>("handler-sign-in");
+            .Append<pdr::scheduling_service::AuthorizedRoute>("handler-sign-in")
+            .Append<pdr::scheduling_service::AuthorizedRoute>("handler-get-availability")
+            .Append<pdr::scheduling_service::AuthorizedRoute>("handler-set-availability")
+            .Append<pdr::scheduling_service::AuthorizedRoute>("handler-list-lessons")
+            .Append<pdr::scheduling_service::AuthorizedRoute>("handler-create-lesson")
+            .Append<pdr::scheduling_service::AuthorizedRoute>("handler-get-lesson")
+            .Append<pdr::scheduling_service::AuthorizedRoute>("handler-create-series");
 
     return userver::utils::DaemonMain(argc, argv, components);
 }

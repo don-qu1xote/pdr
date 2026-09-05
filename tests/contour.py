@@ -10,8 +10,10 @@
 какие пути в установке указывают наружу процесса.
 """
 
+import datetime
 import pathlib
 import sys
+import uuid
 
 import pytest
 from testsuite.databases.pgsql import discover
@@ -153,6 +155,112 @@ def pdr_config_paths(tmp_path_factory):
         config_vars['dynamic-config-updates'] = True
 
     return patch
+
+
+TUTOR = '33333333-3333-4333-8333-333333333333'
+STUDENT = '44444444-4444-4444-8444-444444444444'
+GUARDIAN = '55555555-5555-4555-8555-555555555555'
+OUTSIDER = '66666666-6666-4666-8666-666666666666'
+
+MOSCOW = 'Europe/Moscow'
+
+
+def mail(person):
+    return f'{person[:8]}@example.org'
+
+
+class Cabinet:
+    """Кто заведён в кабинете расписания. Одна засыпка на оба набора.
+
+    Людей четверо, и меньшим составом не обойтись: «ученик не видит чужие
+    занятия» требует второго ученика, а «опекун без доступа получает отказ» —
+    опекуна, у которого опека есть, а уровня нет.
+    """
+
+    def __init__(self, rows):
+        self.rows = rows
+
+    def lessons(self):
+        self.rows.execute('select count(*) from scheduling_lesson')
+        return self.rows.fetchone()[0]
+
+    def open_schedule_to_the_guardian(self):
+        """Уровень доступа открывают ОТДЕЛЬНО от опеки — строкой согласия.
+
+        Согласие дано ВЧЕРА, а не сейчас: часы базы и часы процесса в контуре
+        расходятся на смещение зоны, и согласие, выданное «сию секунду»,
+        оказывается для процесса будущим — а будущее согласие не действует.
+        Вчерашнее и ближе к жизни: доступ открывают заранее, а не в тот же миг.
+        """
+        self.rows.execute(
+            'insert into identity_guardian_consent '
+            '(tenant_id, id, guardian_id, student_id, scope, granted_by, granted_at) '
+            "values (%s, %s, %s, %s, 'schedule', %s, now() - interval '1 day')",
+            (CABINET, str(uuid.uuid4()), GUARDIAN, STUDENT, TUTOR),
+        )
+        self.rows.connection.commit()
+
+
+def _enrol(rows, person, role):
+    rows.execute(
+        'insert into identity_person (tenant_id, id, display_name, email, tz) '
+        "values (%s, %s, %s, %s, 'Europe/Moscow') on conflict do nothing",
+        (CABINET, person, role, mail(person)),
+    )
+    rows.execute(
+        'insert into identity_credential (tenant_id, person_id, password_hash) '
+        'values (%s, %s, %s) on conflict do nothing',
+        (CABINET, person, CABINET_PASSWORD_HASH),
+    )
+    rows.execute(
+        'insert into identity_role_assignment (tenant_id, id, person_id, role) '
+        'values (%s, %s, %s, %s)',
+        (CABINET, str(uuid.uuid4()), person, role),
+    )
+
+
+@pytest.fixture
+def cabinet(practice):
+    """Кабинет расписания: репетитор, его ученик, опекун и посторонний ученик."""
+    _enrol(practice, TUTOR, 'tutor')
+    _enrol(practice, STUDENT, 'student')
+    _enrol(practice, GUARDIAN, 'guardian')
+    _enrol(practice, OUTSIDER, 'student')
+    practice.execute(
+        'insert into identity_guardianship (tenant_id, id, guardian_id, student_id) '
+        'values (%s, %s, %s, %s)',
+        (CABINET, str(uuid.uuid4()), GUARDIAN, STUDENT),
+    )
+    return Cabinet(practice)
+
+
+async def sign_in(service_client, person):
+    """Сессия человека — тем же путём, каким её получает клиент."""
+    response = await service_client.post(
+        f'/api/v1/cabinet/{CABINET}/sign-in',
+        json={'email': mail(person), 'password': CABINET_PASSWORD},
+        headers={'Idempotency-Key': f'sign-in-{uuid.uuid4()}'},
+    )
+    assert response.status == 200, response.text
+
+    return {'Cookie': response.headers['Set-Cookie'].split(';', maxsplit=1)[0]}
+
+
+def in_a_week():
+    """Момент через неделю, ровно в час.
+
+    Считается от текущего времени, а не записан константой: занятие в прошлом
+    домен не принимает, и записанная дата превратила бы набор в бомбу с часовым
+    механизмом — зелёный сегодня и красный в тот день, когда она пройдёт.
+    """
+    at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=7)
+    return int(at.replace(minute=0, second=0, microsecond=0).timestamp()) * 1000000
+
+
+def next_tuesday():
+    """Ближайший вторник после сегодняшнего — по той же причине."""
+    today = datetime.datetime.now(datetime.timezone.utc).date()
+    return (today + datetime.timedelta(days=(1 - today.weekday()) % 7 or 7)).isoformat()
 
 
 @pytest.fixture

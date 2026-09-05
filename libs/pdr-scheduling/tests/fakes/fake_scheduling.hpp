@@ -20,6 +20,16 @@ namespace pdr::scheduling::testing {
 /// обе реализации отказывают одинаково, проверяет contract-набор.
 class FakeLessons final : public ports::LessonRepository {
 public:
+    std::optional<Lesson> Find(const core::TenantId& tenant,
+                               const core::LessonId& id) const override {
+        for (const auto& lesson : kept_) {
+            if (lesson.Tenant() == tenant && lesson.Id() == id) {
+                return lesson;
+            }
+        }
+        return std::nullopt;
+    }
+
     std::optional<Lesson> FindAtSlot(const core::TenantId& tenant,
                                      const core::PersonId& tutor,
                                      core::Instant starts_at) const override {

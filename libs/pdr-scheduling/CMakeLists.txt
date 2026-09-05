@@ -6,6 +6,11 @@
 
 add_library(pdr_scheduling STATIC
     src/scheduling/application/book_lesson.cpp
+    src/scheduling/application/create_series.cpp
+    src/scheduling/application/get_availability.cpp
+    src/scheduling/application/get_lesson.cpp
+    src/scheduling/application/list_lessons.cpp
+    src/scheduling/application/set_availability.cpp
     src/scheduling/core/availability.cpp
     src/scheduling/core/lesson.cpp
     src/scheduling/core/overlap.cpp
@@ -26,6 +31,25 @@ if(userver_FOUND)
                                PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_link_libraries(pdr_scheduling_postgres
                           PUBLIC pdr_scheduling pdr_postgres pdr_application userver::postgresql)
+
+    # РУЧКИ РАСПИСАНИЯ — отдельной целью, как и у identity: форма запроса, типы
+    # контракта и опознание пришедшего нужны только им, а домену — нет.
+    #
+    # Ручки живут ЗДЕСЬ, а не в services/: процесс собирает контексты и не лезет
+    # в них, а «какое действие спрашивать у политики» — знание расписания. В
+    # сервисе от них остаётся строка в списке компонентов и строка в конфиге.
+    add_library(pdr_scheduling_http STATIC
+        src/scheduling/infrastructure/http/api_mapping.cpp
+        src/scheduling/infrastructure/http/arguments.cpp
+        src/scheduling/infrastructure/http/availability_operations.cpp
+        src/scheduling/infrastructure/http/lesson_operations.cpp
+        src/scheduling/infrastructure/http/parts.cpp
+        src/scheduling/infrastructure/http/series_operation.cpp
+    )
+    target_include_directories(pdr_scheduling_http PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
+    target_link_libraries(pdr_scheduling_http
+                          PUBLIC pdr_scheduling_postgres pdr_api pdr_http pdr_http_postgres
+                                 pdr_identity_infrastructure)
 endif()
 
 # Публичного контракта у scheduling пока нет: его никто не спрашивает
@@ -36,6 +60,10 @@ if(PDR_BUILD_TESTS)
     pdr_unit_test_sources(
         tests/availability_test.cpp
         tests/book_lesson_test.cpp
+        tests/list_lessons_test.cpp
+        tests/get_lesson_test.cpp
+        tests/create_series_test.cpp
+        tests/set_availability_test.cpp
         tests/lesson_state_test.cpp
         tests/overlap_test.cpp
         tests/recurrence_test.cpp

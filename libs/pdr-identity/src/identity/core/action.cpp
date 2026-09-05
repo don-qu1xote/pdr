@@ -12,6 +12,8 @@ std::string_view Name(Action action) noexcept {
             return "reschedule_lesson";
         case Action::kViewSchedule:
             return "view_schedule";
+        case Action::kSetAvailability:
+            return "set_availability";
         case Action::kViewInvoice:
             return "view_invoice";
         case Action::kPayInvoice:

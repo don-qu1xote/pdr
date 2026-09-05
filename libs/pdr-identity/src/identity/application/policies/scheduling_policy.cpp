@@ -21,11 +21,18 @@ const AnyOf kOwnAffairs{AllOf{HasRole{Role::kTutor}, Tied{Tie::kMine}},
 
 const AnyOf kMayLook{kOwnAffairs, HasRole{Role::kOwner}};
 
+/// ЧАСЫ РАБОТЫ ЗАДАЁТ ТОТ, ЧЬИ ОНИ. Ни владелец практики, ни опекун сюда не
+/// входят: «когда я работаю» — утверждение репетитора о себе, и подставить его
+/// за него не может никто. Смотреть эти часы при этом вправе многие — на то
+/// отдельное действие.
+const AllOf kMayOfferHours{HasRole{Role::kTutor}, Tied{Tie::kMine}};
+
 constexpr std::array kActions{
     Action::kBookLesson,
     Action::kCancelLesson,
     Action::kRescheduleLesson,
     Action::kViewSchedule,
+    Action::kSetAvailability,
 };
 
 }  // namespace
@@ -45,6 +52,8 @@ PolicyDecision SchedulingPolicy::Decide(const Subject& subject,
             return kMayMove.Decide(subject, action, resource);
         case Action::kViewSchedule:
             return kMayLook.Decide(subject, action, resource);
+        case Action::kSetAvailability:
+            return kMayOfferHours.Decide(subject, action, resource);
         default:
             return Denied(DenyReason::kNoPolicy);
     }

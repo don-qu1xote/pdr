@@ -11,8 +11,19 @@ import conformance
 from contour import CABINET as TENANT
 from contour import CABINET_EMAIL as EMAIL
 from contour import CABINET_PASSWORD as PASSWORD
+from contour import MOSCOW
+from contour import OUTSIDER
+from contour import STUDENT
+from contour import TUTOR
+from contour import in_a_week
+from contour import next_tuesday
+from contour import sign_in
 
 SIGN_IN = '/api/v1/cabinet/{tenant}/sign-in'
+LESSONS = '/api/v1/lessons'
+ONE_LESSON = '/api/v1/lessons/{lesson}'
+SERIES = '/api/v1/lesson-series'
+AVAILABILITY = '/api/v1/availability'
 
 
 def address(tenant=TENANT):
@@ -195,3 +206,140 @@ async def test_reused_key_answers_as_described(service_client, specification, pr
         specification, response, SIGN_IN, 'POST', 409, conformance.MEDIA_PROBLEM,
     )
     assert problem['type'] == 'urn:pdr:error:idempotency_key_reused'
+
+
+async def booked(service_client, tutor):
+    """Занятие, записанное тем же обменом, что и у клиента."""
+    response = await service_client.post(
+        LESSONS,
+        json={
+            'tutor': TUTOR,
+            'student': STUDENT,
+            'starts_at': in_a_week(),
+            'minutes': 60,
+            'tz': MOSCOW,
+        },
+        headers={**tutor, 'Idempotency-Key': key()},
+    )
+    assert response.status == 200, response.text
+    return response
+
+
+async def test_a_booked_lesson_answers_as_described(service_client, specification, cabinet):
+    tutor = await sign_in(service_client, TUTOR)
+
+    response = await booked(service_client, tutor)
+
+    lesson = conformance.matches(specification, response, LESSONS, 'POST', 200)
+    assert lesson['participants'] == [STUDENT]
+    assert lesson['state'] == 'planned'
+
+
+async def test_a_month_of_lessons_answers_as_described(service_client, specification, cabinet):
+    tutor = await sign_in(service_client, TUTOR)
+    await booked(service_client, tutor)
+
+    response = await service_client.get(
+        LESSONS,
+        params={'from': in_a_week() - 86400000000, 'to': in_a_week() + 86400000000, 'side': 'tutor'},
+        headers=tutor,
+    )
+
+    found = conformance.matches(specification, response, LESSONS, 'GET', 200)
+    assert len(found['lessons']) == 1
+
+
+async def test_one_lesson_answers_as_described(service_client, specification, cabinet):
+    tutor = await sign_in(service_client, TUTOR)
+    created = await booked(service_client, tutor)
+
+    response = await service_client.get(
+        ONE_LESSON.replace('{lesson}', created.json()['id']),
+        params={'side': 'tutor'},
+        headers=tutor,
+    )
+
+    conformance.matches(specification, response, ONE_LESSON, 'GET', 200)
+
+
+async def test_a_lesson_outside_the_schedule_answers_as_described(
+    service_client, specification, cabinet,
+):
+    """Чужое занятие не находится ТАК ЖЕ, как несуществующее."""
+    tutor = await sign_in(service_client, TUTOR)
+    created = await booked(service_client, tutor)
+
+    outsider = await sign_in(service_client, OUTSIDER)
+    response = await service_client.get(
+        ONE_LESSON.replace('{lesson}', created.json()['id']),
+        params={'side': 'participant'},
+        headers=outsider,
+    )
+
+    problem = conformance.matches(
+        specification, response, ONE_LESSON, 'GET', 404, conformance.MEDIA_PROBLEM,
+    )
+    assert problem['type'] == 'urn:pdr:error:lesson_not_found'
+
+
+async def test_availability_answers_as_described(service_client, specification, cabinet):
+    tutor = await sign_in(service_client, TUTOR)
+
+    absent = await service_client.get(AVAILABILITY, headers=tutor)
+    problem = conformance.matches(
+        specification, absent, AVAILABILITY, 'GET', 404, conformance.MEDIA_PROBLEM,
+    )
+    assert problem['type'] == 'urn:pdr:error:availability_not_set'
+
+    written = await service_client.put(
+        AVAILABILITY,
+        json={
+            'rules': [{'weekday': 2, 'from': '10:00', 'to': '18:00', 'tz': MOSCOW}],
+            'exceptions': [],
+        },
+        headers={**tutor, 'Idempotency-Key': key()},
+    )
+    conformance.matches(specification, written, AVAILABILITY, 'PUT', 200)
+
+    response = await service_client.get(AVAILABILITY, headers=tutor)
+
+    found = conformance.matches(specification, response, AVAILABILITY, 'GET', 200)
+    assert found['rules'][0]['to'] == '18:00'
+
+
+async def test_a_series_answers_as_described(service_client, specification, cabinet):
+    tutor = await sign_in(service_client, TUTOR)
+
+    response = await service_client.post(
+        SERIES,
+        json={
+            'tutor': TUTOR,
+            'student': STUDENT,
+            'rrule': 'FREQ=WEEKLY;INTERVAL=1;BYDAY=TU;COUNT=8',
+            'starts_on': next_tuesday(),
+            'at': '18:00',
+            'minutes': 60,
+            'tz': MOSCOW,
+        },
+        headers={**tutor, 'Idempotency-Key': key()},
+    )
+
+    series = conformance.matches(specification, response, SERIES, 'POST', 200)
+    assert series['rrule'].startswith('FREQ=WEEKLY')
+
+
+async def test_a_refusal_by_policy_answers_as_described(service_client, specification, cabinet):
+    """403 описан у каждой ручки расписания, и приходит он той же формой."""
+    student = await sign_in(service_client, STUDENT)
+
+    response = await service_client.put(
+        AVAILABILITY,
+        params={'whose': TUTOR},
+        json={'rules': [], 'exceptions': []},
+        headers={**student, 'Idempotency-Key': key()},
+    )
+
+    problem = conformance.matches(
+        specification, response, AVAILABILITY, 'PUT', 403, conformance.MEDIA_PROBLEM,
+    )
+    assert problem['type'] == 'urn:pdr:error:role_missing'

@@ -162,6 +162,24 @@ components_manager:
         identity-sign-in:
             counting-task-processor: fs-task-processor
 
+        # ОПЕРАЦИИ РАСПИСАНИЯ.
+        #
+        # ЧУЖИЕ КОМПОНЕНТЫ НАЗЫВАЕТ ЭТОТ ФАЙЛ, а не код расписания: контекст
+        # видит чужой контекст только публичным контрактом, и «под каким именем
+        # поднят тот, кто отвечает на вопросы о правах» — решение того, кто
+        # собирает процесс. Правило проверяет scripts/check_layers.py.
+        #
+        # Срок ключа повтора при этом в конфиге не назван: он динамический
+        # (PDR_IDEMPOTENCY) и меняется без перезапуска.
+        scheduling-get-availability: &scheduling-operation
+            permissions: identity-permissions
+            callers: identity-callers
+        scheduling-set-availability: *scheduling-operation
+        scheduling-list-lessons: *scheduling-operation
+        scheduling-create-lesson: *scheduling-operation
+        scheduling-get-lesson: *scheduling-operation
+        scheduling-create-series: *scheduling-operation
+
         observability-product-events: {}
 
         # ПЕРВОЕ НАСТОЯЩЕЕ ЗАДАНИЕ. Имя блокировки, период и отведённое время
@@ -210,6 +228,40 @@ components_manager:
             method: POST
             task_processor: main-task-processor
             operation: identity-sign-in
+
+        # МАРШРУТЫ РАСПИСАНИЯ. Один и тот же адрес с разными методами — это два
+        # маршрута и две операции: userver разводит их по методу сам, а «одна
+        # ручка на GET и PUT» заставила бы её решать это внутри.
+        handler-get-availability:
+            path: /api/v1/availability
+            method: GET
+            task_processor: main-task-processor
+            operation: scheduling-get-availability
+        handler-set-availability:
+            path: /api/v1/availability
+            method: PUT
+            task_processor: main-task-processor
+            operation: scheduling-set-availability
+        handler-list-lessons:
+            path: /api/v1/lessons
+            method: GET
+            task_processor: main-task-processor
+            operation: scheduling-list-lessons
+        handler-create-lesson:
+            path: /api/v1/lessons
+            method: POST
+            task_processor: main-task-processor
+            operation: scheduling-create-lesson
+        handler-get-lesson:
+            path: /api/v1/lessons/{lesson}
+            method: GET
+            task_processor: main-task-processor
+            operation: scheduling-get-lesson
+        handler-create-series:
+            path: /api/v1/lesson-series
+            method: POST
+            task_processor: main-task-processor
+            operation: scheduling-create-series
 
         # СЛУЖЕБНЫЕ РУЧКИ. Каждая нужна ровно в тот час, когда её некогда
         # дописывать.

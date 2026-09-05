@@ -54,6 +54,8 @@ const std::vector<Grant> kGranted{
     {Action::kViewSchedule, Role::kOwner, Tie::kInMyCare},
     {Action::kViewSchedule, Role::kOwner, Tie::kNone},
 
+    {Action::kSetAvailability, Role::kTutor, Tie::kMine},
+
     {Action::kViewInvoice, Role::kStudent, Tie::kAboutMe},
     {Action::kViewInvoice, Role::kGuardian, Tie::kInMyCare},
     {Action::kViewInvoice, Role::kTutor, Tie::kMine},

@@ -22,6 +22,9 @@ class PostgresLessonRepository final : public ports::LessonRepository {
 public:
     explicit PostgresLessonRepository(infrastructure::db::ScopedTenantContext& scope) noexcept;
 
+    std::optional<Lesson> Find(const core::TenantId& tenant,
+                               const core::LessonId& id) const override;
+
     std::optional<Lesson> FindAtSlot(const core::TenantId& tenant,
                                      const core::PersonId& tutor,
                                      core::Instant starts_at) const override;

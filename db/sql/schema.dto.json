@@ -1037,7 +1037,7 @@
     },
     "types": {}
   },
-  "hashsum": "288255d16215d6e120a2d1d158d4775927aee03583dead03e90141dd87b1fd2f",
+  "hashsum": "985fa34e78f3a5e6c226dd12b5e75b916f7bb673f6a887e3ae225f73069fc0f6",
   "queries": [
     {
       "args": [
@@ -1866,6 +1866,57 @@
       ],
       "cardinality": "many",
       "name": "scheduling_lesson_at_slot",
+      "returns": [
+        {
+          "name": "id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "tutor_id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "series_id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "starts_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "ends_at",
+          "nullable": true,
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "tz",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "state",
+          "nullable": true,
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "nullable": true,
+          "type": "uuid"
+        }
+      ],
+      "cardinality": "many",
+      "name": "scheduling_lesson_by_id",
       "returns": [
         {
           "name": "id",

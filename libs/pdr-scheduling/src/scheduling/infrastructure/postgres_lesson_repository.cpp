@@ -179,6 +179,17 @@ PostgresLessonRepository::PostgresLessonRepository(
     infrastructure::db::ScopedTenantContext& scope) noexcept
     : scope_{scope} {}
 
+std::optional<Lesson> PostgresLessonRepository::Find(const core::TenantId& tenant,
+                                                     const core::LessonId& id) const {
+    const auto rows = scope_.Session().Execute(sql::kSchedulingLessonById, tenant, id);
+    if (rows.IsEmpty()) {
+        return std::nullopt;
+    }
+
+    auto found = Assemble<SchedulingLessonByIdRow>(scope_, tenant, rows);
+    return std::move(found.front());
+}
+
 std::optional<Lesson> PostgresLessonRepository::FindAtSlot(const core::TenantId& tenant,
                                                            const core::PersonId& tutor,
                                                            core::Instant starts_at) const {

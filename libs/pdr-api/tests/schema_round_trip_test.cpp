@@ -50,6 +50,23 @@ const Round kRound[] = {
     {"SignInAnswer", &Circle<SignInAnswer>},
     {"Problem", &Circle<Problem>},
     {"ProblemType", &Circle<ProblemType>},
+    {"Moment", &Circle<Moment>},
+    {"Zone", &Circle<Zone>},
+    {"CalendarDate", &Circle<CalendarDate>},
+    {"ClockTime", &Circle<ClockTime>},
+    {"Minutes", &Circle<Minutes>},
+    {"Weekday", &Circle<Weekday>},
+    {"LessonSide", &Circle<LessonSide>},
+    {"LessonState", &Circle<LessonState>},
+    {"Nothing", &Circle<Nothing>},
+    {"AvailabilityRule", &Circle<AvailabilityRule>},
+    {"AvailabilityException", &Circle<AvailabilityException>},
+    {"Availability", &Circle<Availability>},
+    {"Lesson", &Circle<Lesson>},
+    {"Lessons", &Circle<Lessons>},
+    {"NewLesson", &Circle<NewLesson>},
+    {"NewSeries", &Circle<NewSeries>},
+    {"Series", &Circle<Series>},
 };
 
 Value Schemas() {

@@ -21,12 +21,6 @@ UNCOVERED = {
     'один процесс (docs/architecture/context-map.md, «Известные расхождения с кодом»)': {
         'tariff_find_by_code',
     },
-    'непроверенный путь: опознание пришедшего собрано звеньями конвейера, но ручки '
-    'за ним в этом процессе пока нет — войти можно, а зайти с сессией некуда': {
-        'identity_person_born_on',
-        'identity_role_assignment_of_person',
-        'identity_session_find',
-    },
     'непроверенный путь: адаптер собран и проверен своим набором, но ни одна ручка '
     'и ни одно задание единственного процесса его не зовут '
     '(docs/architecture/first-service.md)': {
@@ -37,9 +31,7 @@ UNCOVERED = {
         'identity_account_save',
         'identity_credential_by_person',
         'identity_credential_save',
-        'identity_guardian_consent_active',
         'identity_guardian_consent_save',
-        'identity_guardianship_find_active',
         'identity_guardianship_guardians_of',
         'identity_guardianship_insert',
         'identity_guardianship_update_active',
@@ -59,27 +51,13 @@ UNCOVERED = {
         'jobs_run_last',
         'observability_product_event_record',
     },
-    'непроверенный путь: хранение расписания собрано и проверено против живой базы '
-    '(contract-набор, гонка за слот и план запроса), но ручек расписания в этом '
-    'процессе ещё нет — звать эти запросы снаружи пока нечем (PDR-SCHED-03)': {
-        'scheduling_availability_add',
-        'scheduling_availability_clear',
-        'scheduling_availability_exceptions_add',
-        'scheduling_availability_exceptions_clear',
-        'scheduling_availability_exceptions_of_tutor',
-        'scheduling_availability_of_tutor',
-        'scheduling_lesson_at_slot',
-        'scheduling_lesson_of_participant',
-        'scheduling_lesson_of_tutor',
-        'scheduling_lesson_participants_add',
-        'scheduling_lesson_participants_of',
-        'scheduling_lesson_save',
+    'непроверенный путь: занятие переводят из состояния в состояние и серию правят '
+    'не ручками этого набора — отмена, перенос и подтверждение живут в своих '
+    'задачах, а запрос под них уже написан и проверен живым набором (PDR-SCHED-03)': {
         'scheduling_lesson_set_state',
-        'scheduling_series_create',
         'scheduling_series_exception_record',
         'scheduling_series_exceptions_of',
         'scheduling_series_find',
-        'scheduling_series_participants_add',
         'scheduling_series_participants_of',
     },
 }

@@ -198,7 +198,9 @@ private:
         return identity::Action::kBookLesson;
     }
 
-    identity::Resource About(const Caller& caller, const testing::BookingRequest&) const override {
+    identity::Resource About(const Ask&,
+                             const Caller& caller,
+                             const testing::BookingRequest&) const override {
         return identity::Resource{caller.tenant, std::nullopt, kStudent};
     }
 

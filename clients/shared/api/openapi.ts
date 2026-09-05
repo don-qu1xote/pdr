@@ -137,6 +137,138 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/availability": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Когда репетитор готов работать
+         * @description ЧЬЯ ДОСТУПНОСТЬ — говорит параметр `whose`; без него отвечают про самого
+         *     спрашивающего. Права спрашиваются у политики: свою доступность видит
+         *     репетитор, чужую — владелец практики.
+         *
+         *     ОТСУТСТВИЕ ДОСТУПНОСТИ И ПУСТАЯ ДОСТУПНОСТЬ — РАЗНЫЕ ОТВЕТЫ. Не задавал
+         *     — приходит `404`: занятия к нему просто требуют подтверждения. Задал и
+         *     стёр всё — приходит `200` с пустыми списками: он не работает никогда.
+         *     Слить их в один ответ значило бы не дать репетитору сказать «не работаю».
+         *
+         */
+        get: operations["getAvailability"];
+        /**
+         * Записать доступность целиком
+         * @description ЦЕЛИКОМ, А НЕ ПО ПРАВИЛУ, и это форма самого обращения: `PUT` заменяет
+         *     доступность на присланную. Экран работает так же — репетитор правит
+         *     расписание и сохраняет, — а обращение «добавить одно правило» заставило
+         *     бы клиента помнить порядок операций и оставляло бы половину расписания
+         *     записанной, когда связь оборвалась посередине.
+         *
+         */
+        put: operations["setAvailability"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lessons": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Занятия за отрезок
+         * @description ОДИН АДРЕС НА ТРОИХ — репетитора, ученика и опекуна. Разные у них не
+         *     обращения, а права: `whose` называет человека, чьё расписание просят, а
+         *     `side` — какой стороной занятий он в нём стоит. Политика решает по этой
+         *     паре, и решает по-разному: свои занятия видит каждый, чужие — только
+         *     опекун своего подопечного и владелец практики.
+         *
+         *     ДВЕ СТОРОНЫ, А НЕ ОДНА ВЫБОРКА «ПРО ЧЕЛОВЕКА»: один и тот же человек
+         *     ведёт свои занятия и учится на чужих, и это два разных расписания. Под
+         *     каждую сторону в базе заведён свой индекс, и третьей стороны нет,
+         *     потому что третьего запроса нет.
+         *
+         *     ЗАНЯТИЙ СЕРИИ ЗДЕСЬ НЕТ. Серия хранится правилом, а не строками
+         *     (PDR-SCHED-02), и её вхождения считаются, а не читаются; считать их
+         *     нечем, пока в дереве нет порта правил часовых поясов.
+         *
+         */
+        get: operations["listLessons"];
+        put?: never;
+        /** Записать ученика на занятие */
+        post: operations["createLesson"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lessons/{lesson}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Одно занятие
+         * @description ЧЬЁ РАСПИСАНИЕ СМОТРЯТ — сказано теми же `whose` и `side`, что и у
+         *     выборки за отрезок, и не для симметрии: права спрашиваются про
+         *     расписание человека, а «чьё это занятие» до чтения неизвестно. Спросить
+         *     политику дважды — один раз ни о чём, второй по прочитанному — значит
+         *     завести две проверки прав, которые разойдутся.
+         *
+         *     Занятия, которого в названном расписании нет, ЗДЕСЬ НЕТ ТАК ЖЕ, как
+         *     несуществующего: иначе по коду ответа перебираются чужие занятия.
+         *
+         */
+        get: operations["getLesson"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/lesson-series": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Завести регулярные занятия
+         * @description СЕРИЯ ЗАВОДИТСЯ ПРАВИЛОМ, и занятий после этого обращения не появляется
+         *     ни одного: сорок строк, созданных при заведении, расходятся с правилом
+         *     на первом же переносе. Вхождения серии считаются по запросу.
+         *
+         *     Правило приходит строкой RRULE — тем подмножеством RFC 5545, которым
+         *     пользуется репетиторство: недельная частота, интервал, дни недели и один
+         *     конец из двух. Часть вне подмножества — названный отказ, а не тихий
+         *     пропуск.
+         *
+         *     ВРЕМЯ СЕРИИ — МЕСТНОЕ, а не UTC: «каждый вторник в 18:00» это
+         *     утверждение про часы репетитора, и после перевода часов занятие остаётся
+         *     в 18:00 у него.
+         *
+         */
+        post: operations["createSeries"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -174,6 +306,251 @@ export interface components {
             migrations?: number;
             /** @description Чего не хватает. Появляется только у неготовности. */
             why?: string;
+        };
+        /**
+         * Format: int64
+         * @description Момент: микросекунды от начала эпохи в UTC. Число, а не строка — у
+         *     клиента и у сервера разные представления о том, как записать момент, а у
+         *     числа их нет. `format: int64` не украшение: микросекунды эпохи не
+         *     вмещаются в тридцать два бита уже сегодня.
+         *
+         * @example 1780000000000000
+         */
+        Moment: number;
+        /**
+         * @description Имя зоны IANA. Хранится РЯДОМ С МОМЕНТОМ, а не вместо него: занятие в
+         *     18:00 по Берлину, перенесённое государством на час, обязано остаться в
+         *     18:00 по Берлину, и без зоны рядом это невыразимо.
+         *
+         * @example Europe/Moscow
+         */
+        Zone: string;
+        /**
+         * @description Календарная дата без времени и без зоны. Не момент: пока не сказано, в
+         *     какой зоне, она не превращается ни в какое мгновение.
+         *
+         * @example 2026-03-02
+         */
+        CalendarDate: string;
+        /**
+         * @description Время на часах: часы и минуты. Секунд нет — занятия не назначают на
+         *     18:30:17, а лишняя точность требует решать, что с ней делать при
+         *     сравнении.
+         *
+         * @example 18:00
+         */
+        ClockTime: string;
+        /**
+         * @description Длительность занятия в минутах.
+         * @example 60
+         */
+        Minutes: number;
+        /**
+         * @description День недели, воскресенье — ноль. Та же нумерация, что у
+         *     `std::chrono::weekday` и в схеме базы: вторая нумерация того же самого
+         *     разошлась бы с первой в тот день, когда поправили одну.
+         *
+         * @example 2
+         */
+        Weekday: number;
+        /**
+         * @description Сторона занятия: `tutor` — ведёт, `participant` — занимается. Не роль в
+         *     кабинете: один и тот же человек ведёт свои занятия и учится на чужих.
+         *
+         * @example tutor
+         * @enum {string}
+         */
+        LessonSide: "tutor" | "participant";
+        /**
+         * @description Состояние занятия. Список закрытый: свободная строка в этом месте
+         *     означает, что через полгода в базе окажутся «held », «HELD» и
+         *     «проведено», а сравнивать их будет некому.
+         *
+         * @example planned
+         * @enum {string}
+         */
+        LessonState: "planned" | "confirmed" | "held" | "cancelled" | "no_show";
+        /**
+         * @description ТЕЛА У ЭТОГО ОБРАЩЕНИЯ НЕТ. Схема всё равно есть и всё равно пустая: тело
+         *     разбирает форма запроса, одна на все ручки, и «здесь тела не бывает» она
+         *     выражает пустым объектом, а не отсутствием схемы. Присланное поле
+         *     отвергается — `additionalProperties: false` тут и работает.
+         *
+         * @example {}
+         */
+        Nothing: Record<string, never>;
+        /**
+         * @description Когда репетитор готов работать по этому дню недели.
+         * @example {
+         *       "weekday": 2,
+         *       "from": "10:00",
+         *       "to": "18:00",
+         *       "tz": "Europe/Moscow"
+         *     }
+         */
+        AvailabilityRule: {
+            weekday: components["schemas"]["Weekday"];
+            from: components["schemas"]["ClockTime"];
+            to: components["schemas"]["ClockTime"];
+            tz: components["schemas"]["Zone"];
+        };
+        /**
+         * @description День, который живёт не по недельному правилу. БЕЗ ЧАСОВ — ВЫХОДНОЙ, и это
+         *     не «забыли заполнить»: «в этот день не работаю» и «в этот день работаю с
+         *     двух до четырёх» — разные ответы, и первый обязан выражаться.
+         *
+         *     Часы здесь моментами, а не показаниями часов: исключение назначают на
+         *     конкретный день, и зона у него уже есть — та, в которой стоит правило.
+         *
+         * @example {
+         *       "date": "2026-03-09"
+         *     }
+         */
+        AvailabilityException: {
+            date: components["schemas"]["CalendarDate"];
+            from?: components["schemas"]["Moment"];
+            to?: components["schemas"]["Moment"];
+        };
+        /**
+         * @description Доступность репетитора целиком: недельные правила и исключения по датам.
+         *     Исключение сильнее правила — на дату с исключением правила дня недели не
+         *     смотрят вовсе.
+         *
+         * @example {
+         *       "rules": [
+         *         {
+         *           "weekday": 2,
+         *           "from": "10:00",
+         *           "to": "18:00",
+         *           "tz": "Europe/Moscow"
+         *         }
+         *       ],
+         *       "exceptions": []
+         *     }
+         */
+        Availability: {
+            rules: components["schemas"]["AvailabilityRule"][];
+            exceptions: components["schemas"]["AvailabilityException"][];
+        };
+        /**
+         * @description Занятие. ДВА МОМЕНТА, а не момент и длительность: ограничение
+         *     непересечения в базе строится на отрезке, и длительность из пары моментов
+         *     получается вычитанием.
+         *
+         * @example {
+         *       "id": "018f2b3c-4d5e-4f60-8a71-b2c3d4e5f607",
+         *       "tutor": "018f2b3c-4d5e-4f60-8a71-b2c3d4e5f601",
+         *       "participants": [
+         *         "018f2b3c-4d5e-4f60-8a71-b2c3d4e5f602"
+         *       ],
+         *       "starts_at": 1780000000000000,
+         *       "ends_at": 1780003600000000,
+         *       "tz": "Europe/Moscow",
+         *       "state": "planned"
+         *     }
+         */
+        Lesson: {
+            id: components["schemas"]["Uuid"];
+            tutor: components["schemas"]["Uuid"];
+            /** @description Кто занимается. МАССИВ, А НЕ ОДИН УЧЕНИК: групповые занятия
+             *     появятся, и переделывать под них контракт — это ломать клиентов.
+             *     Сегодняшнее правило домена ограничивает список единицей, и это
+             *     правило, а не форма.
+             *      */
+            participants: components["schemas"]["Uuid"][];
+            starts_at: components["schemas"]["Moment"];
+            ends_at: components["schemas"]["Moment"];
+            tz: components["schemas"]["Zone"];
+            state: components["schemas"]["LessonState"];
+        };
+        /**
+         * @description Занятия по возрастанию начала. ОБЪЕКТ, А НЕ ГОЛЫЙ МАССИВ: массив на
+         *     верхнем уровне некуда расширить, не сломав клиентов, — а расширять
+         *     придётся, как только появится постраничность.
+         *
+         * @example {
+         *       "lessons": []
+         *     }
+         */
+        Lessons: {
+            lessons: components["schemas"]["Lesson"][];
+        };
+        /**
+         * @description Запись ученика на занятие. Зона — та, в которой человек НАЗВАЛ время, а
+         *     не та, в которой он его смотрит.
+         *
+         * @example {
+         *       "tutor": "018f2b3c-4d5e-4f60-8a71-b2c3d4e5f601",
+         *       "student": "018f2b3c-4d5e-4f60-8a71-b2c3d4e5f602",
+         *       "starts_at": 1780000000000000,
+         *       "minutes": 60,
+         *       "tz": "Europe/Moscow"
+         *     }
+         */
+        NewLesson: {
+            tutor: components["schemas"]["Uuid"];
+            student: components["schemas"]["Uuid"];
+            starts_at: components["schemas"]["Moment"];
+            minutes: components["schemas"]["Minutes"];
+            tz: components["schemas"]["Zone"];
+        };
+        /**
+         * @description Регулярные занятия правилом.
+         * @example {
+         *       "tutor": "018f2b3c-4d5e-4f60-8a71-b2c3d4e5f601",
+         *       "student": "018f2b3c-4d5e-4f60-8a71-b2c3d4e5f602",
+         *       "rrule": "FREQ=WEEKLY;INTERVAL=1;BYDAY=TU;COUNT=8",
+         *       "starts_on": "2026-03-03",
+         *       "at": "18:00",
+         *       "minutes": 60,
+         *       "tz": "Europe/Moscow"
+         *     }
+         */
+        NewSeries: {
+            tutor: components["schemas"]["Uuid"];
+            student: components["schemas"]["Uuid"];
+            /**
+             * @description Правило повторения строкой RFC 5545 — поддержанным подмножеством:
+             *     `FREQ=WEEKLY`, `INTERVAL`, `BYDAY` и один конец из двух (`COUNT`
+             *     либо `UNTIL`). Всё остальное отклоняется вслух.
+             *
+             * @example FREQ=WEEKLY;INTERVAL=1;BYDAY=TU;COUNT=8
+             */
+            rrule: string;
+            starts_on: components["schemas"]["CalendarDate"];
+            at: components["schemas"]["ClockTime"];
+            minutes: components["schemas"]["Minutes"];
+            tz: components["schemas"]["Zone"];
+        };
+        /**
+         * @description Заведённая серия. ЗАНЯТИЙ В НЕЙ НЕТ И НЕ БУДЕТ: она хранится правилом, а
+         *     вхождения считаются по запросу.
+         *
+         * @example {
+         *       "id": "018f2b3c-4d5e-4f60-8a71-b2c3d4e5f608",
+         *       "tutor": "018f2b3c-4d5e-4f60-8a71-b2c3d4e5f601",
+         *       "participants": [
+         *         "018f2b3c-4d5e-4f60-8a71-b2c3d4e5f602"
+         *       ],
+         *       "rrule": "FREQ=WEEKLY;INTERVAL=1;BYDAY=TU;COUNT=8",
+         *       "starts_on": "2026-03-03",
+         *       "at": "18:00",
+         *       "minutes": 60,
+         *       "tz": "Europe/Moscow"
+         *     }
+         */
+        Series: {
+            id: components["schemas"]["Uuid"];
+            tutor: components["schemas"]["Uuid"];
+            participants: components["schemas"]["Uuid"][];
+            /** @description То же правило, каким его прочитал разбор. Может отличаться от
+             *     присланного порядком частей: строку собирает домен, а не эхо запроса.
+             *      */
+            rrule: string;
+            starts_on: components["schemas"]["CalendarDate"];
+            at: components["schemas"]["ClockTime"];
+            minutes: components["schemas"]["Minutes"];
+            tz: components["schemas"]["Zone"];
         };
         /** @example {
          *       "email": "mail@example.org",
@@ -260,7 +637,7 @@ export interface components {
          * @example urn:pdr:error:sign_in_refused
          * @enum {string}
          */
-        ProblemType: "urn:pdr:error:request_not_json" | "urn:pdr:error:request_field_invalid" | "urn:pdr:error:idempotency_key_required" | "urn:pdr:error:idempotency_key_in_flight" | "urn:pdr:error:idempotency_key_reused" | "urn:pdr:error:cabinet_unknown" | "urn:pdr:error:sign_in_refused" | "urn:pdr:error:sign_in_throttled";
+        ProblemType: "urn:pdr:error:request_not_json" | "urn:pdr:error:request_field_invalid" | "urn:pdr:error:idempotency_key_required" | "urn:pdr:error:idempotency_key_in_flight" | "urn:pdr:error:idempotency_key_reused" | "urn:pdr:error:cabinet_unknown" | "urn:pdr:error:sign_in_refused" | "urn:pdr:error:sign_in_throttled" | "urn:pdr:error:foreign_tenant" | "urn:pdr:error:role_missing" | "urn:pdr:error:not_yours" | "urn:pdr:error:scope_missing" | "urn:pdr:error:student_grew_up" | "urn:pdr:error:too_young" | "urn:pdr:error:slot_already_taken" | "urn:pdr:error:lesson_not_found" | "urn:pdr:error:lesson_duration_not_positive" | "urn:pdr:error:lesson_starts_in_past" | "urn:pdr:error:availability_not_set" | "urn:pdr:error:time_zone_unknown" | "urn:pdr:error:request_argument_invalid" | "urn:pdr:error:schedule_window_over_horizon" | "urn:pdr:error:availability_window_not_forward" | "urn:pdr:error:availability_exception_repeated" | "urn:pdr:error:recurrence_days_empty" | "urn:pdr:error:recurrence_interval_out_of_range" | "urn:pdr:error:recurrence_count_out_of_range" | "urn:pdr:error:recurrence_ends_before_it_starts";
     };
     responses: {
         /** @description Запрос не разобрался или не хватает обязательного заголовка */
@@ -278,6 +655,30 @@ export interface components {
          *     отдельно.
          *      */
         Unidentified: {
+            headers: {
+                "X-Request-Id": components["headers"]["RequestId"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description Нельзя. 403 отличается от 401 тем, что входить заново бесполезно: дело
+         *     не в том, кто вы, а в том, что это не ваше.
+         *      */
+        Forbidden: {
+            headers: {
+                "X-Request-Id": components["headers"]["RequestId"];
+                [name: string]: unknown;
+            };
+            content: {
+                "application/problem+json": components["schemas"]["Problem"];
+            };
+        };
+        /** @description Такого здесь нет. Чужой кабинет отвечает тем же самым: иначе по коду
+         *     ответа перебирается то, чего видеть нельзя.
+         *      */
+        Missing: {
             headers: {
                 "X-Request-Id": components["headers"]["RequestId"];
                 [name: string]: unknown;
@@ -356,6 +757,27 @@ export interface components {
     parameters: {
         /** @description Кабинет, в который входят. Идентификатор арендатора. */
         Tenant: components["schemas"]["Uuid"];
+        /** @description Чьё расписание. Без него — расписание самого спрашивающего.
+         *
+         *     Отдельный параметр, а не догадка по ролям: опекун смотрит подопечного,
+         *     владелец практики — репетитора, и «чьё» из роли не выводится. Права на
+         *     названного человека спрашиваются у политики.
+         *      */
+        Whose: components["schemas"]["Uuid"];
+        /** @description Какой стороной названный человек стоит в этих занятиях: ведёт их или
+         *     занимается. Два разных расписания одного человека, и под каждое в базе
+         *     заведён свой индекс.
+         *      */
+        Side: components["schemas"]["LessonSide"];
+        /** @description Начало отрезка включительно: микросекунды от начала эпохи в UTC. Число,
+         *     а не строка: у клиента и у сервера разные представления о том, как
+         *     записать момент, а у числа их нет.
+         *      */
+        From: components["schemas"]["Moment"];
+        /** @description Конец отрезка НЕ включительно, теми же микросекундами. */
+        To: components["schemas"]["Moment"];
+        /** @description Занятие. */
+        Lesson: components["schemas"]["Uuid"];
         /**
          * @description ОБЯЗАТЕЛЕН НА КАЖДОМ МЕНЯЮЩЕМ ОБРАЩЕНИИ, и это не пожелание: без него
          *     повтор по оборванной связи выполняет операцию второй раз. Клиент
@@ -580,6 +1002,411 @@ export interface operations {
             };
             400: components["responses"]["Malformed"];
             401: components["responses"]["Unidentified"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Refused"];
+            498: components["responses"]["Expired"];
+            500: components["responses"]["Broken"];
+        };
+    };
+    getAvailability: {
+        parameters: {
+            query?: {
+                /** @description Чьё расписание. Без него — расписание самого спрашивающего.
+                 *
+                 *     Отдельный параметр, а не догадка по ролям: опекун смотрит подопечного,
+                 *     владелец практики — репетитора, и «чьё» из роли не выводится. Права на
+                 *     названного человека спрашиваются у политики.
+                 *      */
+                whose?: components["parameters"]["Whose"];
+            };
+            header?: {
+                /** @description След запроса. Свой годный принимается и возвращается нетронутым, иначе
+                 *     сервис заводит собственный. Он же приходит в ответе и в теле отказа:
+                 *     жалобу «у меня не работает» разбирают по нему, а человек может назвать
+                 *     только то, что видел сам.
+                 *      */
+                "X-Request-Id"?: components["parameters"]["RequestId"];
+                /**
+                 * @description СКОЛЬКО МИЛЛИСЕКУНД КЛИЕНТ ГОТОВ ЖДАТЬ. Не пожелание: по этому сроку
+                 *     сервис обрывает работу, которую клиент всё равно уже не примет, и не даёт
+                 *     очереди такой работы добить себя под перегрузкой.
+                 *
+                 *     Остаток времени доходит до запросов к базе сам — доведение срока
+                 *     (`USERVER_DEADLINE_PROPAGATION_ENABLED`) включено. Срок, истёкший до того,
+                 *     как до запроса дошли, — это `498`, и работа не начинается вовсе.
+                 *
+                 *     Имя заголовка не наше: так его называет штатный механизм userver, и
+                 *     переименовать его значило бы написать свой (ADR-0013).
+                 *
+                 * @example 5000
+                 */
+                "X-YaTaxi-Client-TimeoutMs"?: components["parameters"]["ClientTimeout"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Доступность репетитора */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Availability"];
+                };
+            };
+            400: components["responses"]["Malformed"];
+            401: components["responses"]["Unidentified"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["Missing"];
+            422: components["responses"]["Refused"];
+            498: components["responses"]["Expired"];
+            500: components["responses"]["Broken"];
+        };
+    };
+    setAvailability: {
+        parameters: {
+            query?: {
+                /** @description Чьё расписание. Без него — расписание самого спрашивающего.
+                 *
+                 *     Отдельный параметр, а не догадка по ролям: опекун смотрит подопечного,
+                 *     владелец практики — репетитора, и «чьё» из роли не выводится. Права на
+                 *     названного человека спрашиваются у политики.
+                 *      */
+                whose?: components["parameters"]["Whose"];
+            };
+            header: {
+                /**
+                 * @description ОБЯЗАТЕЛЕН НА КАЖДОМ МЕНЯЮЩЕМ ОБРАЩЕНИИ, и это не пожелание: без него
+                 *     повтор по оборванной связи выполняет операцию второй раз. Клиент
+                 *     придумывает ключ сам и повторяет запрос С ТЕМ ЖЕ ключом; в течение срока
+                 *     жизни ключа (динамическое значение `PDR_IDEMPOTENCY`) он получает
+                 *     сохранённый ответ, а не второе выполнение.
+                 *
+                 *     Тот же ключ с ДРУГИМ телом — ошибка клиента, а не повтор:
+                 *     `idempotency_key_reused`.
+                 *
+                 * @example sign-in-7f3c1a94-6d0b-4f2e-9c31-8a5b0e2d4c77
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description След запроса. Свой годный принимается и возвращается нетронутым, иначе
+                 *     сервис заводит собственный. Он же приходит в ответе и в теле отказа:
+                 *     жалобу «у меня не работает» разбирают по нему, а человек может назвать
+                 *     только то, что видел сам.
+                 *      */
+                "X-Request-Id"?: components["parameters"]["RequestId"];
+                /**
+                 * @description СКОЛЬКО МИЛЛИСЕКУНД КЛИЕНТ ГОТОВ ЖДАТЬ. Не пожелание: по этому сроку
+                 *     сервис обрывает работу, которую клиент всё равно уже не примет, и не даёт
+                 *     очереди такой работы добить себя под перегрузкой.
+                 *
+                 *     Остаток времени доходит до запросов к базе сам — доведение срока
+                 *     (`USERVER_DEADLINE_PROPAGATION_ENABLED`) включено. Срок, истёкший до того,
+                 *     как до запроса дошли, — это `498`, и работа не начинается вовсе.
+                 *
+                 *     Имя заголовка не наше: так его называет штатный механизм userver, и
+                 *     переименовать его значило бы написать свой (ADR-0013).
+                 *
+                 * @example 5000
+                 */
+                "X-YaTaxi-Client-TimeoutMs"?: components["parameters"]["ClientTimeout"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Availability"];
+            };
+        };
+        responses: {
+            /** @description Доступность записана */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "Idempotency-Replayed": components["headers"]["IdempotencyReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Availability"];
+                };
+            };
+            400: components["responses"]["Malformed"];
+            401: components["responses"]["Unidentified"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Refused"];
+            498: components["responses"]["Expired"];
+            500: components["responses"]["Broken"];
+        };
+    };
+    listLessons: {
+        parameters: {
+            query: {
+                /** @description Начало отрезка включительно: микросекунды от начала эпохи в UTC. Число,
+                 *     а не строка: у клиента и у сервера разные представления о том, как
+                 *     записать момент, а у числа их нет.
+                 *      */
+                from: components["parameters"]["From"];
+                /** @description Конец отрезка НЕ включительно, теми же микросекундами. */
+                to: components["parameters"]["To"];
+                /** @description Какой стороной названный человек стоит в этих занятиях: ведёт их или
+                 *     занимается. Два разных расписания одного человека, и под каждое в базе
+                 *     заведён свой индекс.
+                 *      */
+                side: components["parameters"]["Side"];
+                /** @description Чьё расписание. Без него — расписание самого спрашивающего.
+                 *
+                 *     Отдельный параметр, а не догадка по ролям: опекун смотрит подопечного,
+                 *     владелец практики — репетитора, и «чьё» из роли не выводится. Права на
+                 *     названного человека спрашиваются у политики.
+                 *      */
+                whose?: components["parameters"]["Whose"];
+            };
+            header?: {
+                /** @description След запроса. Свой годный принимается и возвращается нетронутым, иначе
+                 *     сервис заводит собственный. Он же приходит в ответе и в теле отказа:
+                 *     жалобу «у меня не работает» разбирают по нему, а человек может назвать
+                 *     только то, что видел сам.
+                 *      */
+                "X-Request-Id"?: components["parameters"]["RequestId"];
+                /**
+                 * @description СКОЛЬКО МИЛЛИСЕКУНД КЛИЕНТ ГОТОВ ЖДАТЬ. Не пожелание: по этому сроку
+                 *     сервис обрывает работу, которую клиент всё равно уже не примет, и не даёт
+                 *     очереди такой работы добить себя под перегрузкой.
+                 *
+                 *     Остаток времени доходит до запросов к базе сам — доведение срока
+                 *     (`USERVER_DEADLINE_PROPAGATION_ENABLED`) включено. Срок, истёкший до того,
+                 *     как до запроса дошли, — это `498`, и работа не начинается вовсе.
+                 *
+                 *     Имя заголовка не наше: так его называет штатный механизм userver, и
+                 *     переименовать его значило бы написать свой (ADR-0013).
+                 *
+                 * @example 5000
+                 */
+                "X-YaTaxi-Client-TimeoutMs"?: components["parameters"]["ClientTimeout"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Занятия по возрастанию начала */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Lessons"];
+                };
+            };
+            400: components["responses"]["Malformed"];
+            401: components["responses"]["Unidentified"];
+            403: components["responses"]["Forbidden"];
+            422: components["responses"]["Refused"];
+            498: components["responses"]["Expired"];
+            500: components["responses"]["Broken"];
+        };
+    };
+    createLesson: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description ОБЯЗАТЕЛЕН НА КАЖДОМ МЕНЯЮЩЕМ ОБРАЩЕНИИ, и это не пожелание: без него
+                 *     повтор по оборванной связи выполняет операцию второй раз. Клиент
+                 *     придумывает ключ сам и повторяет запрос С ТЕМ ЖЕ ключом; в течение срока
+                 *     жизни ключа (динамическое значение `PDR_IDEMPOTENCY`) он получает
+                 *     сохранённый ответ, а не второе выполнение.
+                 *
+                 *     Тот же ключ с ДРУГИМ телом — ошибка клиента, а не повтор:
+                 *     `idempotency_key_reused`.
+                 *
+                 * @example sign-in-7f3c1a94-6d0b-4f2e-9c31-8a5b0e2d4c77
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description След запроса. Свой годный принимается и возвращается нетронутым, иначе
+                 *     сервис заводит собственный. Он же приходит в ответе и в теле отказа:
+                 *     жалобу «у меня не работает» разбирают по нему, а человек может назвать
+                 *     только то, что видел сам.
+                 *      */
+                "X-Request-Id"?: components["parameters"]["RequestId"];
+                /**
+                 * @description СКОЛЬКО МИЛЛИСЕКУНД КЛИЕНТ ГОТОВ ЖДАТЬ. Не пожелание: по этому сроку
+                 *     сервис обрывает работу, которую клиент всё равно уже не примет, и не даёт
+                 *     очереди такой работы добить себя под перегрузкой.
+                 *
+                 *     Остаток времени доходит до запросов к базе сам — доведение срока
+                 *     (`USERVER_DEADLINE_PROPAGATION_ENABLED`) включено. Срок, истёкший до того,
+                 *     как до запроса дошли, — это `498`, и работа не начинается вовсе.
+                 *
+                 *     Имя заголовка не наше: так его называет штатный механизм userver, и
+                 *     переименовать его значило бы написать свой (ADR-0013).
+                 *
+                 * @example 5000
+                 */
+                "X-YaTaxi-Client-TimeoutMs"?: components["parameters"]["ClientTimeout"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewLesson"];
+            };
+        };
+        responses: {
+            /** @description Занятие записано */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "Idempotency-Replayed": components["headers"]["IdempotencyReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Lesson"];
+                };
+            };
+            400: components["responses"]["Malformed"];
+            401: components["responses"]["Unidentified"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Refused"];
+            498: components["responses"]["Expired"];
+            500: components["responses"]["Broken"];
+        };
+    };
+    getLesson: {
+        parameters: {
+            query: {
+                /** @description Какой стороной названный человек стоит в этих занятиях: ведёт их или
+                 *     занимается. Два разных расписания одного человека, и под каждое в базе
+                 *     заведён свой индекс.
+                 *      */
+                side: components["parameters"]["Side"];
+                /** @description Чьё расписание. Без него — расписание самого спрашивающего.
+                 *
+                 *     Отдельный параметр, а не догадка по ролям: опекун смотрит подопечного,
+                 *     владелец практики — репетитора, и «чьё» из роли не выводится. Права на
+                 *     названного человека спрашиваются у политики.
+                 *      */
+                whose?: components["parameters"]["Whose"];
+            };
+            header?: {
+                /** @description След запроса. Свой годный принимается и возвращается нетронутым, иначе
+                 *     сервис заводит собственный. Он же приходит в ответе и в теле отказа:
+                 *     жалобу «у меня не работает» разбирают по нему, а человек может назвать
+                 *     только то, что видел сам.
+                 *      */
+                "X-Request-Id"?: components["parameters"]["RequestId"];
+                /**
+                 * @description СКОЛЬКО МИЛЛИСЕКУНД КЛИЕНТ ГОТОВ ЖДАТЬ. Не пожелание: по этому сроку
+                 *     сервис обрывает работу, которую клиент всё равно уже не примет, и не даёт
+                 *     очереди такой работы добить себя под перегрузкой.
+                 *
+                 *     Остаток времени доходит до запросов к базе сам — доведение срока
+                 *     (`USERVER_DEADLINE_PROPAGATION_ENABLED`) включено. Срок, истёкший до того,
+                 *     как до запроса дошли, — это `498`, и работа не начинается вовсе.
+                 *
+                 *     Имя заголовка не наше: так его называет штатный механизм userver, и
+                 *     переименовать его значило бы написать свой (ADR-0013).
+                 *
+                 * @example 5000
+                 */
+                "X-YaTaxi-Client-TimeoutMs"?: components["parameters"]["ClientTimeout"];
+            };
+            path: {
+                /** @description Занятие. */
+                lesson: components["parameters"]["Lesson"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Занятие */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Lesson"];
+                };
+            };
+            400: components["responses"]["Malformed"];
+            401: components["responses"]["Unidentified"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["Missing"];
+            422: components["responses"]["Refused"];
+            498: components["responses"]["Expired"];
+            500: components["responses"]["Broken"];
+        };
+    };
+    createSeries: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description ОБЯЗАТЕЛЕН НА КАЖДОМ МЕНЯЮЩЕМ ОБРАЩЕНИИ, и это не пожелание: без него
+                 *     повтор по оборванной связи выполняет операцию второй раз. Клиент
+                 *     придумывает ключ сам и повторяет запрос С ТЕМ ЖЕ ключом; в течение срока
+                 *     жизни ключа (динамическое значение `PDR_IDEMPOTENCY`) он получает
+                 *     сохранённый ответ, а не второе выполнение.
+                 *
+                 *     Тот же ключ с ДРУГИМ телом — ошибка клиента, а не повтор:
+                 *     `idempotency_key_reused`.
+                 *
+                 * @example sign-in-7f3c1a94-6d0b-4f2e-9c31-8a5b0e2d4c77
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description След запроса. Свой годный принимается и возвращается нетронутым, иначе
+                 *     сервис заводит собственный. Он же приходит в ответе и в теле отказа:
+                 *     жалобу «у меня не работает» разбирают по нему, а человек может назвать
+                 *     только то, что видел сам.
+                 *      */
+                "X-Request-Id"?: components["parameters"]["RequestId"];
+                /**
+                 * @description СКОЛЬКО МИЛЛИСЕКУНД КЛИЕНТ ГОТОВ ЖДАТЬ. Не пожелание: по этому сроку
+                 *     сервис обрывает работу, которую клиент всё равно уже не примет, и не даёт
+                 *     очереди такой работы добить себя под перегрузкой.
+                 *
+                 *     Остаток времени доходит до запросов к базе сам — доведение срока
+                 *     (`USERVER_DEADLINE_PROPAGATION_ENABLED`) включено. Срок, истёкший до того,
+                 *     как до запроса дошли, — это `498`, и работа не начинается вовсе.
+                 *
+                 *     Имя заголовка не наше: так его называет штатный механизм userver, и
+                 *     переименовать его значило бы написать свой (ADR-0013).
+                 *
+                 * @example 5000
+                 */
+                "X-YaTaxi-Client-TimeoutMs"?: components["parameters"]["ClientTimeout"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NewSeries"];
+            };
+        };
+        responses: {
+            /** @description Серия заведена */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "Idempotency-Replayed": components["headers"]["IdempotencyReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Series"];
+                };
+            };
+            400: components["responses"]["Malformed"];
+            401: components["responses"]["Unidentified"];
+            403: components["responses"]["Forbidden"];
             409: components["responses"]["Conflict"];
             422: components["responses"]["Refused"];
             498: components["responses"]["Expired"];

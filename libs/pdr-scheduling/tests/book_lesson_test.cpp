@@ -13,7 +13,6 @@
 #include "events/scheduling/lesson_booked.hpp"
 #include "fakes/fake_clock.hpp"
 #include "fakes/fake_id_generator.hpp"
-#include "identity/contract.hpp"
 #include "scheduling/core/overlap.hpp"
 
 namespace pdr::scheduling {
@@ -25,31 +24,17 @@ using pdr::testing::Numbered;
 
 constexpr auto kNoBuffer = core::Instant::Duration::zero();
 
-/// Дубль чужого контракта. Обратите внимание: тест знает об identity ровно
-/// столько же, сколько сам модуль, — один заголовок.
-class FakeIdentity final : public identity::Contract {
-public:
-    explicit FakeIdentity(bool allowed) noexcept : allowed_{allowed} {}
-
-    bool MayActFor(const core::TenantId&,
-                   const core::PersonId&,
-                   const core::PersonId&) const override {
-        return allowed_;
-    }
-
-    identity::PolicyDecision Decide(const core::TenantId&,
-                                    const core::PersonId&,
-                                    identity::Action,
-                                    const identity::Resource&) const override {
-        return allowed_ ? identity::Allowed() : identity::Denied(identity::DenyReason::kNotYours);
-    }
-
-private:
-    bool allowed_;
-};
-
 class FakeLessons final : public ports::LessonRepository {
 public:
+    std::optional<Lesson> Find(const core::TenantId&, const core::LessonId& id) const override {
+        for (const auto& lesson : saved_) {
+            if (lesson.Id() == id) {
+                return lesson;
+            }
+        }
+        return std::nullopt;
+    }
+
     std::optional<Lesson> FindAtSlot(const core::TenantId&,
                                      const core::PersonId&,
                                      core::Instant starts_at) const override {
@@ -116,7 +101,6 @@ class BookLessonTest : public ::testing::Test {
 protected:
     BookLesson::Request Request() const {
         return {tenant_,
-                student_,
                 tutor_,
                 student_,
                 clock_.Now() + 48h,
@@ -124,8 +108,8 @@ protected:
                 core::TimeZone::Parse("Europe/Moscow").value()};
     }
 
-    BookLesson Booking(const identity::Contract& identity) {
-        return BookLesson{lessons_, identity, clock_, ids_, bus_};
+    BookLesson Booking() {
+        return BookLesson{lessons_, clock_, ids_, bus_};
     }
 
     pdr::testing::FakeIdGenerator ids_;
@@ -139,41 +123,27 @@ protected:
 };
 
 TEST_F(BookLessonTest, BookingSavesPublishesAndReturnsIdentifier) {
-    const FakeIdentity identity{true};
     std::vector<pdr::events::scheduling::LessonBooked> heard;
     bus_.Subscribe<pdr::events::scheduling::LessonBooked>(
         [&heard](const pdr::events::scheduling::LessonBooked& event) { heard.push_back(event); });
 
-    const auto book = Booking(identity);
+    const auto book = Booking();
     const auto request = Request();
     const auto booked = book.Execute(request);
 
     ASSERT_TRUE(booked.HasValue());
     ASSERT_EQ(lessons_.Saved().size(), 1U);
-    EXPECT_TRUE(lessons_.Saved().front().Id() == booked.Value());
+    EXPECT_TRUE(lessons_.Saved().front().Id() == booked.Value().Id());
     EXPECT_TRUE(lessons_.Saved().front().EndsAt() == request.starts_at + 60min);
 
     ASSERT_EQ(heard.size(), 1U);
-    EXPECT_TRUE(heard.front().lesson == booked.Value());
+    EXPECT_TRUE(heard.front().lesson == booked.Value().Id());
     EXPECT_TRUE(heard.front().starts_at == request.starts_at);
     EXPECT_TRUE(heard.front().envelope.occurred_at == clock_.Now());
 }
 
-TEST_F(BookLessonTest, StrangerCannotBookForAStudent) {
-    const FakeIdentity identity{false};
-
-    const auto refused = Booking(identity).Execute(Request());
-
-    ASSERT_FALSE(refused.HasValue());
-    EXPECT_EQ(refused.Failure().Kind(), core::ErrorKind::kForbidden);
-    EXPECT_EQ(refused.Failure().Code(), "not_allowed_to_act_for_student");
-    EXPECT_TRUE(lessons_.Saved().empty());
-    EXPECT_EQ(bus_.Published(), 0U);
-}
-
 TEST_F(BookLessonTest, TakenSlotIsAConflict) {
-    const FakeIdentity identity{true};
-    const auto book = Booking(identity);
+    const auto book = Booking();
 
     ASSERT_TRUE(book.Execute(Request()).HasValue());
     const auto again = book.Execute(Request());
@@ -185,8 +155,7 @@ TEST_F(BookLessonTest, TakenSlotIsAConflict) {
 }
 
 TEST_F(BookLessonTest, PastAndEmptyLessonsAreRefused) {
-    const FakeIdentity identity{true};
-    const auto book = Booking(identity);
+    const auto book = Booking();
 
     auto past = Request();
     past.starts_at = clock_.Now() - 1h;
@@ -204,8 +173,7 @@ TEST_F(BookLessonTest, PastAndEmptyLessonsAreRefused) {
 }
 
 TEST_F(BookLessonTest, ClockMovesAndTheSameSlotBecomesThePast) {
-    const FakeIdentity identity{true};
-    const auto book = Booking(identity);
+    const auto book = Booking();
 
     const auto request = Request();
     clock_.Advance(72h);
