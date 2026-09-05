@@ -607,6 +607,13 @@ jobs:
               "identity_access_log",
               "identity_consent",
               "observability_product_event",
+              "scheduling_availability",
+              "scheduling_availability_exception",
+              "scheduling_lesson",
+              "scheduling_lesson_participant",
+              "scheduling_series",
+              "scheduling_series_exception",
+              "scheduling_series_participant",
           }
           assert set(parts) == expected, f"состав выгрузки разошёлся: {sorted(parts)}"
           assert all(parts[name] for name in expected), "часть выгрузки пуста на засеянной базе"
