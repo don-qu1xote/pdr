@@ -691,6 +691,63 @@
         "namespace": "public",
         "version": 0
       },
+      "public.notifications_outbox": {
+        "columns": [
+          {
+            "name": "tenant_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "event_type",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "payload",
+            "nullable": false,
+            "type": "jsonb"
+          },
+          {
+            "name": "dedup_key",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "created_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "state",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "attempts",
+            "nullable": false,
+            "type": "integer"
+          },
+          {
+            "name": "next_attempt_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "failed_reason",
+            "nullable": false,
+            "type": "text"
+          }
+        ],
+        "name": "notifications_outbox",
+        "namespace": "public",
+        "version": 0
+      },
       "public.observability_product_event": {
         "columns": [
           {
@@ -1084,7 +1141,7 @@
     },
     "types": {}
   },
-  "hashsum": "ef0af93d3ab9dcb89ad4306199a18709674508b1a25adcfc970496e7041d0b3c",
+  "hashsum": "27cc8f63dffa0b90cf06bdcc7a0f45e363eba1152ee94c6c817ebe69c618f752",
   "queries": [
     {
       "args": [
@@ -1809,6 +1866,18 @@
           "name": "repeated",
           "nullable": true,
           "type": "bigint"
+        }
+      ]
+    },
+    {
+      "args": [],
+      "cardinality": "many",
+      "name": "notifications_declare_dispatch",
+      "returns": [
+        {
+          "name": "set_config",
+          "nullable": true,
+          "type": "text"
         }
       ]
     },

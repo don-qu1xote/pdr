@@ -14,6 +14,8 @@ std::string_view Name(UnscopedReason reason) noexcept {
             return "platform_wide_identity";
         case UnscopedReason::kReadinessProbe:
             return "readiness_probe";
+        case UnscopedReason::kOutboxDispatch:
+            return "outbox_dispatch";
         case UnscopedReason::kOperatorExport:
             return "operator_export";
     }

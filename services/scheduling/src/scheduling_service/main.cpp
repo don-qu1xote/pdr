@@ -13,6 +13,8 @@
 #include "infrastructure/db/tenant_context_component.hpp"
 #include "infrastructure/http/middlewares/links.hpp"
 #include "infrastructure/http/outgoing_component.hpp"
+#include "notifications/infrastructure/outbox_dispatcher.hpp"
+#include "notifications/infrastructure/transactional_outbox.hpp"
 #include "observability/infrastructure/product_events_component.hpp"
 #include "scheduling/infrastructure/http/availability_operations.hpp"
 #include "scheduling/infrastructure/http/lesson_operations.hpp"
@@ -42,8 +44,15 @@
 /// повторный компонент — не предупреждение, а падение при старте.
 ///
 /// Своего в списке — только то, чего у userver нет: дверь к базе, проверка
-/// секретов, права, поток продуктовых событий, задание, три ручки состояния и
-/// операции расписания.
+/// секретов, права, поток продуктовых событий, исходящая очередь, задание, три
+/// ручки состояния и операции расписания.
+///
+/// ОЧЕРЕДЬ ОПОВЕЩЕНИЙ ПОДНИМАЕТСЯ ДВУМЯ КОМПОНЕНТАМИ, И ЭТО РАЗНЫЕ РАБОТЫ.
+/// `TransactionalOutbox` — слушатель: он сидит на шине обращения и кладёт
+/// строку в ту же транзакцию, в которой меняется занятие. `OutboxDispatcher` —
+/// отправщик: он просыпается сам и разбирает накопившееся. Расписание при этом
+/// не знает ни того ни другого: в его конфиге назван компонент, а в его коде —
+/// платформенный порт.
 ///
 /// ОПЕРАЦИЙ МНОГО, А НАСЛЕДНИК HttpHandlerBase ОДИН. `AuthorizedRoute`
 /// регистрируется столько раз, сколько маршрутов, — под разными именами; какую
@@ -74,6 +83,8 @@ int main(int argc, char* argv[]) {
             .Append<pdr::identity::CallersComponent>()
             .Append<pdr::identity::SignInOperation>()
             .Append<pdr::observability::ProductEventsComponent>()
+            .Append<pdr::notifications::TransactionalOutbox>()
+            .Append<pdr::notifications::OutboxDispatcher>()
 
             .Append<pdr::scheduling::http::GetAvailabilityOperation>()
             .Append<pdr::scheduling::http::SetAvailabilityOperation>()

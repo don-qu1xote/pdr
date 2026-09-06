@@ -144,6 +144,51 @@ job_failure:
   type: text
   set_in: libs/pdr-jobs/src/jobs/infrastructure/periodic_job_component.cpp
 
+outbox_reason:
+  description: >-
+    повод письма — имя доменного события, из-за которого строка попала в
+    очередь. Ни адреса, ни имени человека в нём нет: слова подставляет шаблон
+    при отправке
+  type: name
+  set_in: libs/pdr-notifications/src/notifications/infrastructure
+
+outbox_key:
+  description: >-
+    ключ намерения строки очереди: повод, о чём речь и кому. Идентификаторы в
+    нём машинные, данных человека нет
+  type: name
+  set_in: libs/pdr-notifications/src/notifications/infrastructure
+
+outbox_channel:
+  description: чем отправляли — почтой или push
+  type: name
+  set_in: libs/pdr-notifications/src/notifications/infrastructure
+
+outbox_attempts:
+  description: сколько попыток отправки уже сделано для этой строки
+  type: count
+  set_in: libs/pdr-notifications/src/notifications/infrastructure
+
+outbox_failure:
+  description: код последнего отказа отправки — по нему видно, что чинить
+  type: text
+  set_in: libs/pdr-notifications/src/notifications/infrastructure
+
+outbox_claimed:
+  description: сколько строк отправщик взял за один проход
+  type: count
+  set_in: libs/pdr-notifications/src/notifications/infrastructure
+
+outbox_sent:
+  description: сколько строк ушло за один проход
+  type: count
+  set_in: libs/pdr-notifications/src/notifications/infrastructure
+
+outbox_gave_up:
+  description: сколько строк исчерпало попытки за один проход
+  type: count
+  set_in: libs/pdr-notifications/src/notifications/infrastructure
+
 secrets_checked:
   description: сколько секретов проверено при старте
   type: count

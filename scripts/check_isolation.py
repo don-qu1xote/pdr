@@ -48,6 +48,15 @@ PEOPLE_PER_TENANT = 3
 APP_ROLE = "pdr_app"
 PARAMETER = "pdr.tenant_id"
 
+DISPATCH_PARAMETER = "pdr.dispatch"
+"""Второе объявление, и оно одно на всю схему: разбор исходящей очереди.
+
+Проверяется здесь по той же причине, по какой проверяется и первое: что «true»
+в `set_config` значит именно то, о чём мы думаем, показывает только настоящая
+база. А цена ошибки выше: объявление, пережившее транзакцию, отдаёт следующему
+запросу человека очередь всех практик сразу.
+"""
+
 TENANT_A = "0a0a0a0a-0000-4000-8000-000000000001"
 TENANT_B = "0b0b0b0b-0000-4000-8000-000000000002"
 GUARDIAN_A = "0a0a0a0a-0000-4000-8000-00000000a001"
@@ -58,6 +67,8 @@ LINK_A = "0a0a0a0a-0000-4000-8000-00000000c001"
 LINK_B = "0b0b0b0b-0000-4000-8000-00000000c002"
 ROLE_A = "0a0a0a0a-0000-4000-8000-00000000d001"
 ROLE_B = "0b0b0b0b-0000-4000-8000-00000000d002"
+OUTBOX_A = "0a0a0a0a-0000-4000-8000-00000000e001"
+OUTBOX_B = "0b0b0b0b-0000-4000-8000-00000000e002"
 LOG_A = "0a0a0a0a-0000-4000-8000-00000000f001"
 LOG_B = "0b0b0b0b-0000-4000-8000-00000000f002"
 AGREED_A = "0a0a0a0a-0000-4000-8000-000000009001"
@@ -213,12 +224,19 @@ insert into identity_login_attempt
     (tenant_id, subject_kind, subject_hash, window_started_at, attempts) values
     ('{TENANT_A}', 'account', '{DIGEST_A}', now(), 1),
     ('{TENANT_B}', 'account', '{DIGEST_B}', now(), 1);
+insert into notifications_outbox
+    (tenant_id, id, event_type, payload, dedup_key, created_at, next_attempt_at) values
+    ('{TENANT_A}', '{OUTBOX_A}', 'scheduling.lesson_booked', '{{"channel": "push"}}',
+     'booked:a', now(), now()),
+    ('{TENANT_B}', '{OUTBOX_B}', 'scheduling.lesson_booked', '{{"channel": "push"}}',
+     'booked:b', now(), now());
 """)
 
 
 def teardown(database: Database) -> None:
     tenants = f"('{TENANT_A}', '{TENANT_B}')"
     database.owner(f"""
+delete from notifications_outbox where tenant_id in {tenants};
 delete from identity_login_attempt where tenant_id in {tenants};
 delete from identity_one_time_token where tenant_id in {tenants};
 delete from identity_session where tenant_id in {tenants};
@@ -844,6 +862,89 @@ commit;
     return complaints
 
 
+def the_queue_of_another_practice_is_not_visible(database: Database) -> list[str]:
+    """ОБЯЗАТЕЛЬНЫЙ СЛУЧАЙ: у очереди две политики, и вторая не отменяет первую.
+
+    Исходящая очередь — единственная таблица схемы, которая отвечает не только
+    на арендатора. Значит, про неё надо спросить дважды: обычному запросу видна
+    ровно своя практика, и забытое объявление по-прежнему означает пусто, а не
+    всё подряд. Без этого случая вторая политика была бы просто выключенной
+    защитой, о которой красиво написано в миграции.
+    """
+    problems = []
+    for label, tenant, expected in (("арендатор А", TENANT_A, 1),
+                                    ("арендатор Б", TENANT_B, 1),
+                                    ("без объявления", None, 0),
+                                    ("пустое объявление", "", 0)):
+        rows = database.app("select count(*) from notifications_outbox;", tenant)
+        seen = int(rows[0][0])
+        if seen != expected:
+            problems.append(
+                f"notifications_outbox: {label} видит {seen} строк вместо {expected}: "
+                f"политика разбора открыла очередь тому, кто её не объявлял"
+            )
+    return problems
+
+
+def the_dispatch_declaration_does_not_outlive_the_transaction(
+    database: Database,
+) -> list[str]:
+    """ОБЯЗАТЕЛЬНЫЙ СЛУЧАЙ: разбор не уезжает в пул вместе с соединением.
+
+    Утечка здесь дороже, чем у арендатора. Объявленный на соединение разбор
+    отдаёт СЛЕДУЮЩЕМУ запросу человека очередь всех практик сразу — и запрос при
+    этом честный, он спросил своё. Держит это третий аргумент `set_config`, и
+    что «true» значит именно то, о чём мы думаем, показывает только настоящая
+    база.
+
+    Всё идёт в ОДНОЙ сессии psql: между транзакциями соединение то же самое —
+    ровно как в пуле. Считаются только засеянные строки: в этой же базе живёт
+    засев для планов запросов (`db/explain/seed.sql`), и «сколько всего лежит в
+    очереди» зависело бы от того, кто прогонялся раньше.
+    """
+    seeded = f"where tenant_id in ('{TENANT_A}', '{TENANT_B}')"
+    rows = database.app(f"""
+begin;
+select set_config('{DISPATCH_PARAMETER}', 'on', true);
+select 'разбор', count(*) from notifications_outbox {seeded};
+commit;
+select 'после', coalesce(nullif(current_setting('{DISPATCH_PARAMETER}', true), ''), 'пусто'),
+       (select count(*) from notifications_outbox {seeded});
+begin;
+select set_config('{PARAMETER}', '{TENANT_A}', true);
+select 'следующий человек', count(*) from notifications_outbox {seeded};
+commit;
+""")
+    said = {row[0]: row[1:] for row in rows if len(row) >= 2}
+    missing = [label for label in ("разбор", "после", "следующий человек")
+               if label not in said]
+    if missing:
+        return [f"база не ответила на шаги {', '.join(missing)}: проверять нечего"]
+
+    problems = []
+    if int(said["разбор"][0]) != 2:
+        problems.append(
+            f"с объявленным разбором видно {said['разбор'][0]} строк вместо двух: "
+            f"отправщик не разберёт очередь второй практики"
+        )
+    if said["после"][0] != "пусто":
+        problems.append(
+            f"после фиксации на соединении остался разбор «{said['после'][0]}»: "
+            f"следующий запрос увидит очередь всех практик"
+        )
+    if int(said["после"][1]) != 0:
+        problems.append(
+            f"после фиксации без объявления видно {said['после'][1]} строк: "
+            f"соединение вернулось в пул с правом видеть всё"
+        )
+    if int(said["следующий человек"][0]) != 1:
+        problems.append(
+            f"следующий человек видит {said['следующий человек'][0]} строк вместо своей "
+            f"одной: разбор пережил транзакцию, в которой был объявлен"
+        )
+    return problems
+
+
 CASES = (
     ("защита включена, форсирована и с политикой на каждой таблице", protection_is_on),
     ("роль приложения обычная: не суперпользователь, не bypassrls", app_role_is_ordinary),
@@ -869,6 +970,9 @@ CASES = (
      money_does_not_buy_sight),
     ("ГЛАВНЫЙ ДЛЯ ДВУХ РЕПЕТИТОРОВ: один человек — две практики, и они не видят друг друга",
      one_person_in_two_practices_stays_two_rows),
+    ("ОБЯЗАТЕЛЬНЫЙ: очередь чужой практики не видна", the_queue_of_another_practice_is_not_visible),
+    ("ОБЯЗАТЕЛЬНЫЙ: объявление разбора не переживает транзакцию",
+     the_dispatch_declaration_does_not_outlive_the_transaction),
     ("защиту не выключить из-под приложения", protection_cannot_be_switched_off),
 )
 

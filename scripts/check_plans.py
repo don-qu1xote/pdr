@@ -56,7 +56,16 @@ SUBSTITUTIONS = {
 
 HEADER = re.compile(r"^--\s*([а-яa-z_]+)\s*:\s*(.*)$")
 REQUIRED_KEYS = ("запрос", "откуда", "индекс")
-KNOWN_KEYS = REQUIRED_KEYS + ("перебор",)
+KNOWN_KEYS = REQUIRED_KEYS + ("перебор", "объявление")
+
+DISPATCH_PARAMETER = "pdr.dispatch"
+"""Второе объявление, и оно одно на всю схему: разбор исходящей очереди.
+
+План под арендатором и план под разбором — планы РАЗНЫХ запросов: политика
+добавляет к первому условие по `tenant_id`, а ко второму не добавляет ничего.
+Снять план очереди под арендатором значит снять план того, чего отправщик не
+выполняет (docs/adr/0022-outbox-dispatch-across-tenants.md).
+"""
 
 
 class PlanError(Exception):
@@ -71,6 +80,7 @@ class HotQuery:
         self.seq_scan_allowed = tuple(
             part.strip() for part in headers.get("перебор", "").split(",") if part.strip()
         )
+        self.dispatch = headers.get("объявление", "").strip() == "разбор"
         self.sql = sql
         self.line = line
 
@@ -179,9 +189,22 @@ def inspect(query: HotQuery, plan: dict) -> list[str]:
 
 
 def explain(database: live.Database, query: HotQuery) -> dict:
-    answer = database.app_text(
-        f"explain (format json, costs on) {query.rendered()}", SUBSTITUTIONS["tenant"]
-    )
+    """План под тем объявлением, под которым запрос и выполняется.
+
+    По умолчанию это арендатор: политика добавляет условие по `tenant_id`, и без
+    неё план оказался бы планом другого запроса. Ключ «объявление: разбор»
+    переключает на второе объявление — его выполняет отправщик очереди, у
+    которого практики нет вовсе.
+    """
+    statement = f"explain (format json, costs on) {query.rendered()}"
+    if query.dispatch:
+        statement = (
+            f"do $$ begin perform set_config('{DISPATCH_PARAMETER}', 'on', false); end $$;\n"
+            f"{statement}"
+        )
+        answer = database.app_text(statement)
+    else:
+        answer = database.app_text(statement, SUBSTITUTIONS["tenant"])
     try:
         return json.loads(answer)[0]["Plan"]
     except (ValueError, KeyError, IndexError) as error:

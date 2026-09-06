@@ -174,6 +174,7 @@ components_manager:
         scheduling-get-availability: &scheduling-operation
             permissions: identity-permissions
             callers: identity-callers
+            listeners: notifications-transactional-outbox
         scheduling-set-availability: *scheduling-operation
         scheduling-list-lessons: *scheduling-operation
         scheduling-create-lesson: *scheduling-operation
@@ -181,6 +182,22 @@ components_manager:
         scheduling-create-series: *scheduling-operation
 
         observability-product-events: {}
+
+        # ИСХОДЯЩАЯ ОЧЕРЕДЬ — ДВА КОМПОНЕНТА И ДВЕ РАЗНЫЕ РАБОТЫ.
+        #
+        # Слушатель сидит на шине обращения и кладёт строку в ТУ ЖЕ транзакцию,
+        # в которой меняется занятие: своего подключения к базе у него нет и
+        # быть не должно — сессия приходит доводом.
+        notifications-transactional-outbox: {}
+
+        # Отправщик просыпается сам и разбирает накопившееся. Блокировки на
+        # кластер у него нет намеренно: очередь тем и отличается от одиночного
+        # задания, что её разбирают все реплики сразу, а двоим одну строку не
+        # отдаёт «for update skip locked» (ADR-0002, ADR-0011). Как часто
+        # просыпаться, сколько брать за раз и сколько раз пробовать — в
+        # динамическом конфиге PDR_OUTBOX, а не здесь.
+        notifications-outbox-dispatcher:
+            cluster: postgres-pdr
 
         # ПЕРВОЕ НАСТОЯЩЕЕ ЗАДАНИЕ. Имя блокировки, период и отведённое время
         # лежат в динамическом конфиге PDR_PERIODIC_JOBS под именем компонента.

@@ -50,6 +50,7 @@ target_link_libraries(pdr_scheduling_service
             pdr_identity_http
             pdr_scheduling_http
             pdr_jobs_infrastructure
+            pdr_notifications_postgres
             pdr_observability_infrastructure
             userver::postgresql
 )

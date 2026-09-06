@@ -10,7 +10,7 @@
 #include <userver/yaml_config/schema.hpp>
 
 #include "application/ports/id_generator.hpp"
-#include "events/bus.hpp"
+#include "events/listeners.hpp"
 #include "infrastructure/db/tenant_context.hpp"
 #include "infrastructure/http/authorized_handler.hpp"
 #include "infrastructure/http/operation.hpp"
@@ -75,7 +75,7 @@ private:
     core::Result<api::Lesson> Run(const Call& call) const override;
 
     const application::ports::IdGenerator& ids_;
-    events::Bus& bus_;
+    const events::Listeners<infrastructure::db::ScopedTenantContext>& listeners_;
 };
 
 class ListLessonsOperation final : public infrastructure::http::OperationComponent {

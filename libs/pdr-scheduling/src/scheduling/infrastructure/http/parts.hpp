@@ -7,7 +7,7 @@
 #include <userver/yaml_config/schema.hpp>
 
 #include "core/idempotency.hpp"
-#include "events/in_memory_bus.hpp"
+#include "events/listeners.hpp"
 #include "identity/contract.hpp"
 #include "infrastructure/db/tenant_context.hpp"
 #include "infrastructure/http/authorized_handler.hpp"
@@ -25,10 +25,17 @@ namespace pdr::scheduling::http {
 /// идентификаторов и шина событий нужны им одинаково. Шесть копий этой сборки
 /// разошлись бы на первой же правке — одна взяла бы часы из другого места.
 ///
-/// ШИНА СОБЫТИЙ ЖИВЁТ ЗДЕСЬ И ПОКА НИКОГО НЕ ЗОВЁТ. Издатель не знает
-/// подписчиков — в этом весь смысл шины, — а подписчик добавляется в своём
-/// модуле; в этот процесс не добавлен ни один, и опубликованное событие никуда
-/// не идёт. Издателя это не касается: он опубликовал.
+/// ШИНА СОБЫТИЙ ЗАВОДИТСЯ НА КАЖДОЕ ОБРАЩЕНИЕ, А НЕ ЛЕЖИТ ЗДЕСЬ.
+///
+/// Подписчик обязан писать в ТУ ЖЕ транзакцию, в которой меняется занятие:
+/// строка исходящей очереди и само занятие коммитятся вместе или не коммитятся
+/// вовсе. Общая на процесс шина этого не умеет — её подписчику пришлось бы
+/// откуда-то взять транзакцию, а взять её неоткуда. Поэтому здесь лежит не
+/// шина, а тот, кто её собирает: `events::Listeners`.
+///
+/// Издатель по-прежнему не знает подписчиков — в этом весь смысл шины. Он видит
+/// платформенный порт; кто на самом деле сидит на шине, решает статический
+/// конфиг процесса, и расписание не включает ни одного заголовка того контекста.
 ///
 /// ЧУЖИЕ КОМПОНЕНТЫ НАЗЫВАЕТ КОНФИГ, А НЕ ЭТОТ ФАЙЛ. Права и опознание
 /// пришедшего поднимает контекст identity, и заголовков его сборки здесь нет:
@@ -63,8 +70,8 @@ public:
     const application::ports::IdGenerator& Ids() const noexcept {
         return ids_;
     }
-    events::Bus& Bus() noexcept {
-        return bus_;
+    const events::Listeners<infrastructure::db::ScopedTenantContext>& Listeners() const noexcept {
+        return listeners_;
     }
     pdr::http::KeyLifetime Lifetime() const noexcept {
         return lifetime_;
@@ -76,7 +83,7 @@ private:
     infrastructure::http::PostgresIdempotencyKeys keys_;
     infrastructure::UserverClock clock_;
     infrastructure::RandomIdGenerator ids_;
-    events::InMemoryBus bus_;
+    const events::Listeners<infrastructure::db::ScopedTenantContext>& listeners_;
     const infrastructure::http::Callers& callers_;
     const identity::Contract& permissions_;
     pdr::http::KeyLifetime lifetime_;

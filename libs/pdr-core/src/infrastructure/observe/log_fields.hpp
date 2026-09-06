@@ -46,6 +46,18 @@ inline const std::string kJobProducedField = "job_produced";
 inline const std::string kJobRepeatedField = "job_repeated";
 inline const std::string kJobFailureField = "job_failure";
 
+/// Исходящая очередь. Имена полей нарочно про СТРОКУ, а не про человека: кому
+/// письмо, в журнале не пишется вовсе — это персональные данные, а для разбора
+/// хватает ключа намерения и повода.
+inline const std::string kOutboxReasonField = "outbox_reason";
+inline const std::string kOutboxKeyField = "outbox_key";
+inline const std::string kOutboxChannelField = "outbox_channel";
+inline const std::string kOutboxAttemptsField = "outbox_attempts";
+inline const std::string kOutboxFailureField = "outbox_failure";
+inline const std::string kOutboxClaimedField = "outbox_claimed";
+inline const std::string kOutboxSentField = "outbox_sent";
+inline const std::string kOutboxGaveUpField = "outbox_gave_up";
+
 inline const std::string kSecretsCheckedField = "secrets_checked";
 inline const std::string kStorageFailureField = "storage_failure";
 inline const std::string kPolicyActionField = "policy_action";

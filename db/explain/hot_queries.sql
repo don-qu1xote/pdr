@@ -165,3 +165,19 @@ select occurred_at, actor_role, fields
   from observability_product_event
  where type = 'reputation.rating_recorded'
    and occurred_at >= now() - make_interval(days => {keep_days});
+
+-- запрос: notifications_outbox_due
+-- откуда: захват отправщика (db/sql/notifications/notifications_outbox_claim.sql),
+--         ради которого заведён частичный индекс notifications_outbox_due
+--         (db/migrations/V015__outbox.sql). САМЫЙ ЧАСТЫЙ ЗАПРОС СИСТЕМЫ: он идёт
+--         каждые несколько секунд на каждой реплике и всегда, а не только когда
+--         кто-то что-то делает. Перебор здесь — это чтение всей очереди
+--         площадки в цикле, и заметят его не по графику, а по счёту за базу
+-- индекс: notifications_outbox_due
+-- объявление: разбор
+select tenant_id, id
+  from notifications_outbox
+ where state = 'pending'
+   and next_attempt_at <= now()
+ order by next_attempt_at
+ limit 32;

@@ -4,7 +4,7 @@
      правка переживёт ровно до следующей пересборки. Изменить схему — значит
      написать новую миграцию. -->
 
-Собрано из миграций: 14. Таблиц: 27.
+Собрано из миграций: 15. Таблиц: 28.
 
 Правила, которым подчиняется каждая колонка, — в
 [migrations.md](migrations.md). Как устроена изоляция арендаторов и почему у
@@ -567,6 +567,47 @@
 
 Не доменная таблица: журнал последнего прогона задания, один на кластер. Арендатора и политики у неё нет.
 
+### notifications_outbox
+
+Очередь на отправку: строка кладётся в той же транзакции, что и изменение, о котором она рассказывает, а разбирается через select ... for update skip locked.
+
+Заведена миграцией `V015__outbox.sql`.
+
+| Колонка | Тип | Определение |
+| --- | --- | --- |
+| `tenant_id` | `uuid` | uuid not null references identity_tenant (tenant_id) |
+| `id` | `uuid` | uuid not null |
+| `event_type` | `text` | text not null |
+| `payload` | `jsonb` | jsonb not null |
+| `dedup_key` | `text` | text not null |
+| `created_at` | `timestamptz` | timestamptz not null |
+| `state` | `text` | text not null default |
+| `attempts` | `integer` | integer not null default 0 |
+| `next_attempt_at` | `timestamptz` | timestamptz not null |
+| `failed_reason` | `text` | text not null default |
+
+Ограничения:
+
+* `constraint notifications_outbox_pk primary key (tenant_id, id)`
+* `constraint notifications_outbox_once unique (tenant_id, dedup_key)`
+* `constraint notifications_outbox_state_known check (state in ( , , ))`
+* `constraint notifications_outbox_attempts_not_negative check (attempts >= 0)`
+* `constraint notifications_outbox_reason_only_when_gave_up check ((state = ) = (length(failed_reason) > 0))`
+* `constraint notifications_outbox_dedup_not_blank check (length(btrim(dedup_key)) > 0)`
+* `constraint notifications_outbox_type_not_blank check (length(btrim(event_type)) > 0)`
+* `constraint notifications_outbox_payload_is_object check (jsonb_typeof(payload) = )`
+
+Индексы:
+
+* `notifications_outbox_due` — обычный, `(next_attempt_at) where state = 'pending'`
+
+Построчная защита включена и форсирована.
+
+Политики:
+
+* `notifications_outbox_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
+* `notifications_outbox_dispatch` — `using (current_setting('pdr.dispatch', true) = 'on') with check (current_setting('pdr.dispatch', true) = 'on')`
+
 ### observability_product_event
 
 Поток продуктовых событий: что сделал человек, обезличенно. Ссылка на арендатора и роль, идентификатора человека нет ни колонкой, ни ключом в fields. Отдельно от технических метрик: у них разные читатели, права и срок жизни.
@@ -884,3 +925,4 @@
 1. `V012__system_tenant.sql` — без новых таблиц
 1. `V013__scheduling.sql` — scheduling_availability, scheduling_availability_exception, scheduling_lesson, scheduling_lesson_participant, scheduling_series, scheduling_series_participant, scheduling_series_exception
 1. `V014__lesson_history.sql` — scheduling_lesson_history
+1. `V015__outbox.sql` — notifications_outbox

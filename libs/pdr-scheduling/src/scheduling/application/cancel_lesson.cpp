@@ -47,9 +47,13 @@ core::Result<CancellationOutcome> CancelLesson::Execute(const Request& request) 
         return written.Failure();
     }
 
+    /// Участник у занятия сегодня один (`Lesson::kParticipantsForNow`), и домен
+    /// не даёт завести занятие без него: пустого списка здесь не бывает.
     bus_.Publish(events::scheduling::LessonCancelled{
         events::Envelope{request.tenant, now},
         request.lesson,
+        found->Tutor(),
+        found->Participants().front(),
         request.actor,
         request.by,
         changed.Value().outcome.retained,

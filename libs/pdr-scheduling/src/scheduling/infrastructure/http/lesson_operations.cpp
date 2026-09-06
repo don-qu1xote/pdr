@@ -128,7 +128,7 @@ CreateLessonHandler::CreateLessonHandler(Parts& parts)
                         parts.Clock(),
                         parts.Lifetime()},
       ids_{parts.Ids()},
-      bus_{parts.Bus()} {}
+      listeners_{parts.Listeners()} {}
 
 identity::Action CreateLessonHandler::Wants() const {
     return identity::Action::kBookLesson;
@@ -147,7 +147,10 @@ core::Result<api::Lesson> CreateLessonHandler::Run(const Call& call) const {
     }
 
     PostgresLessonRepository lessons{call.session};
-    const BookLesson booking{lessons, call.clock, ids_, bus_};
+    /// Шина этого обращения: подписчики на ней уже сидят и пишут в ЭТУ
+    /// транзакцию. Живёт она до конца сценария — не дольше и не короче.
+    const auto listening = listeners_.Attach(call.session);
+    const BookLesson booking{lessons, call.clock, ids_, listening->Events()};
 
     const auto booked =
         booking.Execute(BookLesson::Request{call.caller.tenant,

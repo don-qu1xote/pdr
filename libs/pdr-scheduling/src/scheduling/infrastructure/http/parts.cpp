@@ -31,6 +31,8 @@ Parts::Parts(const userver::components::ComponentConfig& config,
              const userver::components::ComponentContext& context)
     : tenants_{context.FindComponent<infrastructure::db::TenantContextComponent>().Context()},
       storage_{tenants_},
+      listeners_{context.FindComponent<events::Listeners<infrastructure::db::ScopedTenantContext>>(
+          config["listeners"].As<std::string>())},
       callers_{context.FindComponent<infrastructure::http::Callers>(
           config["callers"].As<std::string>())},
       permissions_{
@@ -49,6 +51,9 @@ properties:
     callers:
         type: string
         description: компонент, опознающий пришедшего
+    listeners:
+        type: string
+        description: компонент, подписывающий слушателей на события обращения
 )");
 }
 

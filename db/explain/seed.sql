@@ -41,6 +41,9 @@ delete from identity_account where id in (
     select ('0e0e0e0e-0001-4000-8000-' || lpad((tenant * 1000 + person)::text, 12, '0'))::uuid
     from generate_series(1, 200) as tenant, generate_series(1, 100) as person
 );
+delete from notifications_outbox where tenant_id in (
+    select tenant_id from identity_tenant where name like 'План %'
+);
 delete from identity_guardian_consent where tenant_id in (
     select tenant_id from identity_tenant where name like 'План %'
 );
@@ -231,6 +234,37 @@ select ('0e0e0e0e-0000-4000-8000-' || lpad(tenant::text, 12, '0'))::uuid,
        jsonb_build_object('score', 4 + event % 2, 'low_share_in_window', 'low')
 from generate_series(1, 200) as tenant, generate_series(1, 250) as event;
 
+-- Исходящая очередь: по двадцать пять писем на арендатора, то есть пять тысяч
+-- строк. ЛЕЖАЩИХ БОЛЬШИНСТВО, ДОЛЖНЫХ ЕДИНИЦЫ — так очередь и выглядит у
+-- системы, где отправщик действительно ходит: он забирает то, чему настал срок,
+-- и оставляет напоминания ждать своего часа. Сделай наоборот — должным окажется
+-- полтаблицы, перебор станет правильным планом, и проверять будет нечего.
+--
+-- Ушедшие письма тоже здесь, и они важны: частичный индекс их не держит, а без
+-- них не видно, что он экономит.
+insert into notifications_outbox
+    (tenant_id, id, event_type, payload, dedup_key, created_at, state,
+     next_attempt_at, failed_reason)
+select ('0e0e0e0e-0000-4000-8000-' || lpad(tenant::text, 12, '0'))::uuid,
+       ('0e0e0e0e-000a-4000-8000-' || lpad((tenant * 100 + letter)::text, 12, '0'))::uuid,
+       case when letter % 5 = 0 then 'notifications.reminder_day_before'
+            else 'scheduling.lesson_booked'
+       end,
+       jsonb_build_object('channel', 'push'),
+       'letter-' || tenant || '-' || letter,
+       now() - make_interval(days => letter % 7),
+       case when letter % 5 = 0 then 'pending' else 'sent' end,
+       case when letter % 5 = 0 then now() + make_interval(days => 1 + letter % 30)
+            else now() - make_interval(days => letter % 7)
+       end,
+       ''
+from generate_series(1, 200) as tenant, generate_series(1, 25) as letter;
+
+-- Единицы должных: те самые письма, за которыми отправщик и приходит.
+update notifications_outbox
+   set next_attempt_at = now() - interval '1 minute'
+ where dedup_key in ('letter-7-5', 'letter-42-10', 'letter-133-15');
+
 -- Без свежей статистики планировщик считает по умолчаниям, и план не про эти
 -- данные, а про воображаемые.
 analyze identity_tenant;
@@ -245,3 +279,4 @@ analyze identity_session;
 analyze identity_one_time_token;
 analyze jobs_effect;
 analyze observability_product_event;
+analyze notifications_outbox;

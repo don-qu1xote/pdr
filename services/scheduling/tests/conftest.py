@@ -53,7 +53,8 @@ UNCOVERED = {
     },
     'непроверенный путь: правила отмены, переноса и неявки написаны и проверены '
     'доменом и живым набором, но ручек под них в этом процессе ещё нет — звать '
-    'эти запросы снаружи пока нечем (PDR-SCHED-05)': {
+    'эти запросы снаружи пока нечем (PDR-SCHED-05, PDR-SCHED-06)': {
+        'notifications_outbox_withdraw',
         'scheduling_lesson_history_add',
         'scheduling_lesson_history_of',
         'scheduling_lesson_move',
