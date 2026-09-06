@@ -257,6 +257,17 @@ def in_a_week():
     return int(at.replace(minute=0, second=0, microsecond=0).timestamp()) * 1000000
 
 
+def in_hours(hours):
+    """Момент через столько-то часов от «сейчас», ровно в минуту.
+
+    Считается от текущего времени по той же причине, что и `in_a_week`: окна
+    бронирования меряются расстоянием до занятия, и записанный час превратил бы
+    набор в бомбу с часовым механизмом.
+    """
+    at = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=hours)
+    return int(at.replace(second=0, microsecond=0).timestamp()) * 1000000
+
+
 def next_tuesday():
     """Ближайший вторник после сегодняшнего — по той же причине."""
     today = datetime.datetime.now(datetime.timezone.utc).date()

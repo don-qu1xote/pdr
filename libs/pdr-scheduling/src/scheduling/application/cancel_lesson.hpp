@@ -8,6 +8,8 @@
 #include "scheduling/application/ports/cancellation_policies.hpp"
 #include "scheduling/application/ports/lesson_history.hpp"
 #include "scheduling/application/ports/lesson_repository.hpp"
+#include "scheduling/application/windows_in_force.hpp"
+#include "scheduling/core/booking_window.hpp"
 #include "scheduling/core/cancellation_policy.hpp"
 
 namespace pdr::scheduling {
@@ -24,6 +26,11 @@ namespace pdr::scheduling {
 /// занятие» — вопрос к биллингу, и задать его отсюда было бы тем самым
 /// обращением, которого быть не должно. Кто зовёт сценарий, тот и приносит
 /// цену: у него она уже есть.
+///
+/// ОКНО И ПОЛИТИКА СПРАШИВАЮТСЯ ОБА, И ЭТО РАЗНЫЕ ВОПРОСЫ. Окно отвечает,
+/// возможна ли отмена вообще; политика — сколько с ученика удержится. Умолчание
+/// у окна отмены пустое: отменить можно всегда, а поздняя отмена стоит денег, и
+/// это честнее запрета — иначе ученик просто не придёт, и час пропадёт даром.
 class CancelLesson final {
 public:
     struct Request final {
@@ -42,6 +49,7 @@ public:
     CancelLesson(ports::LessonRepository& lessons,
                  ports::LessonHistory& history,
                  const ports::CancellationPolicies& policies,
+                 const WindowsInForce& windows,
                  const application::ports::Clock& clock,
                  events::Bus& bus) noexcept;
 
@@ -51,6 +59,7 @@ private:
     ports::LessonRepository& lessons_;
     ports::LessonHistory& history_;
     const ports::CancellationPolicies& policies_;
+    const WindowsInForce& windows_;
     const application::ports::Clock& clock_;
     events::Bus& bus_;
 };

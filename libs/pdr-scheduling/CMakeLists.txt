@@ -9,10 +9,13 @@ add_library(pdr_scheduling STATIC
     src/scheduling/application/cancel_lesson.cpp
     src/scheduling/application/create_series.cpp
     src/scheduling/application/get_availability.cpp
+    src/scheduling/application/relax_booking_windows.cpp
+    src/scheduling/application/windows_in_force.cpp
     src/scheduling/application/get_lesson.cpp
     src/scheduling/application/list_lessons.cpp
     src/scheduling/application/set_availability.cpp
     src/scheduling/core/availability.cpp
+    src/scheduling/core/booking_window.cpp
     src/scheduling/core/cancellation_policy.cpp
     src/scheduling/core/lesson.cpp
     src/scheduling/core/lesson_history.cpp
@@ -26,8 +29,10 @@ target_link_libraries(pdr_scheduling PUBLIC pdr_core pdr_events pdr_identity PRI
 # собирается и проверяется без userver, а хранение требует его целиком.
 if(userver_FOUND)
     add_library(pdr_scheduling_postgres STATIC
+        src/scheduling/infrastructure/dynamic_config_booking_windows.cpp
         src/scheduling/infrastructure/dynamic_config_cancellation_policies.cpp
         src/scheduling/infrastructure/postgres_availability_repository.cpp
+        src/scheduling/infrastructure/postgres_booking_relief.cpp
         src/scheduling/infrastructure/postgres_lesson_history.cpp
         src/scheduling/infrastructure/postgres_lesson_repository.cpp
         src/scheduling/infrastructure/postgres_recurrence_repository.cpp
@@ -66,6 +71,8 @@ if(PDR_BUILD_TESTS)
     pdr_unit_test_sources(
         tests/availability_test.cpp
         tests/book_lesson_test.cpp
+        tests/booking_window_test.cpp
+        tests/booking_windows_in_force_test.cpp
         tests/list_lessons_test.cpp
         tests/get_lesson_test.cpp
         tests/cancel_lesson_test.cpp
@@ -85,7 +92,8 @@ if(PDR_BUILD_TESTS)
     # скажут, что доля в полтораста процентов доедет до домена, — это говорит
     # только настоящий разборщик штатного dynamic_config.
     if(userver_FOUND)
-        pdr_adapter_test_sources(tests/dynamic_config_cancellation_policies_test.cpp)
+        pdr_adapter_test_sources(tests/dynamic_config_booking_windows_test.cpp
+                                 tests/dynamic_config_cancellation_policies_test.cpp)
         pdr_adapter_test_libraries(pdr_scheduling_postgres pdr_testing)
     endif()
 
@@ -98,6 +106,7 @@ if(PDR_BUILD_TESTS)
     # (плана у фейка нет вовсе).
     if(userver_FOUND)
         pdr_live_test_sources(tests/scheduling_contract.cpp
+                              tests/postgres_booking_relief_test.cpp
                               tests/postgres_scheduling_contract_test.cpp
                               tests/postgres_lesson_race_test.cpp
                               tests/postgres_scheduling_plan_test.cpp)

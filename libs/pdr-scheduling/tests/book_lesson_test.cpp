@@ -11,6 +11,7 @@
 #include "builders/lesson_builder.hpp"
 #include "events/in_memory_bus.hpp"
 #include "events/scheduling/lesson_booked.hpp"
+#include "fakes/fake_booking_windows.hpp"
 #include "fakes/fake_clock.hpp"
 #include "fakes/fake_id_generator.hpp"
 #include "scheduling/core/overlap.hpp"
@@ -19,6 +20,8 @@ namespace pdr::scheduling {
 namespace {
 
 using namespace std::chrono_literals;
+using pdr::scheduling::testing::FakeWindowDefaults;
+using pdr::scheduling::testing::FakeWindowRelief;
 using pdr::scheduling::testing::LessonBuilder;
 using pdr::testing::Numbered;
 
@@ -118,18 +121,27 @@ private:
 
 class BookLessonTest : public ::testing::Test {
 protected:
-    BookLesson::Request Request() const {
+    BookLesson::Request Request(core::Instant starts_at) const {
         return {tenant_,
+                student_,
                 tutor_,
                 student_,
-                clock_.Now() + 48h,
+                starts_at,
                 60min,
                 core::TimeZone::Parse("Europe/Moscow").value()};
     }
 
-    BookLesson Booking() {
-        return BookLesson{lessons_, clock_, ids_, bus_};
+    BookLesson::Request Request() const {
+        return Request(clock_.Now() + 48h);
     }
+
+    BookLesson Booking() {
+        return BookLesson{lessons_, windows_, clock_, ids_, bus_};
+    }
+
+    FakeWindowDefaults defaults_;
+    FakeWindowRelief relief_;
+    WindowsInForce windows_{defaults_, relief_};
 
     pdr::testing::FakeIdGenerator ids_;
     pdr::testing::FakeClock clock_;
@@ -219,4 +231,68 @@ TEST(Lesson, CannotBeScheduledInThePast) {
 }
 
 }  // namespace
+/// ОБЯЗАТЕЛЬНОЕ ТРЕБОВАНИЕ ЗАДАЧИ: окно проверяется В СЦЕНАРИИ, а не в ручке.
+/// Проверка, живущая в обработчике запроса, соблюдается ровно на том пути, где
+/// её написали, — а путей у записи занятия уже не один.
+TEST_F(BookLessonTest, BookingInsideTheNoticeWindowIsRefused) {
+    defaults_.Say(BookingWindows::Compose(24h, std::nullopt, std::nullopt, std::nullopt).Value());
+
+    const auto refused = Booking().Execute(Request(clock_.Now() + 2h));
+
+    ASSERT_FALSE(refused.HasValue());
+    EXPECT_EQ(refused.Failure().Code(), "booking_too_late");
+    EXPECT_TRUE(lessons_.Saved().empty()) << "отклонённая запись всё-таки сохранилась";
+}
+
+TEST_F(BookLessonTest, BookingBeyondTheHorizonIsRefused) {
+    defaults_.Say(
+        BookingWindows::Compose(std::nullopt, 30 * 24h, std::nullopt, std::nullopt).Value());
+
+    const auto refused = Booking().Execute(Request(clock_.Now() + 60 * 24h));
+
+    ASSERT_FALSE(refused.HasValue());
+    EXPECT_EQ(refused.Failure().Code(), "booking_too_far");
+}
+
+/// ОБЯЗАТЕЛЬНОЕ ТРЕБОВАНИЕ ЗАДАЧИ: репетитор обходит собственные окна. Тот же
+/// слот, тот же час — отличается только тот, кто нажал.
+TEST_F(BookLessonTest, TheTutorBooksInsideHisOwnWindowAnyway) {
+    defaults_.Say(BookingWindows::Compose(24h, std::nullopt, std::nullopt, std::nullopt).Value());
+
+    auto request = Request(clock_.Now() + 2h);
+    request.actor = tutor_;
+
+    const auto booked = Booking().Execute(request);
+
+    ASSERT_TRUE(booked.HasValue()) << booked.Failure().Code();
+    EXPECT_EQ(lessons_.Saved().size(), 1U);
+}
+
+/// Послабление, выданное этому ученику, доезжает до записи целиком — от
+/// хранилища через сценарий до отказа, которого не случилось.
+TEST_F(BookLessonTest, ARelaxedStudentBooksWhereOthersCannot) {
+    defaults_.Say(BookingWindows::Compose(24h, std::nullopt, std::nullopt, std::nullopt).Value());
+    ASSERT_TRUE(
+        relief_
+            .Grant(BookingRelief{
+                tenant_,
+                tutor_,
+                student_,
+                BookingWindows::Compose(1h, std::nullopt, std::nullopt, std::nullopt).Value(),
+                tutor_,
+                clock_.Now()})
+            .HasValue());
+
+    const auto booked = Booking().Execute(Request(clock_.Now() + 2h));
+
+    ASSERT_TRUE(booked.HasValue()) << booked.Failure().Code();
+}
+
+/// БЕЗ ЕДИНОЙ НАСТРОЙКИ ЗАПИСЬ РАБОТАЕТ. Умолчания фейка пусты, послаблений
+/// нет, и занятие через минуту записывается: окна ничего не запрещают, пока о
+/// них не договорились.
+TEST_F(BookLessonTest, WithoutASingleSettingBookingStillWorks) {
+    EXPECT_TRUE(Booking().Execute(Request(clock_.Now() + 1min)).HasValue());
+}
+
 }  // namespace pdr::scheduling

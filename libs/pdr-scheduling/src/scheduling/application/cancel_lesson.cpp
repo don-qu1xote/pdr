@@ -9,9 +9,15 @@ namespace pdr::scheduling {
 CancelLesson::CancelLesson(ports::LessonRepository& lessons,
                            ports::LessonHistory& history,
                            const ports::CancellationPolicies& policies,
+                           const WindowsInForce& windows,
                            const application::ports::Clock& clock,
                            events::Bus& bus) noexcept
-    : lessons_{lessons}, history_{history}, policies_{policies}, clock_{clock}, bus_{bus} {}
+    : lessons_{lessons},
+      history_{history},
+      policies_{policies},
+      windows_{windows},
+      clock_{clock},
+      bus_{bus} {}
 
 core::Result<CancellationOutcome> CancelLesson::Execute(const Request& request) const {
     const auto found = lessons_.Find(request.tenant, request.lesson);
@@ -21,6 +27,20 @@ core::Result<CancellationOutcome> CancelLesson::Execute(const Request& request) 
     }
 
     const auto now = clock_.Now();
+
+    const auto windows =
+        windows_.For(request.tenant, found->Tutor(), found->Participants().front());
+    if (!windows.HasValue()) {
+        return windows.Failure();
+    }
+
+    const auto side =
+        request.by == CancelledBy::kTutor ? BookingSide::kScheduleOwner : BookingSide::kIncoming;
+    const auto allowed =
+        Allows(windows.Value(), BookingAction::kCancel, side, found->StartsAt(), now);
+    if (!allowed.HasValue()) {
+        return allowed.Failure();
+    }
 
     auto changed = [&]() -> core::Result<Lesson::Change> {
         if (request.by == CancelledBy::kTutor) {

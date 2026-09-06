@@ -9,8 +9,10 @@
 #include "builders/lesson_builder.hpp"
 #include "events/in_memory_bus.hpp"
 #include "events/scheduling/lesson_cancelled.hpp"
+#include "fakes/fake_booking_windows.hpp"
 #include "fakes/fake_clock.hpp"
 #include "fakes/fake_scheduling.hpp"
+#include "scheduling/core/booking_window.hpp"
 
 namespace pdr::scheduling {
 namespace {
@@ -82,8 +84,12 @@ protected:
     }
 
     CancelLesson Cancelling() {
-        return CancelLesson{lessons_, history_, policies_, clock_, bus_};
+        return CancelLesson{lessons_, history_, policies_, windows_, clock_, bus_};
     }
+
+    testing::FakeWindowDefaults defaults_;
+    testing::FakeWindowRelief relief_;
+    WindowsInForce windows_{defaults_, relief_};
 
     CancelLesson::Request Request(CancelledBy by) const {
         return CancelLesson::Request{
@@ -174,4 +180,30 @@ TEST_F(CancelLessonTest, ARefusedCancellationPublishesNothing) {
 }
 
 }  // namespace
+/// ОКНО ОТМЕНЫ И ПОЛИТИКА УДЕРЖАНИЯ — РАЗНЫЕ ВЕЩИ, и здесь это видно. Окно
+/// закрыто: отменять поздно, и сценарий отказывает, не дойдя до расчёта.
+TEST_F(CancelLessonTest, ACancellationOutsideTheWindowIsRefusedBeforeAnyMoneyIsCounted) {
+    defaults_.Say(BookingWindows::Compose(std::nullopt, std::nullopt, std::nullopt, 48h).Value());
+
+    const auto refused = Cancelling().Execute(Request(CancelledBy::kStudent));
+
+    ASSERT_FALSE(refused.HasValue());
+    EXPECT_EQ(refused.Failure().Code(), "cancel_too_late");
+    EXPECT_EQ(policies_.asked, 0) << "за политикой сходили, хотя отмена и так невозможна";
+}
+
+/// Репетитор отменяет своё занятие когда угодно: окна защищают его от других, а
+/// не от него самого.
+TEST_F(CancelLessonTest, TheTutorCancelsOutsideTheWindowAnyway) {
+    defaults_.Say(BookingWindows::Compose(std::nullopt, std::nullopt, std::nullopt, 48h).Value());
+
+    EXPECT_TRUE(Cancelling().Execute(Request(CancelledBy::kTutor)).HasValue());
+}
+
+/// БЕЗ ЕДИНОЙ НАСТРОЙКИ ОТМЕНА РАБОТАЕТ. Умолчание у окна отмены пустое:
+/// отменить можно всегда, а сколько это стоит, решает политика.
+TEST_F(CancelLessonTest, WithoutASingleSettingCancellingStillWorks) {
+    EXPECT_TRUE(Cancelling().Execute(Request(CancelledBy::kStudent)).HasValue());
+}
+
 }  // namespace pdr::scheduling

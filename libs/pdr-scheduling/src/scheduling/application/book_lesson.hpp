@@ -7,6 +7,8 @@
 #include "core/types/time.hpp"
 #include "events/bus.hpp"
 #include "scheduling/application/ports/lesson_repository.hpp"
+#include "scheduling/application/windows_in_force.hpp"
+#include "scheduling/core/booking_window.hpp"
 #include "scheduling/core/lesson.hpp"
 
 namespace pdr::scheduling {
@@ -22,10 +24,20 @@ namespace pdr::scheduling {
 ///
 /// Кто вправе записывать за кого — по-прежнему решение identity, а не этого
 /// модуля: оно живёт в `SchedulingPolicy` и проверяется матрицей прав.
+///
+/// А ВОТ «НЕ СЛИШКОМ ЛИ ПОЗДНО» — ВОПРОС РАСПИСАНИЯ, и спрашивается он здесь.
+/// Права отвечают на «этому человеку можно такое действие», окна — на «такое
+/// действие сейчас возможно вообще»; смешивать их нельзя, потому что окна
+/// действуют и на того, у кого прав в избытке.
 class BookLesson final {
 public:
     struct Request final {
         core::TenantId tenant;
+
+        /// Кто нажал. Нужен ровно затем, чтобы отличить владельца расписания от
+        /// всех остальных: своими окнами репетитор не ограничен.
+        core::PersonId actor;
+
         core::PersonId tutor;
         core::PersonId student;
         core::Instant starts_at;
@@ -38,6 +50,7 @@ public:
     };
 
     BookLesson(ports::LessonRepository& lessons,
+               const WindowsInForce& windows,
                const application::ports::Clock& clock,
                const application::ports::IdGenerator& ids,
                events::Bus& bus) noexcept;
@@ -50,6 +63,7 @@ public:
 
 private:
     ports::LessonRepository& lessons_;
+    const WindowsInForce& windows_;
     const application::ports::Clock& clock_;
     const application::ports::IdGenerator& ids_;
     events::Bus& bus_;

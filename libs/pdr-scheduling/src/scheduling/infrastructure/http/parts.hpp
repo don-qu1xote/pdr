@@ -15,6 +15,7 @@
 #include "infrastructure/postgres_tenant_aware_repository.hpp"
 #include "infrastructure/random_id_generator.hpp"
 #include "infrastructure/userver_clock.hpp"
+#include "scheduling/infrastructure/dynamic_config_booking_windows.hpp"
 
 namespace pdr::scheduling::http {
 
@@ -70,6 +71,9 @@ public:
     const application::ports::IdGenerator& Ids() const noexcept {
         return ids_;
     }
+    const ports::BookingWindowDefaults& Windows() const noexcept {
+        return windows_;
+    }
     const events::Listeners<infrastructure::db::ScopedTenantContext>& Listeners() const noexcept {
         return listeners_;
     }
@@ -83,6 +87,7 @@ private:
     infrastructure::http::PostgresIdempotencyKeys keys_;
     infrastructure::UserverClock clock_;
     infrastructure::RandomIdGenerator ids_;
+    DynamicConfigBookingWindows windows_;
     const events::Listeners<infrastructure::db::ScopedTenantContext>& listeners_;
     const infrastructure::http::Callers& callers_;
     const identity::Contract& permissions_;

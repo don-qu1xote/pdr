@@ -4,7 +4,7 @@
      правка переживёт ровно до следующей пересборки. Изменить схему — значит
      написать новую миграцию. -->
 
-Собрано из миграций: 15. Таблиц: 28.
+Собрано из миграций: 16. Таблиц: 29.
 
 Правила, которым подчиняется каждая колонка, — в
 [migrations.md](migrations.md). Как устроена изоляция арендаторов и почему у
@@ -709,6 +709,42 @@
 
 * `scheduling_availability_exception_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
 
+### scheduling_booking_window
+
+Послабление окон бронирования для одной пары репетитор-ученик. NULL в колонке окна — без ограничения. Умолчания практики лежат в динамическом конфиге, а не здесь.
+
+Заведена миграцией `V016__booking_window.sql`.
+
+| Колонка | Тип | Определение |
+| --- | --- | --- |
+| `tenant_id` | `uuid` | uuid not null references identity_tenant (tenant_id) |
+| `tutor_id` | `uuid` | uuid not null |
+| `student_id` | `uuid` | uuid not null |
+| `book_before_minutes` | `integer` | integer |
+| `horizon_minutes` | `integer` | integer |
+| `reschedule_before_minutes` | `integer` | integer |
+| `cancel_before_minutes` | `integer` | integer |
+| `granted_by` | `uuid` | uuid not null |
+| `granted_at` | `timestamptz` | timestamptz not null default now() |
+
+Ограничения:
+
+* `constraint scheduling_booking_window_pk primary key (tenant_id, tutor_id, student_id)`
+* `constraint scheduling_booking_window_tutor foreign key (tenant_id, tutor_id) references identity_person (tenant_id, id)`
+* `constraint scheduling_booking_window_student foreign key (tenant_id, student_id) references identity_person (tenant_id, id)`
+* `constraint scheduling_booking_window_granted_by foreign key (tenant_id, granted_by) references identity_person (tenant_id, id)`
+* `constraint scheduling_booking_window_book_not_negative check (book_before_minutes is null or book_before_minutes >= 0)`
+* `constraint scheduling_booking_window_horizon_not_negative check (horizon_minutes is null or horizon_minutes >= 0)`
+* `constraint scheduling_booking_window_reschedule_not_negative check (reschedule_before_minutes is null or reschedule_before_minutes >= 0)`
+* `constraint scheduling_booking_window_cancel_not_negative check (cancel_before_minutes is null or cancel_before_minutes >= 0)`
+* `constraint scheduling_booking_window_says_something check (num_nonnulls(book_before_minutes, horizon_minutes, reschedule_before_minutes, cancel_before_minutes) > 0)`
+
+Построчная защита включена и форсирована.
+
+Политики:
+
+* `scheduling_booking_window_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
+
 ### scheduling_lesson
 
 Занятие: два момента в UTC, зона задумки рядом и состояние из закрытого списка. Пересечения у репетитора запрещены самой базой.
@@ -926,3 +962,4 @@
 1. `V013__scheduling.sql` — scheduling_availability, scheduling_availability_exception, scheduling_lesson, scheduling_lesson_participant, scheduling_series, scheduling_series_participant, scheduling_series_exception
 1. `V014__lesson_history.sql` — scheduling_lesson_history
 1. `V015__outbox.sql` — notifications_outbox
+1. `V016__booking_window.sql` — scheduling_booking_window

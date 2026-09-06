@@ -879,6 +879,58 @@
         "namespace": "public",
         "version": 0
       },
+      "public.scheduling_booking_window": {
+        "columns": [
+          {
+            "name": "tenant_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "tutor_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "student_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "book_before_minutes",
+            "nullable": true,
+            "type": "integer"
+          },
+          {
+            "name": "horizon_minutes",
+            "nullable": true,
+            "type": "integer"
+          },
+          {
+            "name": "reschedule_before_minutes",
+            "nullable": true,
+            "type": "integer"
+          },
+          {
+            "name": "cancel_before_minutes",
+            "nullable": true,
+            "type": "integer"
+          },
+          {
+            "name": "granted_by",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "granted_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          }
+        ],
+        "name": "scheduling_booking_window",
+        "namespace": "public",
+        "version": 0
+      },
       "public.scheduling_lesson": {
         "columns": [
           {
@@ -1141,7 +1193,7 @@
     },
     "types": {}
   },
-  "hashsum": "27cc8f63dffa0b90cf06bdcc7a0f45e363eba1152ee94c6c817ebe69c618f752",
+  "hashsum": "f0801a1b43f7c6fd004c2d006ea1d9fbc794e0a8241021b47f9f9bb84a48aa29",
   "queries": [
     {
       "args": [
@@ -1962,6 +2014,46 @@
           "name": "tz",
           "nullable": true,
           "type": "text"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "nullable": true,
+          "type": "uuid"
+        }
+      ],
+      "cardinality": "many",
+      "name": "scheduling_booking_window_of_pair",
+      "returns": [
+        {
+          "name": "book_before_minutes",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "horizon_minutes",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "reschedule_before_minutes",
+          "nullable": true,
+          "type": "integer"
+        },
+        {
+          "name": "cancel_before_minutes",
+          "nullable": true,
+          "type": "integer"
         }
       ]
     },

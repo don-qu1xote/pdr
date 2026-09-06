@@ -74,7 +74,10 @@ select jsonb_pretty(jsonb_build_object(
                     from scheduling_series_participant t), '[]'::jsonb),
         'scheduling_series_exception',
         coalesce((select jsonb_agg(to_jsonb(t) order by t.series_id, t.occurrence_on)
-                    from scheduling_series_exception t), '[]'::jsonb)
+                    from scheduling_series_exception t), '[]'::jsonb),
+        'scheduling_booking_window',
+        coalesce((select jsonb_agg(to_jsonb(t) order by t.tutor_id, t.student_id)
+                    from scheduling_booking_window t), '[]'::jsonb)
     )
 ));
 

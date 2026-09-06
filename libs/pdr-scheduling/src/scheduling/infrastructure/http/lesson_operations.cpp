@@ -9,8 +9,10 @@
 #include "scheduling/application/book_lesson.hpp"
 #include "scheduling/application/get_lesson.hpp"
 #include "scheduling/application/list_lessons.hpp"
+#include "scheduling/application/windows_in_force.hpp"
 #include "scheduling/infrastructure/http/api_mapping.hpp"
 #include "scheduling/infrastructure/http/arguments.hpp"
+#include "scheduling/infrastructure/postgres_booking_relief.hpp"
 #include "scheduling/infrastructure/postgres_lesson_repository.hpp"
 
 namespace pdr::scheduling::http {
@@ -128,6 +130,7 @@ CreateLessonHandler::CreateLessonHandler(Parts& parts)
                         parts.Clock(),
                         parts.Lifetime()},
       ids_{parts.Ids()},
+      windows_{parts.Windows()},
       listeners_{parts.Listeners()} {}
 
 identity::Action CreateLessonHandler::Wants() const {
@@ -147,13 +150,16 @@ core::Result<api::Lesson> CreateLessonHandler::Run(const Call& call) const {
     }
 
     PostgresLessonRepository lessons{call.session};
+    PostgresBookingRelief relief{call.session};
+    const WindowsInForce windows{windows_, relief};
     /// Шина этого обращения: подписчики на ней уже сидят и пишут в ЭТУ
     /// транзакцию. Живёт она до конца сценария — не дольше и не короче.
     const auto listening = listeners_.Attach(call.session);
-    const BookLesson booking{lessons, call.clock, ids_, listening->Events()};
+    const BookLesson booking{lessons, windows, call.clock, ids_, listening->Events()};
 
     const auto booked =
         booking.Execute(BookLesson::Request{call.caller.tenant,
+                                            call.caller.actor,
                                             AsPerson(call.body.tutor),
                                             AsPerson(call.body.student),
                                             core::Instant::FromUnixMicros(call.body.starts_at),

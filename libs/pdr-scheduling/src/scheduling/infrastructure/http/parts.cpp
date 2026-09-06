@@ -31,6 +31,7 @@ Parts::Parts(const userver::components::ComponentConfig& config,
              const userver::components::ComponentContext& context)
     : tenants_{context.FindComponent<infrastructure::db::TenantContextComponent>().Context()},
       storage_{tenants_},
+      windows_{context.FindComponent<userver::components::DynamicConfig>().GetSource()},
       listeners_{context.FindComponent<events::Listeners<infrastructure::db::ScopedTenantContext>>(
           config["listeners"].As<std::string>())},
       callers_{context.FindComponent<infrastructure::http::Callers>(

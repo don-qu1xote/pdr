@@ -51,10 +51,14 @@ UNCOVERED = {
         'jobs_run_last',
         'observability_product_event_record',
     },
+    'непроверенный путь: послабление окон записывается сценарием и проверено '
+    'живым набором, но ручки, которая его выдаёт, в этом процессе ещё нет '
+    '(PDR-SCHED-07)': {
+        'scheduling_booking_window_grant',
+    },
     'непроверенный путь: правила отмены, переноса и неявки написаны и проверены '
     'доменом и живым набором, но ручек под них в этом процессе ещё нет — звать '
     'эти запросы снаружи пока нечем (PDR-SCHED-05, PDR-SCHED-06)': {
-        'notifications_outbox_withdraw',
         'scheduling_lesson_history_add',
         'scheduling_lesson_history_of',
         'scheduling_lesson_move',

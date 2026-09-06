@@ -14,6 +14,7 @@
 #include "infrastructure/db/tenant_context.hpp"
 #include "infrastructure/http/authorized_handler.hpp"
 #include "infrastructure/http/operation.hpp"
+#include "scheduling/application/ports/booking_window_defaults.hpp"
 #include "scheduling/infrastructure/http/parts.hpp"
 
 namespace pdr::scheduling::http {
@@ -75,6 +76,7 @@ private:
     core::Result<api::Lesson> Run(const Call& call) const override;
 
     const application::ports::IdGenerator& ids_;
+    const ports::BookingWindowDefaults& windows_;
     const events::Listeners<infrastructure::db::ScopedTenantContext>& listeners_;
 };
 
