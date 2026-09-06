@@ -10,6 +10,7 @@
 #include "scheduling/application/ports/lesson_repository.hpp"
 #include "scheduling/application/ports/recurrence_repository.hpp"
 #include "scheduling/core/overlap.hpp"
+#include "scheduling/core/participation.hpp"
 
 namespace pdr::scheduling::testing {
 
@@ -55,9 +56,7 @@ public:
                                       const core::PersonId& participant,
                                       const core::TimeRange& window) const override {
         return Within(window, [&](const Lesson& lesson) {
-            const auto& people = lesson.Participants();
-            return lesson.Tenant() == tenant &&
-                   std::find(people.begin(), people.end(), participant) != people.end();
+            return lesson.Tenant() == tenant && lesson.Participating(participant) != nullptr;
         });
     }
 
@@ -76,6 +75,24 @@ public:
             }
         }
         return Replace(lesson);
+    }
+
+    core::Result<void> SetParticipation(const core::TenantId& tenant,
+                                        const core::LessonId& lesson,
+                                        const Participation& taking) override {
+        for (auto& kept : kept_) {
+            if (kept.Tenant() != tenant || kept.Id() != lesson) {
+                continue;
+            }
+            auto changed = kept.With(taking);
+            if (!changed.HasValue()) {
+                return changed.Failure();
+            }
+            kept = changed.Value();
+            return {};
+        }
+        return core::Error{
+            core::ErrorKind::kNotFound, "lesson_not_found", "такого занятия здесь нет"};
     }
 
     core::Result<void> Save(const Lesson& lesson) override {

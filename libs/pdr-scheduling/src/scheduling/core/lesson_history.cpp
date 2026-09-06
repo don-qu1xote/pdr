@@ -18,6 +18,8 @@ std::string_view Name(LessonAction action) noexcept {
             return "held";
         case LessonAction::kNoShow:
             return "no_show";
+        case LessonAction::kWithdrawn:
+            return "withdrawn";
         case LessonAction::kBoundary:
             break;
     }

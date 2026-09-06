@@ -28,6 +28,10 @@ enum class LessonAction : std::uint8_t {
     kHeld,
     kNoShow,
 
+    /// Участник вышел, а занятие осталось. Отдельно от отмены намеренно: в
+    /// споре «меня отчислили» и «занятие отменили» — разные истории.
+    kWithdrawn,
+
     /// ГРАНИЦА СПИСКА, а не действие.
     kBoundary,
 };
@@ -35,7 +39,7 @@ enum class LessonAction : std::uint8_t {
 std::string_view Name(LessonAction action) noexcept;
 
 /// Все действия подряд. Единственный способ обойти список целиком.
-inline constexpr std::array<LessonAction, 7> kEveryLessonAction{
+inline constexpr std::array<LessonAction, 8> kEveryLessonAction{
     LessonAction::kBooked,
     LessonAction::kConfirmed,
     LessonAction::kRescheduled,
@@ -43,6 +47,7 @@ inline constexpr std::array<LessonAction, 7> kEveryLessonAction{
     LessonAction::kCancelledByTutor,
     LessonAction::kHeld,
     LessonAction::kNoShow,
+    LessonAction::kWithdrawn,
 };
 
 static_assert(kEveryLessonAction.size() == static_cast<std::size_t>(LessonAction::kBoundary),

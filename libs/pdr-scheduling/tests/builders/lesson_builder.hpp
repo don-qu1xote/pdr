@@ -10,6 +10,7 @@
 #include "core/types/ids.hpp"
 #include "core/types/time.hpp"
 #include "scheduling/core/lesson.hpp"
+#include "scheduling/core/participation.hpp"
 
 namespace pdr::scheduling::testing {
 
@@ -30,9 +31,9 @@ public:
         return *this;
     }
 
-    LessonBuilder& Between(core::PersonId tutor, core::PersonId student) noexcept {
+    LessonBuilder& Between(core::PersonId tutor, core::PersonId student) {
         tutor_ = tutor;
-        student_ = student;
+        students_ = {std::move(student)};
         return *this;
     }
 
@@ -61,12 +62,27 @@ public:
         return *this;
     }
 
+    /// Кого записывать. Список, а не один: занятие держит участия, и проверке,
+    /// которой нужны двое, не приходится собирать занятие руками.
+    LessonBuilder& Between(core::PersonId tutor, std::vector<core::PersonId> students) {
+        tutor_ = std::move(tutor);
+        students_ = std::move(students);
+        return *this;
+    }
+
     Lesson Build() const {
         const auto now = now_.has_value() ? *now_ : starts_at_ - std::chrono::hours{24};
-        auto lesson =
-            Lesson::Schedule(id_, tenant_, tutor_, {student_}, starts_at_, duration_, zone_, now);
+
+        std::vector<Participation> taking;
+        taking.reserve(students_.size());
+        for (const auto& student : students_) {
+            taking.push_back(Participation::Joined(student));
+        }
+
+        auto lesson = Lesson::Schedule(
+            id_, tenant_, tutor_, std::move(taking), starts_at_, duration_, zone_, now);
         if (!lesson.HasValue()) {
-            throw std::logic_error{"LessonBuilder: " + lesson.Failure().Code()};
+            throw std::logic_error{std::string{"LessonBuilder: "} + lesson.Failure().Code()};
         }
         return lesson.Value();
     }
@@ -75,7 +91,7 @@ private:
     core::LessonId id_{pdr::testing::Numbered<core::LessonId>(100)};
     core::TenantId tenant_{pdr::testing::Numbered<core::TenantId>(1)};
     core::PersonId tutor_{pdr::testing::Numbered<core::PersonId>(10)};
-    core::PersonId student_{pdr::testing::Numbered<core::PersonId>(20)};
+    std::vector<core::PersonId> students_{pdr::testing::Numbered<core::PersonId>(20)};
     core::Instant starts_at_{pdr::testing::MomentBuilder{}.Utc(2026, 3, 2).At(18, 0).Build()};
     Lesson::Duration duration_{std::chrono::minutes{60}};
     core::TimeZone zone_{*core::TimeZone::Parse("Europe/Moscow")};

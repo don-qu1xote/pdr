@@ -354,10 +354,16 @@ core::Result<RecurrenceSeries> RecurrenceSeries::Compose(core::SeriesId id,
                            "lesson_duration_not_positive",
                            "занятие нулевой длины — не занятие"};
     }
-    if (participants.size() != Lesson::kParticipantsForNow) {
+    if (participants.empty()) {
         return core::Error{core::ErrorKind::kValidation,
-                           "lesson_participants_not_one",
-                           "групповые занятия ещё не заведены: участник сегодня ровно один"};
+                           "lesson_without_participants",
+                           "серия без единого участника — не серия"};
+    }
+    if (participants.size() > Lesson::kParticipantsForNow) {
+        return core::Error{core::ErrorKind::kValidation,
+                           "lesson_group_not_supported",
+                           "групповые занятия пока не поддерживаются: участник сегодня "
+                           "ровно один"};
     }
     if (std::find(participants.begin(), participants.end(), tutor) != participants.end()) {
         return core::Error{core::ErrorKind::kValidation,

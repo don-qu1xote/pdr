@@ -29,7 +29,7 @@ core::Result<CancellationOutcome> CancelLesson::Execute(const Request& request) 
     const auto now = clock_.Now();
 
     const auto windows =
-        windows_.For(request.tenant, found->Tutor(), found->Participants().front());
+        windows_.For(request.tenant, found->Tutor(), found->Participants().front().Person());
     if (!windows.HasValue()) {
         return windows.Failure();
     }
@@ -73,7 +73,7 @@ core::Result<CancellationOutcome> CancelLesson::Execute(const Request& request) 
         events::Envelope{request.tenant, now},
         request.lesson,
         found->Tutor(),
-        found->Participants().front(),
+        found->Participants().front().Person(),
         request.actor,
         request.by,
         changed.Value().outcome.retained,

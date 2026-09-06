@@ -25,6 +25,15 @@ constexpr std::array<Allowed, 9> kAllowedTransitions{
     Allowed{LessonState::kConfirmed, LessonEvent::kReschedule, LessonState::kConfirmed},
 };
 
+std::vector<core::PersonId> PeopleOf(const std::vector<Participation>& participants) {
+    std::vector<core::PersonId> people;
+    people.reserve(participants.size());
+    for (const auto& taking : participants) {
+        people.push_back(taking.Person());
+    }
+    return people;
+}
+
 core::Money Nothing(const core::CurrencyCode& currency) noexcept {
     return core::Money::FromMinorUnits(0, currency);
 }
@@ -102,7 +111,7 @@ core::Result<LessonState> Transition(LessonState from, LessonEvent event) {
 Lesson::Lesson(core::LessonId id,
                core::TenantId tenant,
                core::PersonId tutor,
-               std::vector<core::PersonId> participants,
+               std::vector<Participation> participants,
                core::Instant starts_at,
                Duration duration,
                core::TimeZone zone,
@@ -119,7 +128,7 @@ Lesson::Lesson(core::LessonId id,
 core::Result<Lesson> Lesson::Schedule(core::LessonId id,
                                       core::TenantId tenant,
                                       core::PersonId tutor,
-                                      std::vector<core::PersonId> participants,
+                                      std::vector<Participation> participants,
                                       core::Instant starts_at,
                                       Duration duration,
                                       core::TimeZone zone,
@@ -134,20 +143,28 @@ core::Result<Lesson> Lesson::Schedule(core::LessonId id,
                            "lesson_starts_in_past",
                            "записаться назад во времени нельзя"};
     }
-    if (participants.size() != kParticipantsForNow) {
+    if (participants.empty()) {
         return core::Error{core::ErrorKind::kValidation,
-                           "lesson_participants_not_one",
-                           "групповые занятия ещё не заведены: участник сегодня ровно один"};
+                           "lesson_without_participants",
+                           "занятие без единого участника — не занятие"};
     }
-    if (std::find(participants.begin(), participants.end(), tutor) != participants.end()) {
+    if (participants.size() > kParticipantsForNow) {
+        return core::Error{core::ErrorKind::kValidation,
+                           "lesson_group_not_supported",
+                           "групповые занятия пока не поддерживаются: участник сегодня "
+                           "ровно один"};
+    }
+    if (std::find_if(participants.begin(), participants.end(), [&tutor](const auto& taking) {
+            return taking.Person() == tutor;
+        }) != participants.end()) {
         return core::Error{core::ErrorKind::kValidation,
                            "lesson_tutor_among_participants",
                            "репетитор ведёт занятие, а не участвует в нём"};
     }
 
-    auto sorted = participants;
-    std::sort(sorted.begin(), sorted.end());
-    if (std::adjacent_find(sorted.begin(), sorted.end()) != sorted.end()) {
+    auto people = PeopleOf(participants);
+    std::sort(people.begin(), people.end());
+    if (std::adjacent_find(people.begin(), people.end()) != people.end()) {
         return core::Error{core::ErrorKind::kValidation,
                            "lesson_participant_repeated",
                            "один и тот же участник записан дважды"};
@@ -286,7 +303,7 @@ core::Result<Lesson::Change> Lesson::MarkHeld(const core::Money& price,
         return held.Failure();
     }
 
-    return Made(held.Value(),
+    return Made(held.Value().Outcome(Attendance::kAttended, price),
                 price,
                 RetentionReason::kLessonHeld,
                 LessonAction::kHeld,
@@ -309,13 +326,107 @@ core::Result<Lesson::Change> Lesson::MarkNoShow(const CancellationPolicy& policy
         return NotCountable();
     }
 
-    return Made(missed.Value(),
+    return Made(missed.Value().Outcome(Attendance::kMissed, price),
                 *retained,
                 RetentionReason::kNoShow,
                 LessonAction::kNoShow,
                 actor,
                 now,
                 std::string{});
+}
+
+std::vector<core::PersonId> Lesson::People() const {
+    return PeopleOf(participants_);
+}
+
+const Participation* Lesson::Participating(const core::PersonId& person) const noexcept {
+    for (const auto& taking : participants_) {
+        if (taking.Person() == person) {
+            return &taking;
+        }
+    }
+    return nullptr;
+}
+
+core::Result<Lesson> Lesson::With(const Participation& taking) const {
+    if (Participating(taking.Person()) == nullptr) {
+        return core::Error{core::ErrorKind::kNotFound,
+                           "participation_not_found",
+                           "этот человек на занятии не значится"};
+    }
+
+    std::vector<Participation> after;
+    after.reserve(participants_.size());
+    for (const auto& kept : participants_) {
+        after.push_back(kept.Person() == taking.Person() ? taking : kept);
+    }
+
+    return Lesson{id_, tenant_, tutor_, std::move(after), starts_at_, duration_, zone_, state_};
+}
+
+Lesson Lesson::Outcome(Attendance attendance, const core::Money& price) const {
+    std::vector<Participation> after;
+    after.reserve(participants_.size());
+    for (const auto& taking : participants_) {
+        if (taking.State() == ParticipationState::kWithdrawn) {
+            after.push_back(taking);
+            continue;
+        }
+        const auto priced = taking.Priced(price);
+        after.push_back(attendance == Attendance::kAttended ? priced.Came() : priced.Missed());
+    }
+
+    return Lesson{id_, tenant_, tutor_, std::move(after), starts_at_, duration_, zone_, state_};
+}
+
+core::Result<Lesson::Change> Lesson::Withdraw(const CancellationPolicy& policy,
+                                              const core::Money& price,
+                                              const core::PersonId& participant,
+                                              const core::PersonId& actor,
+                                              core::Instant now) const {
+    const auto* taking = Participating(participant);
+    if (taking == nullptr) {
+        return core::Error{core::ErrorKind::kNotFound,
+                           "participation_not_found",
+                           "этот человек на занятии не значится"};
+    }
+    if (taking->State() == ParticipationState::kWithdrawn) {
+        return core::Error{core::ErrorKind::kConflict,
+                           "participation_already_withdrawn",
+                           "этот человек с занятия уже вышел"};
+    }
+    if (Staying() <= 1) {
+        return core::Error{core::ErrorKind::kConflict,
+                           "participation_last_one",
+                           "занятие без единого участника — это отмена, а не выход"};
+    }
+
+    const bool free = policy.Free(starts_at_, now);
+    const auto retained = free ? std::optional<core::Money>{Nothing(price.Currency())}
+                               : policy.LateRetention().Of(price);
+    if (!retained.has_value()) {
+        return NotCountable();
+    }
+    const auto reason =
+        free ? RetentionReason::kInsideFreeWindow : RetentionReason::kLateCancellation;
+
+    auto left = With(taking->Withdrawn());
+    if (!left.HasValue()) {
+        return left.Failure();
+    }
+
+    LessonHistoryEntry record{
+        tenant_, id_, actor, LessonAction::kWithdrawn, now, participant.ToString()};
+
+    return Lesson::Change{
+        std::move(left.Value()), CancellationOutcome{state_, *retained, reason}, std::move(record)};
+}
+
+std::size_t Lesson::Staying() const noexcept {
+    return static_cast<std::size_t>(
+        std::count_if(participants_.begin(), participants_.end(), [](const Participation& taking) {
+            return taking.State() == ParticipationState::kJoined;
+        }));
 }
 
 }  // namespace pdr::scheduling

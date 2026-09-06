@@ -62,6 +62,12 @@ public:
         return Replace(lesson);
     }
 
+    core::Result<void> SetParticipation(const core::TenantId&,
+                                        const core::LessonId&,
+                                        const Participation&) override {
+        return {};
+    }
+
     core::Result<void> Save(const Lesson& lesson) override {
         for (const auto& kept : saved_) {
             if (kept.Tutor() == lesson.Tutor() && Overlaps(kept, lesson, kNoBuffer)) {
@@ -91,8 +97,7 @@ public:
                                       const core::TimeRange& window) const override {
         std::vector<Lesson> found;
         for (const auto& lesson : saved_) {
-            const auto& people = lesson.Participants();
-            if (std::find(people.begin(), people.end(), participant) != people.end() &&
+            if (lesson.Participating(participant) != nullptr &&
                 window.Contains(lesson.StartsAt())) {
                 found.push_back(lesson);
             }

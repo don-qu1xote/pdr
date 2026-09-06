@@ -25,13 +25,15 @@ namespace pdr::scheduling::testing {
 /// строк, и усложнять его до настоящего разборщика значило бы заводить вторую
 /// применялку миграций.
 ///
-/// Миграций уже три, и читаются они ПО ПОРЯДКУ: история занятия ссылается на
-/// само занятие внешним ключом, и в обратном порядке схема не создаётся.
+/// Миграций уже четыре, и читаются они ПО ПОРЯДКУ: история занятия ссылается на
+/// само занятие внешним ключом, а участие обрастает колонками той таблицы,
+/// которую завела первая, — в обратном порядке схема не создаётся.
 inline std::vector<std::string> StatementsOfSchedulingMigration() {
     std::stringstream whole;
     for (const auto* name : {"/db/migrations/V013__scheduling.sql",
                              "/db/migrations/V014__lesson_history.sql",
-                             "/db/migrations/V016__booking_window.sql"}) {
+                             "/db/migrations/V016__booking_window.sql",
+                             "/db/migrations/V017__participation.sql"}) {
         std::ifstream file{std::string{PDR_SOURCE_DIR} + name};
         whole << file.rdbuf() << ";\n";
     }

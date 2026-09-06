@@ -124,7 +124,7 @@ Side AsSide(api::LessonSide side) noexcept {
 api::Lesson AsAnswer(const Lesson& lesson) {
     return api::Lesson{AsUuid(lesson.Id().AsBytes()),
                        AsUuid(lesson.Tutor().AsBytes()),
-                       AsUuids(lesson.Participants()),
+                       AsUuids(lesson.People()),
                        lesson.StartsAt().UnixMicros(),
                        lesson.EndsAt().UnixMicros(),
                        lesson.Zone().Name(),

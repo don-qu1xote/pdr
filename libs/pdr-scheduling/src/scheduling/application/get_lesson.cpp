@@ -14,8 +14,7 @@ bool InScheduleOf(const Lesson& lesson, const core::PersonId& whose, Side side) 
     if (side == Side::kTutor) {
         return lesson.Tutor() == whose;
     }
-    const auto& people = lesson.Participants();
-    return std::find(people.begin(), people.end(), whose) != people.end();
+    return lesson.Participating(whose) != nullptr;
 }
 
 }  // namespace

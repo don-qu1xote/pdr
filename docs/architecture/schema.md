@@ -4,7 +4,7 @@
      правка переживёт ровно до следующей пересборки. Изменить схему — значит
      написать новую миграцию. -->
 
-Собрано из миграций: 16. Таблиц: 29.
+Собрано из миграций: 17. Таблиц: 29.
 
 Правила, которым подчиняется каждая колонка, — в
 [migrations.md](migrations.md). Как устроена изоляция арендаторов и почему у
@@ -825,11 +825,21 @@
 | `tenant_id` | `uuid` | uuid not null |
 | `lesson_id` | `uuid` | uuid not null |
 | `participant_id` | `uuid` | uuid not null |
+| `price_minor` | `bigint` | bigint |
+| `currency` | `char(3)` | char(3) |
+| `payment` | `text` | text not null default |
+| `attendance` | `text` | text not null default |
+| `state` | `text` | text not null default |
 
 Ограничения:
 
 * `constraint scheduling_lesson_participant_pk primary key (tenant_id, lesson_id, participant_id)`
 * `constraint scheduling_lesson_participant_lesson foreign key (tenant_id, lesson_id) references scheduling_lesson (tenant_id, id) on delete cascade`
+* `constraint scheduling_lesson_participant_price_whole check (num_nonnulls(price_minor, currency) <> 1)`
+* `constraint scheduling_lesson_participant_currency_shaped check (currency is null or currency ~ )`
+* `constraint scheduling_lesson_participant_payment_known check (payment in ( , ))`
+* `constraint scheduling_lesson_participant_attendance_known check (attendance in ( , , ))`
+* `constraint scheduling_lesson_participant_state_known check (state in ( , ))`
 
 Индексы:
 
@@ -963,3 +973,4 @@
 1. `V014__lesson_history.sql` — scheduling_lesson_history
 1. `V015__outbox.sql` — notifications_outbox
 1. `V016__booking_window.sql` — scheduling_booking_window
+1. `V017__participation.sql` — без новых таблиц

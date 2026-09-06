@@ -1,6 +1,7 @@
 #include "scheduling/application/book_lesson.hpp"
 
 #include "events/scheduling/lesson_booked.hpp"
+#include "scheduling/core/participation.hpp"
 
 namespace pdr::scheduling {
 
@@ -35,7 +36,7 @@ core::Result<Lesson> BookLesson::Execute(const Request& request) const {
     const auto lesson = Lesson::Schedule(ids_.Next<core::LessonId>(),
                                          request.tenant,
                                          request.tutor,
-                                         {request.student},
+                                         {Participation::Joined(request.student)},
                                          request.starts_at,
                                          request.duration,
                                          request.zone,

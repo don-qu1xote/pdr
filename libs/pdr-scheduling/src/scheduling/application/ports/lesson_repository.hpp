@@ -8,6 +8,7 @@
 #include "core/types/local_time.hpp"
 #include "core/types/time.hpp"
 #include "scheduling/core/lesson.hpp"
+#include "scheduling/core/participation.hpp"
 
 namespace pdr::scheduling::ports {
 
@@ -70,6 +71,15 @@ public:
     /// Фейк обязан отказывать в том же случае: иначе unit-прогон зелен на
     /// поведении, которого в проде нет.
     virtual core::Result<void> Save(const Lesson& lesson) = 0;
+
+    /// Записать ОДНО участие: его цену, оплату, исход и выход.
+    ///
+    /// Отдельно от состояния занятия, и это вся задача PDR-SCHED-08: занятие
+    /// общее, а цена, оплата и освоение у каждого свои. Выход одного участника
+    /// состояния занятия не меняет вовсе — в группе оно состоится без него.
+    virtual core::Result<void> SetParticipation(const core::TenantId& tenant,
+                                                const core::LessonId& lesson,
+                                                const Participation& taking) = 0;
 
 protected:
     LessonRepository() = default;

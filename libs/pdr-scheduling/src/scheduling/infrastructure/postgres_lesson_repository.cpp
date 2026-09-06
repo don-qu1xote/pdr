@@ -1,6 +1,8 @@
 #include "scheduling/infrastructure/postgres_lesson_repository.hpp"
 
 #include <chrono>
+#include <cstdint>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -28,7 +30,76 @@ struct ParticipantRow final {
     core::TenantId tenant_id;
     core::LessonId lesson_id;
     core::PersonId participant_id;
+    std::optional<std::int64_t> price_minor;
+    std::optional<std::string> currency;
+    std::string payment;
+    std::string attendance;
+    std::string state;
 };
+
+ParticipantRow AsRow(const core::TenantId& tenant,
+                     const core::LessonId& lesson,
+                     const Participation& taking) {
+    const auto& price = taking.Price();
+    return ParticipantRow{
+        tenant,
+        lesson,
+        taking.Person(),
+        price.has_value() ? std::optional{price->MinorUnits()} : std::nullopt,
+        price.has_value() ? std::optional{std::string{price->Currency().View()}} : std::nullopt,
+        std::string{Name(taking.Payment())},
+        std::string{Name(taking.Attended())},
+        std::string{Name(taking.State())}};
+}
+
+/// Участие из строки — теми же переходами, какими оно и получилось.
+///
+/// Второго конструктора «для хранилища» у участия нет намеренно, как нет его и
+/// у занятия: конструктор, принимающий любое состояние, обходил бы переходы, а
+/// они и есть правило.
+Participation Restore(core::PersonId person,
+                      const std::optional<std::int64_t>& price_minor,
+                      const std::optional<std::string>& currency,
+                      const std::string& payment,
+                      const std::string& attendance,
+                      const std::string& state) {
+    auto taking = Participation::Joined(std::move(person));
+
+    if (price_minor.has_value() != currency.has_value()) {
+        throw std::runtime_error{"scheduling_lesson_participant: цена без валюты или наоборот"};
+    }
+    if (price_minor.has_value()) {
+        const auto code = core::CurrencyCode::Parse(*currency);
+        if (!code.has_value()) {
+            throw std::runtime_error{"scheduling_lesson_participant.currency не код валюты: " +
+                                     *currency};
+        }
+        taking = taking.Priced(core::Money::FromMinorUnits(*price_minor, *code));
+    }
+
+    if (payment == Name(PaymentState::kPaid)) {
+        taking = taking.Paid();
+    } else if (payment != Name(PaymentState::kUnpaid)) {
+        throw std::runtime_error{"scheduling_lesson_participant.payment вне списка: " + payment};
+    }
+
+    if (attendance == Name(Attendance::kAttended)) {
+        taking = taking.Came();
+    } else if (attendance == Name(Attendance::kMissed)) {
+        taking = taking.Missed();
+    } else if (attendance != Name(Attendance::kExpected)) {
+        throw std::runtime_error{"scheduling_lesson_participant.attendance вне списка: " +
+                                 attendance};
+    }
+
+    if (state == Name(ParticipationState::kWithdrawn)) {
+        taking = taking.Withdrawn();
+    } else if (state != Name(ParticipationState::kJoined)) {
+        throw std::runtime_error{"scheduling_lesson_participant.state вне списка: " + state};
+    }
+
+    return taking;
+}
 
 core::PersonId AsPerson(const std::string& text, const char* column) {
     const auto parsed = core::PersonId::Parse(text);
@@ -74,7 +145,7 @@ LessonState AsState(const std::string& text) {
 Lesson Restore(core::TenantId tenant,
                core::LessonId id,
                core::PersonId tutor,
-               std::vector<core::PersonId> participants,
+               std::vector<Participation> participants,
                core::Instant starts_at,
                core::Instant ends_at,
                core::TimeZone zone,
@@ -118,11 +189,11 @@ Lesson Restore(core::TenantId tenant,
 /// Отдельный ход, а не join к занятию: участников у занятия несколько, и join
 /// размножил бы саму строку занятия по числу учеников — разбирать обратно
 /// пришлось бы всё равно, только уже из повторов.
-std::unordered_map<std::string, std::vector<core::PersonId>> ParticipantsOf(
+std::unordered_map<std::string, std::vector<Participation>> ParticipantsOf(
     infrastructure::db::ScopedTenantContext& scope,
     const core::TenantId& tenant,
     const std::vector<core::LessonId>& ids) {
-    std::unordered_map<std::string, std::vector<core::PersonId>> participants;
+    std::unordered_map<std::string, std::vector<Participation>> participants;
     if (ids.empty()) {
         return participants;
     }
@@ -132,7 +203,12 @@ std::unordered_map<std::string, std::vector<core::PersonId>> ParticipantsOf(
         const auto row =
             raw.As<SchedulingLessonParticipantsOfRow>(userver::storages::postgres::kRowTag);
         participants[Filled(row.lesson_id, "lesson_id")].push_back(
-            AsPerson(Filled(row.participant_id, "participant_id"), "participant_id"));
+            Restore(AsPerson(Filled(row.participant_id, "participant_id"), "participant_id"),
+                    row.price_minor,
+                    row.currency,
+                    Filled(row.payment, "payment"),
+                    Filled(row.attendance, "attendance"),
+                    Filled(row.state, "state")));
     }
     return participants;
 }
@@ -164,7 +240,7 @@ std::vector<Lesson> Assemble(infrastructure::db::ScopedTenantContext& scope,
             Restore(tenant,
                     AsLesson(id),
                     AsPerson(Filled(row.tutor_id, "tutor_id"), "tutor_id"),
-                    seen == participants.end() ? std::vector<core::PersonId>{} : seen->second,
+                    seen == participants.end() ? std::vector<Participation>{} : seen->second,
                     AsInstant(Filled(row.starts_at, "starts_at")),
                     AsInstant(Filled(row.ends_at, "ends_at")),
                     AsZone(Filled(row.tz, "tz")),
@@ -259,11 +335,27 @@ core::Result<void> PostgresLessonRepository::Save(const Lesson& lesson) {
 
     std::vector<ParticipantRow> rows;
     rows.reserve(lesson.Participants().size());
-    for (const auto& participant : lesson.Participants()) {
-        rows.push_back(ParticipantRow{lesson.Tenant(), lesson.Id(), participant});
+    for (const auto& taking : lesson.Participants()) {
+        rows.push_back(AsRow(lesson.Tenant(), lesson.Id(), taking));
     }
     scope_.Session().ExecuteDecomposeBulk(sql::kSchedulingLessonParticipantsAdd, rows);
 
+    return {};
+}
+
+core::Result<void> PostgresLessonRepository::SetParticipation(const core::TenantId& tenant,
+                                                              const core::LessonId& lesson,
+                                                              const Participation& taking) {
+    const auto row = AsRow(tenant, lesson, taking);
+    scope_.Session().Execute(sql::kSchedulingLessonParticipationSet,
+                             row.tenant_id,
+                             row.lesson_id,
+                             row.participant_id,
+                             row.price_minor,
+                             row.currency,
+                             row.payment,
+                             row.attendance,
+                             row.state);
     return {};
 }
 

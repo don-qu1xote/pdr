@@ -33,7 +33,7 @@ Lesson ContractGround::ALesson(core::LessonId id, core::Instant starts_at) {
     return Lesson::Schedule(std::move(id),
                             Tenant(),
                             Tutor(),
-                            {Student()},
+                            {Participation::Joined(Student())},
                             starts_at,
                             std::chrono::minutes{60},
                             Zone(),

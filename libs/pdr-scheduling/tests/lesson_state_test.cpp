@@ -8,6 +8,7 @@
 #include "builders/identifiers.hpp"
 #include "builders/lesson_builder.hpp"
 #include "scheduling/core/lesson.hpp"
+#include "scheduling/core/participation.hpp"
 
 namespace pdr::scheduling {
 namespace {
@@ -125,28 +126,23 @@ TEST(LessonParticipants, AreAVectorAndTodayHoldExactlyOne) {
     ASSERT_EQ(lesson.Participants().size(), Lesson::kParticipantsForNow);
 }
 
-TEST(LessonParticipants, RefuseAnEmptyOrCrowdedLesson) {
-    const auto tutor = Numbered<core::PersonId>(10);
-    const auto tenant = Numbered<core::TenantId>(1);
-    const auto id = Numbered<core::LessonId>(100);
+/// ПУСТОЕ ЗАНЯТИЕ И ГРУППА — РАЗНЫЕ ОТКАЗЫ. Первое бессмысленно всегда, вторая
+/// только пока: снимут запрет — второй отказ исчезнет, а первый останется.
+/// Один код на оба ответа означал бы, что в день групп его придётся расщеплять.
+TEST(LessonParticipants, RefuseAnEmptyLessonAlways) {
     const auto starts = pdr::testing::MomentBuilder{}.Utc(2026, 3, 2).At(18, 0).Build();
-    const auto now = starts - 24h;
 
-    const auto empty = Lesson::Schedule(id, tenant, tutor, {}, starts, 60min, Moscow(), now);
+    const auto empty = Lesson::Schedule(Numbered<core::LessonId>(100),
+                                        Numbered<core::TenantId>(1),
+                                        Numbered<core::PersonId>(10),
+                                        {},
+                                        starts,
+                                        60min,
+                                        Moscow(),
+                                        starts - 24h);
+
     ASSERT_FALSE(empty.HasValue());
-    EXPECT_EQ(empty.Failure().Code(), "lesson_participants_not_one");
-
-    const auto crowded =
-        Lesson::Schedule(id,
-                         tenant,
-                         tutor,
-                         {Numbered<core::PersonId>(20), Numbered<core::PersonId>(21)},
-                         starts,
-                         60min,
-                         Moscow(),
-                         now);
-    ASSERT_FALSE(crowded.HasValue());
-    EXPECT_EQ(crowded.Failure().Code(), "lesson_participants_not_one");
+    EXPECT_EQ(empty.Failure().Code(), "lesson_without_participants");
 }
 
 TEST(LessonParticipants, RefuseTheTutorAmongThem) {
@@ -156,7 +152,7 @@ TEST(LessonParticipants, RefuseTheTutorAmongThem) {
     const auto wrong = Lesson::Schedule(Numbered<core::LessonId>(100),
                                         Numbered<core::TenantId>(1),
                                         tutor,
-                                        {tutor},
+                                        {Participation::Joined(tutor)},
                                         starts,
                                         60min,
                                         Moscow(),

@@ -43,6 +43,10 @@ public:
 
     core::Result<void> Save(const Lesson& lesson) override;
 
+    core::Result<void> SetParticipation(const core::TenantId& tenant,
+                                        const core::LessonId& lesson,
+                                        const Participation& taking) override;
+
 private:
     infrastructure::db::ScopedTenantContext& scope_;
 };

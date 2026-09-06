@@ -1046,11 +1046,36 @@
             "name": "participant_id",
             "nullable": false,
             "type": "uuid"
+          },
+          {
+            "name": "price_minor",
+            "nullable": true,
+            "type": "bigint"
+          },
+          {
+            "name": "currency",
+            "nullable": true,
+            "type": "character(3)"
+          },
+          {
+            "name": "payment",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "attendance",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "state",
+            "nullable": false,
+            "type": "text"
           }
         ],
         "name": "scheduling_lesson_participant",
         "namespace": "public",
-        "version": 0
+        "version": 1
       },
       "public.scheduling_series": {
         "columns": [
@@ -1193,7 +1218,7 @@
     },
     "types": {}
   },
-  "hashsum": "f0801a1b43f7c6fd004c2d006ea1d9fbc794e0a8241021b47f9f9bb84a48aa29",
+  "hashsum": "2268ddfd890f0d37ac9d3ad3bb7273660a372a7711beaa0a18c2558de023554c",
   "queries": [
     {
       "args": [
@@ -2338,6 +2363,31 @@
         },
         {
           "name": "participant_id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "price_minor",
+          "nullable": true,
+          "type": "bigint"
+        },
+        {
+          "name": "currency",
+          "nullable": true,
+          "type": "character(3)"
+        },
+        {
+          "name": "payment",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "attendance",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "state",
           "nullable": true,
           "type": "text"
         }

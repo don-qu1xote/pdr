@@ -9,11 +9,13 @@
 
 #include <gtest/gtest.h>
 
+#include "core/money.hpp"
 #include "core/types/ids.hpp"
 #include "core/types/local_time.hpp"
 #include "scheduling/core/availability.hpp"
 #include "scheduling/core/lesson.hpp"
 #include "scheduling/core/lesson_history.hpp"
+#include "scheduling/core/participation.hpp"
 #include "scheduling/core/recurrence.hpp"
 #include "scheduling_ground.hpp"
 
@@ -76,7 +78,57 @@ PDR_CONTRACT_TEST_P(LessonRepositoryContract, SavedLessonIsFoundAtItsSlot) {
     EXPECT_TRUE(found->EndsAt() == lesson.EndsAt());
     EXPECT_EQ(found->State(), LessonState::kPlanned);
     ASSERT_EQ(found->Participants().size(), 1U);
-    EXPECT_TRUE(found->Participants().front() == ContractGround::Student());
+    EXPECT_TRUE(found->Participants().front().Person() == ContractGround::Student());
+}
+
+/// ОПЛАТА И ПРОГРЕСС ЖИВУТ НА УЧАСТИИ, И ДОЕЗЖАЮТ ДО ХРАНИЛИЩА ЦЕЛИКОМ.
+///
+/// Цена, состояние оплаты и исход у каждого участника свои — значит, у
+/// хранилища есть куда их положить и откуда взять. Проверяется это на обеих
+/// реализациях: фейк, который их теряет, делает unit-прогон зелёным на
+/// поведении, которого в базе нет.
+PDR_CONTRACT_TEST_P(LessonRepositoryContract, AParticipationKeepsItsPricePaymentAndOutcome) {
+    auto& lessons = this->world_.Lessons();
+    const auto lesson =
+        ContractGround::ALesson(this->world_.NextLessonId(), ContractGround::Utc(2026, 3, 2, 18));
+    ASSERT_TRUE(lessons.Save(lesson).HasValue());
+
+    const auto rubles = core::CurrencyCode::Parse("RUB").value();
+    const auto settled = lesson.Participants()
+                             .front()
+                             .Priced(core::Money::FromMinorUnits(150000, rubles))
+                             .Paid()
+                             .Came();
+    ASSERT_TRUE(
+        lessons.SetParticipation(ContractGround::Tenant(), lesson.Id(), settled).HasValue());
+
+    const auto found = lessons.Find(ContractGround::Tenant(), lesson.Id());
+    ASSERT_TRUE(found.has_value());
+    ASSERT_EQ(found->Participants().size(), 1U);
+    const auto& taking = found->Participants().front();
+    ASSERT_TRUE(taking.Price().has_value()) << "цена участия потерялась по дороге";
+    EXPECT_EQ(taking.Price()->MinorUnits(), 150000);
+    EXPECT_EQ(taking.Price()->Currency(), rubles);
+    EXPECT_EQ(taking.Payment(), PaymentState::kPaid);
+    EXPECT_EQ(taking.Attended(), Attendance::kAttended);
+    EXPECT_EQ(taking.State(), ParticipationState::kJoined);
+}
+
+/// ПУСТАЯ ЦЕНА ОСТАЁТСЯ ПУСТОЙ, а не превращается в ноль: «ещё не назначена» и
+/// «бесплатно» — разные ответы, и теряется разница между ними молча.
+PDR_CONTRACT_TEST_P(LessonRepositoryContract, AParticipationWithoutAPriceComesBackWithoutOne) {
+    auto& lessons = this->world_.Lessons();
+    const auto lesson =
+        ContractGround::ALesson(this->world_.NextLessonId(), ContractGround::Utc(2026, 3, 2, 18));
+    ASSERT_TRUE(lessons.Save(lesson).HasValue());
+
+    const auto found = lessons.Find(ContractGround::Tenant(), lesson.Id());
+
+    ASSERT_TRUE(found.has_value());
+    ASSERT_EQ(found->Participants().size(), 1U);
+    EXPECT_FALSE(found->Participants().front().Price().has_value());
+    EXPECT_EQ(found->Participants().front().Payment(), PaymentState::kUnpaid);
+    EXPECT_EQ(found->Participants().front().Attended(), Attendance::kExpected);
 }
 
 PDR_CONTRACT_TEST_P(LessonRepositoryContract, AnEmptySlotHoldsNothing) {
@@ -179,7 +231,7 @@ PDR_CONTRACT_TEST_P(LessonRepositoryContract, SavedLessonIsFoundByItsId) {
     EXPECT_TRUE(found->Tutor() == ContractGround::Tutor());
     EXPECT_TRUE(found->StartsAt() == starts);
     ASSERT_EQ(found->Participants().size(), 1U);
-    EXPECT_TRUE(found->Participants().front() == ContractGround::Student());
+    EXPECT_TRUE(found->Participants().front().Person() == ContractGround::Student());
 }
 
 PDR_CONTRACT_TEST_P(LessonRepositoryContract, AnUnknownIdHoldsNothing) {
@@ -297,6 +349,8 @@ PDR_CONTRACT_REGISTER_P(LessonRepositoryContract,
                         AMoveOntoATakenSlotIsRefused,
                         SavedLessonIsFoundAtItsSlot,
                         SavedLessonIsFoundByItsId,
+                        AParticipationKeepsItsPricePaymentAndOutcome,
+                        AParticipationWithoutAPriceComesBackWithoutOne,
                         AnUnknownIdHoldsNothing,
                         AnEmptySlotHoldsNothing,
                         TheTutorSeesHisLessonsInTheWindowAndOnlyThem,
