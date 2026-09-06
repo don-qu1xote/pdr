@@ -609,6 +609,7 @@ jobs:
               "observability_product_event",
               "scheduling_availability",
               "scheduling_availability_exception",
+              "scheduling_booking_window",
               "scheduling_lesson",
               "scheduling_lesson_history",
               "scheduling_lesson_participant",
