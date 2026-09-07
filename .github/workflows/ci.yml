@@ -599,6 +599,15 @@ jobs:
 
           account = json.load(open("/tmp/account.json", encoding="utf-8"))
           parts = account["parts"]
+
+          # Названы части, которые эта база засеяла шагами выше: они обязаны
+          # быть и обязаны быть непустыми. Остальные части выгрузки (занятия,
+          # серии, перерывы) здесь пусты — расписание этот прогон не заводит, —
+          # и требовать от них строк значило бы требовать сеять всё подряд.
+          #
+          # Что состав выгрузки не разошёлся со схемой, сверяет
+          # scripts/check_openness.py против самих миграций: забытая таблица
+          # ловится там, а не догадкой по засеянному.
           expected = {
               "identity_tenant",
               "identity_person",
@@ -617,7 +626,8 @@ jobs:
               "scheduling_series_exception",
               "scheduling_series_participant",
           }
-          assert set(parts) == expected, f"состав выгрузки разошёлся: {sorted(parts)}"
+          missing = expected - set(parts)
+          assert not missing, f"из выгрузки пропали части: {sorted(missing)}"
           # Сейд есть только для identity-таблиц: scheduling не засеивается
           # и выгрузка отдаёт пустые массивы — это нормально.
           identity = {k for k in parts if k.startswith("identity_")}

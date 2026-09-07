@@ -1193,6 +1193,73 @@
         "namespace": "public",
         "version": 0
       },
+      "public.scheduling_time_off": {
+        "columns": [
+          {
+            "name": "tenant_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "person_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "from_date",
+            "nullable": false,
+            "type": "date"
+          },
+          {
+            "name": "to_date",
+            "nullable": false,
+            "type": "date"
+          },
+          {
+            "name": "tz",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "reason",
+            "nullable": true,
+            "type": "text"
+          },
+          {
+            "name": "lessons_decided",
+            "nullable": true,
+            "type": "text"
+          },
+          {
+            "name": "series_decided",
+            "nullable": true,
+            "type": "text"
+          },
+          {
+            "name": "decided_at",
+            "nullable": true,
+            "type": "timestamp with time zone"
+          },
+          {
+            "name": "declared_by",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "declared_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          }
+        ],
+        "name": "scheduling_time_off",
+        "namespace": "public",
+        "version": 0
+      },
       "public.schema_version": {
         "columns": [
           {
@@ -1218,7 +1285,7 @@
     },
     "types": {}
   },
-  "hashsum": "2268ddfd890f0d37ac9d3ad3bb7273660a372a7711beaa0a18c2558de023554c",
+  "hashsum": "4ac33f02dd034ed95615ecf447ea23d87319fa012f08c4142e5a1d6a66a9b9f0",
   "queries": [
     {
       "args": [
@@ -2487,10 +2554,87 @@
         }
       ],
       "cardinality": "many",
+      "name": "scheduling_series_of_person",
+      "returns": [
+        {
+          "name": "id",
+          "nullable": true,
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "nullable": true,
+          "type": "uuid"
+        }
+      ],
+      "cardinality": "many",
       "name": "scheduling_series_participants_of",
       "returns": [
         {
           "name": "participant_id",
+          "nullable": true,
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "nullable": true,
+          "type": "uuid"
+        }
+      ],
+      "cardinality": "many",
+      "name": "scheduling_time_off_find",
+      "returns": [
+        {
+          "name": "person_id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "from_date",
+          "nullable": true,
+          "type": "date"
+        },
+        {
+          "name": "to_date",
+          "nullable": true,
+          "type": "date"
+        },
+        {
+          "name": "tz",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "reason",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "lessons_decided",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "series_decided",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "declared_by",
           "nullable": true,
           "type": "text"
         }

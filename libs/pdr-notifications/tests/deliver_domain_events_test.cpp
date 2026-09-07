@@ -16,11 +16,14 @@
 #include "events/identity/guardianship_revoked.hpp"
 #include "events/identity/ward_acted_alone.hpp"
 #include "events/in_memory_bus.hpp"
+#include "events/notifications/reminder_before_return.hpp"
 #include "events/notifications/reminder_day_before.hpp"
 #include "events/notifications/reminder_hour_before.hpp"
 #include "events/scheduling/lesson_booked.hpp"
 #include "events/scheduling/lesson_cancelled.hpp"
 #include "events/scheduling/lesson_rescheduled.hpp"
+#include "events/scheduling/time_off_applied.hpp"
+#include "events/scheduling/time_off_declared.hpp"
 #include "fakes/fake_clock.hpp"
 
 namespace pdr::notifications {
@@ -29,6 +32,7 @@ namespace {
 using namespace std::chrono_literals;
 using pdr::events::scheduling::CancelledBy;
 using pdr::events::scheduling::RetentionReason;
+using pdr::events::scheduling::TimeOffDecision;
 using pdr::testing::Numbered;
 
 /// Очередь фейком — со ВСЕМИ повадками настоящей, кроме базы.
@@ -330,6 +334,123 @@ TEST_F(DeliverDomainEventsTest, TwoRealEventsAreTwoLetters) {
     bus_.Publish(pdr::events::identity::GuardianshipRevoked{Envelope(), guardian_, student_});
 
     EXPECT_EQ(outbox_.Rows().size(), 2U) << "второе отзывание опеки потерялось молча";
+}
+
+/// ГЛАВНАЯ ПРОВЕРКА ЗАДАЧИ СО СТОРОНЫ ОПОВЕЩЕНИЙ: письмо ОДНО НА ЧЕЛОВЕКА, а не
+/// одно на занятие. Двенадцать писем «занятие отменено» за одну секунду — это не
+/// забота, а поломка на вид.
+TEST_F(DeliverDomainEventsTest, ABreakIsOneLetterPerPersonAndNotOnePerLesson) {
+    DeliverDomainEvents deliver{outbox_};
+    deliver.SubscribeTo(bus_);
+
+    const auto period = Numbered<core::TimeOffId>(7);
+
+    /// Четыре отменённых занятия — и все четыре молчат: о них скажет одно
+    /// событие о применённом решении.
+    for (int number = 100; number < 104; ++number) {
+        bus_.Publish(
+            pdr::events::scheduling::LessonCancelled{Envelope(),
+                                                     Numbered<core::LessonId>(number),
+                                                     tutor_,
+                                                     student_,
+                                                     tutor_,
+                                                     CancelledBy::kTutor,
+                                                     core::Money::FromMinorUnits(0, rubles_),
+                                                     RetentionReason::kTutorCancelled,
+                                                     period});
+    }
+    ASSERT_EQ(outbox_.Counted("scheduling.lesson_cancelled"), 0U)
+        << "об отмене по перерыву написали поштучно";
+
+    bus_.Publish(pdr::events::scheduling::TimeOffApplied{Envelope(),
+                                                         period,
+                                                         tutor_,
+                                                         clock_.Now() + 24h,
+                                                         clock_.Now() + 14 * 24h,
+                                                         TimeOffDecision::kCancel,
+                                                         4,
+                                                         {tutor_, student_}});
+
+    EXPECT_EQ(outbox_.Counted("scheduling.time_off_applied"), 2U)
+        << "писем не по одному на человека";
+}
+
+/// А ОБЫЧНАЯ ОТМЕНА ПИСЬМО ПО-ПРЕЖНЕМУ ЗАВОДИТ. Иначе «не писать о перерыве»
+/// незаметно превратилось бы в «не писать об отменах вовсе».
+TEST_F(DeliverDomainEventsTest, ACancellationOfItsOwnStillWritesToBothSides) {
+    DeliverDomainEvents deliver{outbox_};
+    deliver.SubscribeTo(bus_);
+
+    bus_.Publish(pdr::events::scheduling::LessonCancelled{Envelope(),
+                                                          Numbered<core::LessonId>(100),
+                                                          tutor_,
+                                                          student_,
+                                                          student_,
+                                                          CancelledBy::kStudent,
+                                                          core::Money::FromMinorUnits(0, rubles_),
+                                                          RetentionReason::kInsideFreeWindow});
+
+    EXPECT_EQ(outbox_.Counted("scheduling.lesson_cancelled"), 2U);
+}
+
+/// НАПОМИНАНИЯ СНИМАЮТСЯ И ПРИ ОТМЕНЕ ПО ПЕРЕРЫВУ. Одно письмо на человека не
+/// отменяет двенадцати ненужных «напоминаем: завтра в 17:00».
+TEST_F(DeliverDomainEventsTest, ABreakTakesTheRemindersBackAllTheSame) {
+    DeliverDomainEvents deliver{outbox_};
+    deliver.SubscribeTo(bus_);
+
+    const auto lesson = Numbered<core::LessonId>(100);
+    bus_.Publish(pdr::events::scheduling::LessonBooked{
+        Envelope(), lesson, tutor_, student_, clock_.Now() + 48h});
+    ASSERT_EQ(outbox_.Counted("notifications.reminder_hour_before"), 2U);
+
+    bus_.Publish(pdr::events::scheduling::LessonCancelled{Envelope(),
+                                                          lesson,
+                                                          tutor_,
+                                                          student_,
+                                                          tutor_,
+                                                          CancelledBy::kTutor,
+                                                          core::Money::FromMinorUnits(0, rubles_),
+                                                          RetentionReason::kTutorCancelled,
+                                                          Numbered<core::TimeOffId>(7)});
+
+    EXPECT_EQ(outbox_.Counted("notifications.reminder_day_before"), 0U);
+    EXPECT_EQ(outbox_.Counted("notifications.reminder_hour_before"), 0U);
+}
+
+/// ВОЗВРАЩЕНИЕ: строка со сроком «за сутки до конца перерыва» ложится в очередь
+/// сразу, при заведении периода. Задания, каждый день перебирающего перерывы,
+/// не нужно вовсе — база умеет ждать лучше, чем цикл по таблице.
+TEST_F(DeliverDomainEventsTest, TheReturnIsRemindedTheDayBeforeThePeriodEnds) {
+    DeliverDomainEvents deliver{outbox_};
+    deliver.SubscribeTo(bus_);
+
+    const auto ends_at = clock_.Now() + 14 * 24h;
+    bus_.Publish(pdr::events::scheduling::TimeOffDeclared{
+        Envelope(), Numbered<core::TimeOffId>(7), tutor_, clock_.Now(), ends_at, std::nullopt});
+
+    ASSERT_EQ(outbox_.Counted("notifications.reminder_before_return"), 1U);
+    const auto queued = outbox_.WithReason("notifications.reminder_before_return");
+    ASSERT_TRUE(queued.has_value());
+    EXPECT_TRUE(queued->delivery.Recipient() == tutor_);
+    EXPECT_TRUE(queued->due_at == ends_at - 24h);
+}
+
+/// Перерыв, заведённый задним числом и уже кончившийся, напоминания о выходе не
+/// заводит вовсе: напоминать не о чем, и «выходите завтра» о позавчерашнем дне
+/// выглядело бы поломкой.
+TEST_F(DeliverDomainEventsTest, APeriodThatHasAlreadyEndedRemindsNobodyOfAnything) {
+    DeliverDomainEvents deliver{outbox_};
+    deliver.SubscribeTo(bus_);
+
+    bus_.Publish(pdr::events::scheduling::TimeOffDeclared{Envelope(),
+                                                          Numbered<core::TimeOffId>(7),
+                                                          tutor_,
+                                                          clock_.Now() - 14 * 24h,
+                                                          clock_.Now() - 24h,
+                                                          std::nullopt});
+
+    EXPECT_EQ(outbox_.Counted("notifications.reminder_before_return"), 0U);
 }
 
 }  // namespace

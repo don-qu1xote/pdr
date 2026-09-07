@@ -74,6 +74,16 @@ UNCOVERED = {
         'scheduling_series_find',
         'scheduling_series_participants_of',
     },
+    'непроверенный путь: перерыв заводится и разрешается сценариями и проверен '
+    'живым набором, но двух ручек — «меня не будет с этого по это» и «вот одно '
+    'решение на все занятия» — в этом процессе ещё нет (PDR-SCHED-09)': {
+        'scheduling_local_days_span',
+        'scheduling_series_of_person',
+        'scheduling_series_reshape',
+        'scheduling_time_off_decide',
+        'scheduling_time_off_declare',
+        'scheduling_time_off_find',
+    },
 }
 """Запросы, которых этот прогон не выполняет, — поимённо и с причиной.
 

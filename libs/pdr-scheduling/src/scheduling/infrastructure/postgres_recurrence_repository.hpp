@@ -1,6 +1,7 @@
 #pragma once
 
 #include <optional>
+#include <vector>
 
 #include "core/errors.hpp"
 #include "core/types/ids.hpp"
@@ -23,9 +24,14 @@ public:
     std::optional<RecurrenceSeries> Find(const core::TenantId& tenant,
                                          const core::SeriesId& id) const override;
 
+    std::vector<core::SeriesId> Of(const core::TenantId& tenant,
+                                   const core::PersonId& person) const override;
+
     core::Result<void> Record(const core::TenantId& tenant,
                               const core::SeriesId& id,
                               const RecurrenceException& exception) override;
+
+    core::Result<void> Reshape(const RecurrenceSeries& series) override;
 
 private:
     infrastructure::db::ScopedTenantContext& scope_;

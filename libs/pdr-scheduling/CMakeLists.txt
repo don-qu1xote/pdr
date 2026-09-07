@@ -8,8 +8,10 @@ add_library(pdr_scheduling STATIC
     src/scheduling/application/book_lesson.cpp
     src/scheduling/application/cancel_lesson.cpp
     src/scheduling/application/create_series.cpp
+    src/scheduling/application/declare_time_off.cpp
     src/scheduling/application/get_availability.cpp
     src/scheduling/application/relax_booking_windows.cpp
+    src/scheduling/application/resolve_time_off.cpp
     src/scheduling/application/windows_in_force.cpp
     src/scheduling/application/get_lesson.cpp
     src/scheduling/application/list_lessons.cpp
@@ -22,6 +24,7 @@ add_library(pdr_scheduling STATIC
     src/scheduling/core/overlap.cpp
     src/scheduling/core/participation.cpp
     src/scheduling/core/recurrence.cpp
+    src/scheduling/core/time_off.cpp
 )
 target_include_directories(pdr_scheduling PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_link_libraries(pdr_scheduling PUBLIC pdr_core pdr_events pdr_identity PRIVATE pdr_application)
@@ -36,7 +39,9 @@ if(userver_FOUND)
         src/scheduling/infrastructure/postgres_booking_relief.cpp
         src/scheduling/infrastructure/postgres_lesson_history.cpp
         src/scheduling/infrastructure/postgres_lesson_repository.cpp
+        src/scheduling/infrastructure/postgres_local_days.cpp
         src/scheduling/infrastructure/postgres_recurrence_repository.cpp
+        src/scheduling/infrastructure/postgres_time_off.cpp
     )
     target_include_directories(pdr_scheduling_postgres
                                PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
@@ -79,12 +84,15 @@ if(PDR_BUILD_TESTS)
         tests/cancel_lesson_test.cpp
         tests/cancellation_test.cpp
         tests/create_series_test.cpp
+        tests/declare_time_off_test.cpp
+        tests/resolve_time_off_test.cpp
         tests/set_availability_test.cpp
         tests/lesson_state_test.cpp
         tests/overlap_test.cpp
         tests/participation_test.cpp
         tests/recurrence_test.cpp
         tests/scheduling_contract.cpp
+        tests/time_off_test.cpp
         tests/scheduling_fakes_contract_test.cpp
     )
     pdr_unit_test_includes(src tests)
@@ -109,6 +117,7 @@ if(PDR_BUILD_TESTS)
     if(userver_FOUND)
         pdr_live_test_sources(tests/scheduling_contract.cpp
                               tests/postgres_booking_relief_test.cpp
+                              tests/postgres_time_off_test.cpp
                               tests/postgres_scheduling_contract_test.cpp
                               tests/postgres_lesson_race_test.cpp
                               tests/postgres_scheduling_plan_test.cpp)

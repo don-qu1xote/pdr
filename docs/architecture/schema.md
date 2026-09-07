@@ -4,7 +4,7 @@
      правка переживёт ровно до следующей пересборки. Изменить схему — значит
      написать новую миграцию. -->
 
-Собрано из миграций: 17. Таблиц: 29.
+Собрано из миграций: 18. Таблиц: 30.
 
 Правила, которым подчиняется каждая колонка, — в
 [migrations.md](migrations.md). Как устроена изоляция арендаторов и почему у
@@ -935,11 +935,55 @@
 * `constraint scheduling_series_participant_pk primary key (tenant_id, series_id, participant_id)`
 * `constraint scheduling_series_participant_series foreign key (tenant_id, series_id) references scheduling_series (tenant_id, id) on delete cascade`
 
+Индексы:
+
+* `scheduling_series_by_participant` — обычный, `(tenant_id, participant_id, series_id)`
+
 Построчная защита включена и форсирована.
 
 Политики:
 
 * `scheduling_series_participant_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
+
+### scheduling_time_off
+
+Перерыв человека: отпуск, болезнь, каникулы. Границы — местные даты включительно, причина необязательна, решение по занятиям приходит вторым действием.
+
+Заведена миграцией `V018__time_off.sql`.
+
+| Колонка | Тип | Определение |
+| --- | --- | --- |
+| `tenant_id` | `uuid` | uuid not null references identity_tenant (tenant_id) |
+| `id` | `uuid` | uuid not null |
+| `person_id` | `uuid` | uuid not null |
+| `from_date` | `date` | date not null |
+| `to_date` | `date` | date not null |
+| `tz` | `text` | text not null |
+| `reason` | `text` | text |
+| `lessons_decided` | `text` | text |
+| `series_decided` | `text` | text |
+| `decided_at` | `timestamptz` | timestamptz |
+| `declared_by` | `uuid` | uuid not null |
+| `declared_at` | `timestamptz` | timestamptz not null default now() |
+
+Ограничения:
+
+* `constraint scheduling_time_off_pk primary key (tenant_id, id)`
+* `constraint scheduling_time_off_person foreign key (tenant_id, person_id) references identity_person (tenant_id, id)`
+* `constraint scheduling_time_off_declared_by foreign key (tenant_id, declared_by) references identity_person (tenant_id, id)`
+* `constraint scheduling_time_off_forward check (to_date >= from_date)`
+* `constraint scheduling_time_off_tz_named check (length(btrim(tz)) > 0)`
+* `constraint scheduling_time_off_reason_known check (reason is null or reason in ( , , ))`
+* `constraint scheduling_time_off_lessons_decision_known check (lessons_decided is null or lessons_decided in ( , , ))`
+* `constraint scheduling_time_off_series_decision_known check (series_decided is null or series_decided in ( , ))`
+* `constraint scheduling_time_off_decided_whole check (num_nonnulls(lessons_decided, series_decided, decided_at) in (0, 3))`
+* `constraint scheduling_time_off_no_overlap exclude using gist ( tenant_id with =, person_id with =, daterange(from_date, to_date, ) with && )`
+
+Построчная защита включена и форсирована.
+
+Политики:
+
+* `scheduling_time_off_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
 
 ### schema_version
 
@@ -974,3 +1018,4 @@
 1. `V015__outbox.sql` — notifications_outbox
 1. `V016__booking_window.sql` — scheduling_booking_window
 1. `V017__participation.sql` — без новых таблиц
+1. `V018__time_off.sql` — scheduling_time_off

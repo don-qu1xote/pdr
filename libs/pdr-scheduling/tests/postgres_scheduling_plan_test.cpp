@@ -83,8 +83,36 @@ void Fill(infrastructure::db::ScopedTenantContext& scope) {
         1000 + kTutors - 1,
         kDays - 1);
 
+    /// Серии тем же тридцати репетиторам: по десятку на каждого. Без них план
+    /// выборки «серии человека» снимался бы с пустой таблицы, а на пустой
+    /// таблице Seq Scan — правильный план.
+    scope.Session().Execute(
+        "INSERT INTO scheduling_series "
+        "       (tenant_id, id, tutor_id, rrule, starts_on, at_minute, tz, duration_minutes) "
+        "SELECT $1::uuid, "
+        "       ('00000000-0000-0000-0001-' || lpad((t * 1000 + s)::text, 12, '0'))::uuid, "
+        "       ('00000000-0000-0000-0000-' || lpad(t::text, 12, '0'))::uuid, "
+        "       'FREQ=WEEKLY;INTERVAL=1;BYDAY=TU;COUNT=8', "
+        "       date '2026-01-06', 1080, 'Europe/Moscow', 60 "
+        "  FROM generate_series($2::int, $3::int) AS t, generate_series(0, 9) AS s",
+        ContractGround::Tenant(),
+        1000,
+        1000 + kTutors - 1);
+
+    scope.Session().Execute(
+        "INSERT INTO scheduling_series_participant (tenant_id, series_id, participant_id) "
+        "SELECT $1::uuid, "
+        "       ('00000000-0000-0000-0001-' || lpad((t * 1000 + s)::text, 12, '0'))::uuid, "
+        "       ('00000000-0000-0000-0000-' || lpad((t + 1000)::text, 12, '0'))::uuid "
+        "  FROM generate_series($2::int, $3::int) AS t, generate_series(0, 9) AS s",
+        ContractGround::Tenant(),
+        1000,
+        1000 + kTutors - 1);
+
     scope.Session().Execute("ANALYZE scheduling_lesson");
     scope.Session().Execute("ANALYZE scheduling_lesson_participant");
+    scope.Session().Execute("ANALYZE scheduling_series");
+    scope.Session().Execute("ANALYZE scheduling_series_participant");
 
     scope.Session().Execute("SET LOCAL ROLE pdr_app");
 }
@@ -159,6 +187,32 @@ UTEST(SchedulingLessonPlan, AMonthOfParticipantLessonsGoesThroughItsIndex) {
         << plan;
     EXPECT_NE(plan.find("scheduling_lesson_pk"), std::string::npos)
         << "занятие достаётся не по первичному ключу:\n"
+        << plan;
+    EXPECT_EQ(plan.find("Seq Scan"), std::string::npos) << plan;
+}
+
+/// СЕРИИ ЧЕЛОВЕКА — ЗАПРОС ПЕРЕРЫВОВ, и обе его половинки обязаны идти по
+/// своему индексу. Половинка про участника — та самая, ради которой заведён
+/// scheduling_series_by_participant (db/migrations/V018__time_off.sql): до
+/// перерывов серию спрашивали только по её идентификатору, и индекса не было.
+UTEST(SchedulingSeriesPlan, TheSeriesOfAPersonGoThroughBothIndexes) {
+    userver::storages::postgres::utest::ClusterLocal local;
+    ApplySchedulingSchema(local.GetCluster());
+    infrastructure::db::TenantContext tenants{local.GetCluster()};
+
+    auto scope = tenants.Open(ContractGround::Tenant(),
+                              userver::storages::postgres::ClusterHostType::kMaster,
+                              userver::storages::postgres::TransactionOptions{});
+    Fill(scope);
+
+    const auto plan =
+        PlanOf(scope, sql::kSchedulingSeriesOfPerson, ContractGround::Tenant(), HisStudent());
+
+    EXPECT_NE(plan.find("scheduling_series_by_tutor"), std::string::npos)
+        << "половинка про репетитора идёт мимо своего индекса:\n"
+        << plan;
+    EXPECT_NE(plan.find("scheduling_series_by_participant"), std::string::npos)
+        << "половинка про участника идёт мимо индекса, ради неё и заведённого:\n"
         << plan;
     EXPECT_EQ(plan.find("Seq Scan"), std::string::npos) << plan;
 }

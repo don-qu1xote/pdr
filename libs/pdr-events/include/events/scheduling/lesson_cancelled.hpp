@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string_view>
 
 #include "core/money.hpp"
@@ -106,6 +107,18 @@ struct LessonCancelled final {
     CancelledBy by{CancelledBy::kStudent};
     core::Money retained;
     RetentionReason reason{RetentionReason::kInsideFreeWindow};
+
+    /// ОТМЕНА ИЗ-ЗА ПЕРЕРЫВА, А НЕ САМА ПО СЕБЕ. Пусто у обычной отмены.
+    ///
+    /// Поле ДОБАВЛЕНО к событию, а не изменено в нём: подписчик, который о нём
+    /// не знает, читает событие ровно как читал. А тот, кто знает, различает
+    /// два случая, которые для человека совсем разные, — «ваше занятие
+    /// отменили» и «репетитор уехал на две недели, вот что с вашими занятиями».
+    ///
+    /// Различать их ПРИЧИНОЙ УДЕРЖАНИЯ нельзя: `kTutorCancelled` стоит и у
+    /// одиночной отмены репетитором. Различать НАЛИЧИЕМ второго события тоже
+    /// нельзя: подписчик не знает, придёт оно или нет, а решать ему сейчас.
+    std::optional<core::TimeOffId> time_off{};
 };
 
 }  // namespace pdr::events::scheduling

@@ -176,6 +176,37 @@ std::optional<RecurrenceSeries> PostgresRecurrenceRepository::Find(const core::T
     return grown;
 }
 
+std::vector<core::SeriesId> PostgresRecurrenceRepository::Of(const core::TenantId& tenant,
+                                                             const core::PersonId& person) const {
+    const auto found = scope_.Session().Execute(sql::kSchedulingSeriesOfPerson, tenant, person);
+
+    std::vector<core::SeriesId> series;
+    series.reserve(found.Size());
+    for (const auto& raw : found) {
+        const auto id = core::SeriesId::Parse(Filled(raw.As<std::optional<std::string>>(), "id"));
+        if (!id.has_value()) {
+            throw std::runtime_error{"scheduling_series.id не идентификатор серии"};
+        }
+        series.push_back(*id);
+    }
+    return series;
+}
+
+core::Result<void> PostgresRecurrenceRepository::Reshape(const RecurrenceSeries& series) {
+    const auto written = scope_.Session().Execute(sql::kSchedulingSeriesReshape,
+                                                  series.Tenant(),
+                                                  series.Id(),
+                                                  series.Rule().ToRRule(),
+                                                  AsDate(series.StartsOn()));
+    if (written.RowsAffected() == 0) {
+        return core::Error{core::ErrorKind::kNotFound,
+                           "recurrence_series_not_found",
+                           "серии с таким идентификатором нет"};
+    }
+
+    return {};
+}
+
 core::Result<void> PostgresRecurrenceRepository::Record(const core::TenantId& tenant,
                                                         const core::SeriesId& id,
                                                         const RecurrenceException& exception) {

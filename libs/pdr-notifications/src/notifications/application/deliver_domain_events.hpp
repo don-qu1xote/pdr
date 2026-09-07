@@ -65,6 +65,19 @@ private:
                 core::Instant::Duration before,
                 core::Instant now);
 
+    /// То же самое, но НЕ О ЗАНЯТИИ. Напомнить можно и о выходе из отпуска, а
+    /// занятия у такого напоминания нет вовсе: предмет здесь — сам перерыв.
+    ///
+    /// Отдельным методом, а не вторым `Remind` с другим типом: ключ намерения
+    /// собирается одинаково, и собирать его в двух местах значит однажды
+    /// собрать по-разному.
+    void RemindAbout(const core::TenantId& tenant,
+                     const core::PersonId& recipient,
+                     std::string_view reason,
+                     const std::string& subject,
+                     core::Instant due,
+                     core::Instant now);
+
     /// Убрать напоминания об этом занятии: оно больше не состоится в том виде,
     /// в каком о нём собирались напомнить.
     void Forget(const core::TenantId& tenant,

@@ -25,15 +25,17 @@ namespace pdr::scheduling::testing {
 /// строк, и усложнять его до настоящего разборщика значило бы заводить вторую
 /// применялку миграций.
 ///
-/// Миграций уже четыре, и читаются они ПО ПОРЯДКУ: история занятия ссылается на
-/// само занятие внешним ключом, а участие обрастает колонками той таблицы,
-/// которую завела первая, — в обратном порядке схема не создаётся.
+/// Миграций уже пять, и читаются они ПО ПОРЯДКУ: история занятия ссылается на
+/// само занятие внешним ключом, участие обрастает колонками той таблицы, которую
+/// завела первая, а перерыв заводит индекс на участниках серии, — в обратном
+/// порядке схема не создаётся.
 inline std::vector<std::string> StatementsOfSchedulingMigration() {
     std::stringstream whole;
     for (const auto* name : {"/db/migrations/V013__scheduling.sql",
                              "/db/migrations/V014__lesson_history.sql",
                              "/db/migrations/V016__booking_window.sql",
-                             "/db/migrations/V017__participation.sql"}) {
+                             "/db/migrations/V017__participation.sql",
+                             "/db/migrations/V018__time_off.sql"}) {
         std::ifstream file{std::string{PDR_SOURCE_DIR} + name};
         whole << file.rdbuf() << ";\n";
     }
@@ -70,7 +72,8 @@ inline bool BlankStatement(const std::string& statement) {
 /// её никто не создавал.
 inline void ApplySchedulingSchema(const userver::storages::postgres::ClusterPtr& cluster) {
     cluster->Execute(userver::storages::postgres::ClusterHostType::kMaster,
-                     "DROP TABLE IF EXISTS scheduling_booking_window, scheduling_lesson_history, "
+                     "DROP TABLE IF EXISTS scheduling_time_off, "
+                     "scheduling_booking_window, scheduling_lesson_history, "
                      "scheduling_series_exception, "
                      "scheduling_series_participant, scheduling_series, "
                      "scheduling_lesson_participant, scheduling_lesson, "

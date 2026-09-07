@@ -102,6 +102,17 @@ core::Date DateOf(const core::Date& week_start, core::Weekday day, int weeks) {
 
 /// Воскресенье той недели, в которую попадает дата. Неделя начинается с
 /// воскресенья, потому что с него же начинается нумерация `core::Weekday`.
+core::Date PlusDays(const core::Date& date, int days) {
+    const std::chrono::year_month_day given{std::chrono::year{date.Year()},
+                                            std::chrono::month{date.Month()},
+                                            std::chrono::day{date.Day()}};
+    const std::chrono::year_month_day later{std::chrono::sys_days{given} + std::chrono::days{days}};
+    return core::Date::Compose(static_cast<int>(later.year()),
+                               static_cast<unsigned>(later.month()),
+                               static_cast<unsigned>(later.day()))
+        .Value();
+}
+
 core::Date WeekStartOf(const core::Date& date) {
     const std::chrono::year_month_day given{std::chrono::year{date.Year()},
                                             std::chrono::month{date.Month()},
@@ -133,6 +144,52 @@ const RecurrenceException* ExceptionOn(const std::vector<RecurrenceException>& e
         }
     }
     return nullptr;
+}
+
+/// ОБХОД ДАТ ВХОЖДЕНИЙ — те же шаги, что у `Expand`, но без зоны и без моментов.
+///
+/// Общий с `Expand` он не сделан намеренно: `Expand` считает моменты и решает,
+/// что делать с пропавшим и повторившимся часом, а здесь этого вопроса нет
+/// вовсе. Свести их в одну функцию значило бы протащить `ZoneOffsets` туда, где
+/// он не нужен, — и потерять именно то, ради чего этот обход заведён.
+///
+/// `visit` возвращает «продолжать ли»: даты идут по возрастанию, и тому, кто
+/// ищет отрезок, дальше конца отрезка смотреть незачем.
+template<class Visit>
+void WalkOccurrences(const RecurrenceSeries& series, Visit visit) {
+    const auto& rule = series.Rule();
+    const auto* count = std::get_if<Count>(&rule.Ends());
+    const auto* until = std::get_if<Until>(&rule.Ends());
+    const auto week_start = WeekStartOf(series.StartsOn());
+
+    int produced = 0;
+    for (int week = 0;; week += rule.Interval()) {
+        bool exhausted = true;
+
+        for (const auto day : rule.Days()) {
+            const auto date = DateOf(week_start, day, week);
+            if (date < series.StartsOn()) {
+                exhausted = false;
+                continue;
+            }
+            if (until != nullptr && until->date < date) {
+                continue;
+            }
+            if (count != nullptr && produced >= count->times) {
+                continue;
+            }
+
+            exhausted = false;
+            ++produced;
+            if (!visit(date)) {
+                return;
+            }
+        }
+
+        if (exhausted || produced > kMaxOccurrences) {
+            return;
+        }
+    }
 }
 
 }  // namespace
@@ -478,6 +535,126 @@ core::Result<std::pair<RecurrenceSeries, RecurrenceSeries>> RecurrenceSeries::Sp
     return std::pair<RecurrenceSeries, RecurrenceSeries>{std::move(before), std::move(after)};
 }
 
+core::Result<std::vector<RecurrenceSeries>> RecurrenceSeries::ShiftPast(const core::Date& from,
+                                                                        int weeks,
+                                                                        core::SeriesId next) const {
+    if (weeks <= 0) {
+        return core::Error{core::ErrorKind::kValidation,
+                           "recurrence_shift_not_whole_weeks",
+                           "сдвиг серии меряется целыми неделями, иначе вторник становится "
+                           "пятницей"};
+    }
+
+    const int days = weeks * 7;
+
+    /// ЧТО ОСТАЁТСЯ ОТ СЕРИИ ПОСЛЕ РАЗРЕЗА — и есть ли что двигать.
+    Ending moved{Count{0}};
+    if (const auto* times = std::get_if<Count>(&rule_.Ends()); times != nullptr) {
+        const int left = times->times - OccurrencesBefore(*this, from);
+        if (left <= 0) {
+            return core::Error{core::ErrorKind::kValidation,
+                               "recurrence_shift_after_the_end",
+                               "серия кончилась до перерыва: двигать нечего"};
+        }
+        moved = Ending{Count{left}};
+    } else {
+        const auto& stop = std::get<Until>(rule_.Ends());
+        if (stop.date < from) {
+            return core::Error{core::ErrorKind::kValidation,
+                               "recurrence_shift_after_the_end",
+                               "серия кончилась до перерыва: двигать нечего"};
+        }
+        moved = Ending{Until{PlusDays(stop.date, days)}};
+    }
+
+    const auto shifted = RecurrenceRule::Compose(rule_.Interval(), rule_.Days(), std::move(moved));
+    if (!shifted.HasValue()) {
+        return shifted.Failure();
+    }
+
+    /// ИСКЛЮЧЕНИЯ ЕДУТ ВМЕСТЕ СО СВОИМ ВХОЖДЕНИЕМ. Прошлые остаются прежней
+    /// серии, будущие сдвигаются на те же недели: перенесённое рукой занятие
+    /// сохраняет своё место относительно остальных, и день недели у него тот же.
+    ///
+    /// Момент, куда его перенесли, сдвигается на столько же СУТОК. Через перевод
+    /// часов он уедет на час — исправить это может только порт правил зоны,
+    /// которого в дереве нет (`core::ZoneOffsets` приходит значением, а базы
+    /// IANA у ядра нет).
+    const auto travelled = [&](const RecurrenceException& exception) {
+        RecurrenceException later{PlusDays(exception.occurrence_on, days),
+                                  exception.kind,
+                                  std::nullopt,
+                                  exception.moved_duration};
+        if (exception.moved_to.has_value()) {
+            later.moved_to = *exception.moved_to + std::chrono::hours{24 * days};
+        }
+        return later;
+    };
+
+    /// ПЕРЕРЫВ НАЧАЛСЯ РАНЬШЕ САМОЙ СЕРИИ — резать нечего.
+    ///
+    /// Серия, заведённая на время отпуска, просто начинается позже. Второй
+    /// серии здесь не нужно, и заводить её значило бы оставить в базе пустую.
+    if (from <= starts_on_) {
+        std::vector<RecurrenceException> all;
+        all.reserve(exceptions_.size());
+        for (const auto& exception : exceptions_) {
+            all.push_back(travelled(exception));
+        }
+        std::vector<RecurrenceSeries> only;
+        only.push_back(RecurrenceSeries{id_,
+                                        tenant_,
+                                        tutor_,
+                                        participants_,
+                                        shifted.Value(),
+                                        PlusDays(starts_on_, days),
+                                        at_,
+                                        zone_,
+                                        duration_,
+                                        std::move(all)});
+        return only;
+    }
+
+    const auto ended =
+        RecurrenceRule::Compose(rule_.Interval(), rule_.Days(), Ending{Until{DayBefore(from)}});
+    if (!ended.HasValue()) {
+        return ended.Failure();
+    }
+
+    std::vector<RecurrenceException> past;
+    std::vector<RecurrenceException> future;
+    for (const auto& exception : exceptions_) {
+        if (exception.occurrence_on < from) {
+            past.push_back(exception);
+        } else {
+            future.push_back(travelled(exception));
+        }
+    }
+
+    std::vector<RecurrenceSeries> both;
+    both.push_back(RecurrenceSeries{id_,
+                                    tenant_,
+                                    tutor_,
+                                    participants_,
+                                    ended.Value(),
+                                    starts_on_,
+                                    at_,
+                                    zone_,
+                                    duration_,
+                                    std::move(past)});
+    both.push_back(RecurrenceSeries{std::move(next),
+                                    tenant_,
+                                    tutor_,
+                                    participants_,
+                                    shifted.Value(),
+                                    PlusDays(from, days),
+                                    at_,
+                                    zone_,
+                                    duration_,
+                                    std::move(future)});
+    return both;
+}
+
 core::Result<std::vector<Occurrence>> Expand(const RecurrenceSeries& series,
                                              const core::TimeRange& window,
                                              const core::ZoneOffsets& offsets,
@@ -563,6 +740,46 @@ core::Result<std::vector<Occurrence>> Expand(const RecurrenceSeries& series,
     }
 
     return found;
+}
+
+std::vector<core::Date> OccurrenceDates(const RecurrenceSeries& series,
+                                        const core::Date& from,
+                                        const core::Date& to) {
+    std::vector<core::Date> found;
+    if (to < from) {
+        return found;
+    }
+
+    WalkOccurrences(series, [&](const core::Date& date) {
+        if (to < date) {
+            return false;
+        }
+        if (date < from) {
+            return true;
+        }
+
+        /// Отменённое вхождение из расписания уже исчезло — отменять его второй
+        /// раз незачем, и звать его «занятием, попавшим в отпуск» тоже.
+        const auto* exception = ExceptionOn(series.Exceptions(), date);
+        if (exception == nullptr || exception->kind != ExceptionKind::kCancelled) {
+            found.push_back(date);
+        }
+        return true;
+    });
+
+    return found;
+}
+
+int OccurrencesBefore(const RecurrenceSeries& series, const core::Date& boundary) {
+    int counted = 0;
+    WalkOccurrences(series, [&](const core::Date& date) {
+        if (!(date < boundary)) {
+            return false;
+        }
+        ++counted;
+        return true;
+    });
+    return counted;
 }
 
 }  // namespace pdr::scheduling

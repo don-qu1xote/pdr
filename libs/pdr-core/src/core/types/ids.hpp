@@ -75,6 +75,7 @@ using TenantId = StrongId<struct TenantTag>;
 using PersonId = StrongId<struct PersonTag>;
 using LessonId = StrongId<struct LessonTag>;
 using SeriesId = StrongId<struct SeriesTag>;
+using TimeOffId = StrongId<struct TimeOffTag>;
 using InvoiceId = StrongId<struct InvoiceTag>;
 using SkillId = StrongId<struct SkillTag>;
 using MaterialId = StrongId<struct MaterialTag>;
