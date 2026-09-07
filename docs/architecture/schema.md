@@ -4,7 +4,7 @@
      правка переживёт ровно до следующей пересборки. Изменить схему — значит
      написать новую миграцию. -->
 
-Собрано из миграций: 18. Таблиц: 30.
+Собрано из миграций: 19. Таблиц: 31.
 
 Правила, которым подчиняется каждая колонка, — в
 [migrations.md](migrations.md). Как устроена изоляция арендаторов и почему у
@@ -745,6 +745,37 @@
 
 * `scheduling_booking_window_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
 
+### scheduling_calendar_feed
+
+Подписка на ленту ICS: отпечаток секрета ссылки, а не сам секрет. Одна на человека — чтобы отзыв был одним действием.
+
+Заведена миграцией `V019__calendar_feed.sql`.
+
+| Колонка | Тип | Определение |
+| --- | --- | --- |
+| `tenant_id` | `uuid` | uuid not null references identity_tenant (tenant_id) |
+| `person_id` | `uuid` | uuid not null |
+| `secret_digest` | `char(64)` | char(64) not null |
+| `naming` | `text` | text not null default |
+| `issued_at` | `timestamptz` | timestamptz not null |
+
+Ограничения:
+
+* `constraint scheduling_calendar_feed_pk primary key (tenant_id, person_id)`
+* `constraint scheduling_calendar_feed_person foreign key (tenant_id, person_id) references identity_person (tenant_id, id)`
+* `constraint scheduling_calendar_feed_digest_shaped check (secret_digest ~ )`
+* `constraint scheduling_calendar_feed_naming_known check (naming in ( , ))`
+
+Индексы:
+
+* `scheduling_calendar_feed_by_digest` — уникальный, `(tenant_id, secret_digest)`
+
+Построчная защита включена и форсирована.
+
+Политики:
+
+* `scheduling_calendar_feed_isolation` — `using (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid) with check (tenant_id = nullif(current_setting('pdr.tenant_id', true), '')::uuid)`
+
 ### scheduling_lesson
 
 Занятие: два момента в UTC, зона задумки рядом и состояние из закрытого списка. Пересечения у репетитора запрещены самой базой.
@@ -1019,3 +1050,4 @@
 1. `V016__booking_window.sql` — scheduling_booking_window
 1. `V017__participation.sql` — без новых таблиц
 1. `V018__time_off.sql` — scheduling_time_off
+1. `V019__calendar_feed.sql` — scheduling_calendar_feed

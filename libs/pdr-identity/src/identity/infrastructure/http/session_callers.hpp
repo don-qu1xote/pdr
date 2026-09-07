@@ -41,8 +41,13 @@ public:
     ///
     /// Транзакция при этом читающая: опознание не пишет ничего, и пусть база
     /// откажет тому, кто однажды допишет сюда «отметим последний вход».
-    core::Result<infrastructure::http::Caller> Identify(std::string_view cookie,
-                                                        std::string_view header) const override;
+    /// Аргументы адреса опознанию по сессии не нужны: удостоверение у неё в
+    /// cookie или в заголовке, и больше нигде. Довод остаётся неназванным — это
+    /// и есть ответ «не мой источник».
+    core::Result<infrastructure::http::Caller> Identify(
+        std::string_view cookie,
+        std::string_view header,
+        const infrastructure::http::PathArguments&) const override;
 
 private:
     infrastructure::db::TenantContext& tenants_;

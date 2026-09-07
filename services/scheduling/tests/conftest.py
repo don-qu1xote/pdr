@@ -74,11 +74,16 @@ UNCOVERED = {
         'scheduling_series_find',
         'scheduling_series_participants_of',
     },
+    'непроверенный путь: способ называть занятия в ленте хранится и проверен '
+    'живым набором, но ручки, которая его меняет, в этом процессе ещё нет: имя '
+    'человека расписанию неоткуда взять — публичный контракт identity имён не '
+    'отдаёт (PDR-SCHED-10, docs/architecture/calendar-feed.md)': {
+        'scheduling_calendar_feed_naming',
+    },
     'непроверенный путь: перерыв заводится и разрешается сценариями и проверен '
     'живым набором, но двух ручек — «меня не будет с этого по это» и «вот одно '
     'решение на все занятия» — в этом процессе ещё нет (PDR-SCHED-09)': {
         'scheduling_local_days_span',
-        'scheduling_series_of_person',
         'scheduling_series_reshape',
         'scheduling_time_off_decide',
         'scheduling_time_off_declare',

@@ -80,7 +80,10 @@ select jsonb_pretty(jsonb_build_object(
                     from scheduling_booking_window t), '[]'::jsonb),
         'scheduling_time_off',
         coalesce((select jsonb_agg(to_jsonb(t) order by t.person_id, t.from_date)
-                    from scheduling_time_off t), '[]'::jsonb)
+                    from scheduling_time_off t), '[]'::jsonb),
+        'scheduling_calendar_feed',
+        coalesce((select jsonb_agg(to_jsonb(t) order by t.person_id)
+                    from scheduling_calendar_feed t), '[]'::jsonb)
     )
 ));
 

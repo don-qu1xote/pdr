@@ -269,6 +269,71 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/calendar-subscription": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Выдать ссылку на календарь — она же перевыпустить её
+         * @description ОДНА КНОПКА НА ОБА СЛУЧАЯ. Ссылка утекла — человек нажимает ту же
+         *     кнопку, что и в первый раз, и старая перестаёт работать немедленно.
+         *     Отдельного «отозвать» нет намеренно: он оставил бы промежуток, в котором
+         *     ленты нет ни старой, ни новой.
+         *
+         *     СЕКРЕТ ОТДАЁТСЯ РОВНО ОДИН РАЗ — в этом ответе. В базе лежит только его
+         *     отпечаток, и показать ссылку второй раз неоткуда.
+         *
+         *     Направление одностороннее: наши занятия появляются в календаре человека,
+         *     его личные события к нам не переезжают.
+         *
+         */
+        post: operations["issueCalendarSubscription"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/cabinet/{tenant}/calendar/{secret}/schedule.ics": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Лента подписки на календарь
+         * @description ЛЕНТА ПО СТАНДАРТУ iCalendar (RFC 5545), а не наш формат. Подписывается
+         *     на неё сам человек — в Google, Outlook, Яндексе или Apple, — и работает
+         *     это без единой внешней интеграции: ни ключей, ни квот, ни ревью
+         *     приложения, ни права сломаться (ADR-0024).
+         *
+         *     УДОСТОВЕРЕНИЕ ЗДЕСЬ В САМОМ АДРЕСЕ. Ленту забирает чужая программа: она
+         *     умеет сходить по ссылке и больше ничего — ни cookie завести, ни
+         *     заголовок поставить. Секрет в адресе непредсказуем, а в базе от него
+         *     лежит только отпечаток.
+         *
+         *     Арендатор в адресе не секрет — секрет то, что рядом с ним; тем же
+         *     способом устроен вход.
+         *
+         *     Календари ходят сюда часто и без спроса, поэтому ответ несёт `ETag` и
+         *     `Cache-Control`, а сама лента — `REFRESH-INTERVAL`.
+         *
+         */
+        get: operations["calendarFeed"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -552,6 +617,22 @@ export interface components {
             minutes: components["schemas"]["Minutes"];
             tz: components["schemas"]["Zone"];
         };
+        /**
+         * @description Выданная подписка. Секрет внутри пути — и это его единственное появление
+         *     за всю жизнь: в базе лежит только отпечаток.
+         *
+         * @example {
+         *       "path": "/api/v1/cabinet/018f2b3c-4d5e-4f60-8a71-b2c3d4e5f600/calendar/AAAA/schedule.ics"
+         *     }
+         */
+        CalendarSubscription: {
+            /** @description ПУТЬ, А НЕ ПОЛНЫЙ АДРЕС. Своего публичного адреса процесс не знает:
+             *     за ним балансер, а перед балансером домен, о котором ему никто не
+             *     говорил. Выдуманный адрес вёл бы не туда; свой собственный знает
+             *     клиент, и приставляет его он.
+             *      */
+            path: string;
+        };
         /** @example {
          *       "email": "mail@example.org",
          *       "password": "correct-horse-battery"
@@ -757,6 +838,10 @@ export interface components {
     parameters: {
         /** @description Кабинет, в который входят. Идентификатор арендатора. */
         Tenant: components["schemas"]["Uuid"];
+        /** @description Секрет ссылки на календарь: не меньше 32 байт случайности в base64url.
+         *     Он и есть удостоверение — другого у подписки нет.
+         *      */
+        CalendarSecret: string;
         /** @description Чьё расписание. Без него — расписание самого спрашивающего.
          *
          *     Отдельный параметр, а не догадка по ролям: опекун смотрит подопечного,
@@ -821,6 +906,15 @@ export interface components {
          *     не выполнялась.
          *      */
         IdempotencyReplayed: string;
+        /** @description Отпечаток содержимого ленты. Календарь приходит за ней раз в час и чаще;
+         *     неизменившуюся ленту дешевле не отдавать вовсе.
+         *      */
+        ETag: string;
+        /** @description До какого момента ответ годен. Совпадает со сроком обновления в самой
+         *     ленте: два разных числа означали бы, что мы просим об одном, а разрешаем
+         *     другое.
+         *      */
+        CacheControl: string;
         /**
          * @description Сессия. Имя `__Host-pdr_session` — не стиль, а требование браузера:
          *     cookie с такой приставкой принимается только с `Secure`, только с
@@ -1410,6 +1504,114 @@ export interface operations {
             409: components["responses"]["Conflict"];
             422: components["responses"]["Refused"];
             498: components["responses"]["Expired"];
+            500: components["responses"]["Broken"];
+        };
+    };
+    issueCalendarSubscription: {
+        parameters: {
+            query?: never;
+            header: {
+                /**
+                 * @description ОБЯЗАТЕЛЕН НА КАЖДОМ МЕНЯЮЩЕМ ОБРАЩЕНИИ, и это не пожелание: без него
+                 *     повтор по оборванной связи выполняет операцию второй раз. Клиент
+                 *     придумывает ключ сам и повторяет запрос С ТЕМ ЖЕ ключом; в течение срока
+                 *     жизни ключа (динамическое значение `PDR_IDEMPOTENCY`) он получает
+                 *     сохранённый ответ, а не второе выполнение.
+                 *
+                 *     Тот же ключ с ДРУГИМ телом — ошибка клиента, а не повтор:
+                 *     `idempotency_key_reused`.
+                 *
+                 * @example sign-in-7f3c1a94-6d0b-4f2e-9c31-8a5b0e2d4c77
+                 */
+                "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+                /** @description След запроса. Свой годный принимается и возвращается нетронутым, иначе
+                 *     сервис заводит собственный. Он же приходит в ответе и в теле отказа:
+                 *     жалобу «у меня не работает» разбирают по нему, а человек может назвать
+                 *     только то, что видел сам.
+                 *      */
+                "X-Request-Id"?: components["parameters"]["RequestId"];
+                /**
+                 * @description СКОЛЬКО МИЛЛИСЕКУНД КЛИЕНТ ГОТОВ ЖДАТЬ. Не пожелание: по этому сроку
+                 *     сервис обрывает работу, которую клиент всё равно уже не примет, и не даёт
+                 *     очереди такой работы добить себя под перегрузкой.
+                 *
+                 *     Остаток времени доходит до запросов к базе сам — доведение срока
+                 *     (`USERVER_DEADLINE_PROPAGATION_ENABLED`) включено. Срок, истёкший до того,
+                 *     как до запроса дошли, — это `498`, и работа не начинается вовсе.
+                 *
+                 *     Имя заголовка не наше: так его называет штатный механизм userver, и
+                 *     переименовать его значило бы написать свой (ADR-0013).
+                 *
+                 * @example 5000
+                 */
+                "X-YaTaxi-Client-TimeoutMs"?: components["parameters"]["ClientTimeout"];
+            };
+            path?: never;
+            cookie?: never;
+        };
+        /** @description СКАЗАТЬ ЗДЕСЬ НЕЧЕГО, и тело всё равно обязательно: `{}`. Меняющее
+         *     обращение с пустым телом форма запроса отвергает одинаково для всех
+         *     ручек, и делать здесь исключение значило бы ослабить проверку ради
+         *     одной ручки, которой нечего сказать.
+         *      */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["Nothing"];
+            };
+        };
+        responses: {
+            /** @description Ссылка выдана */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    "Idempotency-Replayed": components["headers"]["IdempotencyReplayed"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CalendarSubscription"];
+                };
+            };
+            400: components["responses"]["Malformed"];
+            401: components["responses"]["Unidentified"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Refused"];
+            498: components["responses"]["Expired"];
+            500: components["responses"]["Broken"];
+        };
+    };
+    calendarFeed: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description Кабинет, в который входят. Идентификатор арендатора. */
+                tenant: components["parameters"]["Tenant"];
+                /** @description Секрет ссылки на календарь: не меньше 32 байт случайности в base64url.
+                 *     Он и есть удостоверение — другого у подписки нет.
+                 *      */
+                secret: components["parameters"]["CalendarSecret"];
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Лента занятий */
+            200: {
+                headers: {
+                    "X-Request-Id": components["headers"]["RequestId"];
+                    ETag: components["headers"]["ETag"];
+                    "Cache-Control": components["headers"]["CacheControl"];
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/calendar": string;
+                };
+            };
+            400: components["responses"]["Malformed"];
+            401: components["responses"]["Unidentified"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["Missing"];
             500: components["responses"]["Broken"];
         };
     };

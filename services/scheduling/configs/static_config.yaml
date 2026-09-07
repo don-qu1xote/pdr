@@ -180,6 +180,20 @@ components_manager:
         scheduling-create-lesson: *scheduling-operation
         scheduling-get-lesson: *scheduling-operation
         scheduling-create-series: *scheduling-operation
+        scheduling-issue-calendar-feed: *scheduling-operation
+
+        # ЛЕНТА ПОДПИСКИ ОПОЗНАЁТ ПРИШЕДШЕГО ИНАЧЕ, и это единственное её
+        # отличие от остальных ручек. У сессии удостоверение в cookie, у
+        # подписки — в самом адресе: ленту забирает чужая программа, которая
+        # умеет сходить по ссылке и больше ничего.
+        #
+        # Форма при этом та же, и политику после опознания спрашивают так же.
+        scheduling-calendar-feed:
+            permissions: identity-permissions
+            callers: scheduling-feed-callers
+            listeners: notifications-transactional-outbox
+
+        scheduling-feed-callers: {}
 
         observability-product-events: {}
 
@@ -279,6 +293,19 @@ components_manager:
             method: POST
             task_processor: main-task-processor
             operation: scheduling-create-series
+        handler-issue-calendar-feed:
+            path: /api/v1/calendar-subscription
+            method: POST
+            task_processor: main-task-processor
+            operation: scheduling-issue-calendar-feed
+
+        # ЛЕНТА ПОДПИСКИ. Ключа повтора у неё не бывает — обращение читающее, и
+        # приходит оно от чужой программы, которая о наших заголовках не знает.
+        handler-calendar-feed:
+            path: /api/v1/cabinet/{tenant}/calendar/{secret}/schedule.ics
+            method: GET
+            task_processor: main-task-processor
+            operation: scheduling-calendar-feed
 
         # СЛУЖЕБНЫЕ РУЧКИ. Каждая нужна ровно в тот час, когда её некогда
         # дописывать.

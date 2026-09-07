@@ -9,6 +9,8 @@ add_library(pdr_scheduling STATIC
     src/scheduling/application/cancel_lesson.cpp
     src/scheduling/application/create_series.cpp
     src/scheduling/application/declare_time_off.cpp
+    src/scheduling/application/issue_calendar_feed.cpp
+    src/scheduling/application/read_calendar_feed.cpp
     src/scheduling/application/get_availability.cpp
     src/scheduling/application/relax_booking_windows.cpp
     src/scheduling/application/resolve_time_off.cpp
@@ -18,7 +20,9 @@ add_library(pdr_scheduling STATIC
     src/scheduling/application/set_availability.cpp
     src/scheduling/core/availability.cpp
     src/scheduling/core/booking_window.cpp
+    src/scheduling/core/calendar_feed.cpp
     src/scheduling/core/cancellation_policy.cpp
+    src/scheduling/core/icalendar.cpp
     src/scheduling/core/lesson.cpp
     src/scheduling/core/lesson_history.cpp
     src/scheduling/core/overlap.cpp
@@ -34,8 +38,10 @@ target_link_libraries(pdr_scheduling PUBLIC pdr_core pdr_events pdr_identity PRI
 if(userver_FOUND)
     add_library(pdr_scheduling_postgres STATIC
         src/scheduling/infrastructure/dynamic_config_booking_windows.cpp
+        src/scheduling/infrastructure/dynamic_config_calendar_wording.cpp
         src/scheduling/infrastructure/dynamic_config_cancellation_policies.cpp
         src/scheduling/infrastructure/postgres_availability_repository.cpp
+        src/scheduling/infrastructure/postgres_calendar_feeds.cpp
         src/scheduling/infrastructure/postgres_booking_relief.cpp
         src/scheduling/infrastructure/postgres_lesson_history.cpp
         src/scheduling/infrastructure/postgres_lesson_repository.cpp
@@ -47,7 +53,7 @@ if(userver_FOUND)
                                PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_link_libraries(pdr_scheduling_postgres
                           PUBLIC pdr_scheduling pdr_postgres pdr_application pdr_observe
-                                 pdr_dynamic_configs userver::postgresql)
+                                 pdr_crypto pdr_dynamic_configs userver::postgresql)
 
     # РУЧКИ РАСПИСАНИЯ — отдельной целью, как и у identity: форма запроса, типы
     # контракта и опознание пришедшего нужны только им, а домену — нет.
@@ -57,6 +63,8 @@ if(userver_FOUND)
     # сервисе от них остаётся строка в списке компонентов и строка в конфиге.
     add_library(pdr_scheduling_http STATIC
         src/scheduling/infrastructure/http/api_mapping.cpp
+        src/scheduling/infrastructure/http/calendar_operations.cpp
+        src/scheduling/infrastructure/http/feed_callers.cpp
         src/scheduling/infrastructure/http/arguments.cpp
         src/scheduling/infrastructure/http/availability_operations.cpp
         src/scheduling/infrastructure/http/lesson_operations.cpp
@@ -79,8 +87,10 @@ if(PDR_BUILD_TESTS)
         tests/book_lesson_test.cpp
         tests/booking_window_test.cpp
         tests/booking_windows_in_force_test.cpp
+        tests/calendar_feed_test.cpp
         tests/list_lessons_test.cpp
         tests/get_lesson_test.cpp
+        tests/icalendar_test.cpp
         tests/cancel_lesson_test.cpp
         tests/cancellation_test.cpp
         tests/create_series_test.cpp
@@ -117,6 +127,7 @@ if(PDR_BUILD_TESTS)
     if(userver_FOUND)
         pdr_live_test_sources(tests/scheduling_contract.cpp
                               tests/postgres_booking_relief_test.cpp
+                              tests/postgres_calendar_feed_test.cpp
                               tests/postgres_time_off_test.cpp
                               tests/postgres_scheduling_contract_test.cpp
                               tests/postgres_lesson_race_test.cpp

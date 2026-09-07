@@ -689,6 +689,14 @@ jobs:
           su pdrtest -c 'ctest --test-dir build-service --output-on-failure \
             -R "^testsuite-pdr_scheduling_service$"'
 
+      # ЛЕНТА ПОДПИСКИ — ЧУЖИМ РАЗБОРЩИКОМ iCalendar. «Похоже на ICS» и
+      # «читается календарём» — разные утверждения, и второе проверяется только
+      # разборщиком, который писали не мы (ADR-0024).
+      - name: Лента календаря читается стандартным разборщиком
+        run: |
+          su pdrtest -c 'ctest --test-dir build-service --output-on-failure \
+            -R testsuite-pdr_scheduling_service-icalendar'
+
       # Настоящие ответы сервиса против схем из docs/api/openapi.yaml. Без этого
       # набора спецификация устаревает за две недели — это происходит всегда.
       - name: Ответы сходятся со спецификацией

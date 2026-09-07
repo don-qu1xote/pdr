@@ -235,4 +235,11 @@ core::Error BadArgument(std::string_view name) {
                        "аргумент «" + std::string{name} + "» в адресе не разобрался"};
 }
 
+api::CalendarSubscription AsAnswer(const core::TenantId& tenant, const CalendarFeedSecret& secret) {
+    api::CalendarSubscription answer;
+    answer.path =
+        "/api/v1/cabinet/" + tenant.ToString() + "/calendar/" + secret.Value() + "/schedule.ics";
+    return answer;
+}
+
 }  // namespace pdr::scheduling::http

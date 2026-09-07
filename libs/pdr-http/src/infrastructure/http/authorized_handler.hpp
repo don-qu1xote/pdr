@@ -39,6 +39,31 @@ struct CredentialSource final {
     std::string_view header;
 };
 
+/// АРГУМЕНТЫ АДРЕСА — ПО ИМЕНИ.
+///
+/// Третий источник удостоверения рядом с cookie и заголовком, и он нужен не
+/// ради удобства. Подписку на календарь забирает чужая программа: она умеет
+/// сходить по ссылке и больше ничего — ни cookie завести, ни заголовок
+/// поставить. Секрет в такой ссылке и есть удостоверение.
+///
+/// Имён здесь форма не знает: их называет тот, кто опознаёт пришедшего, и
+/// называет ровно те, которые ему нужны. Так «где лежит удостоверение»
+/// остаётся знанием опознания, а не транспорта, — тем же, чем оно было для
+/// cookie и заголовка.
+class PathArguments {
+public:
+    PathArguments(const PathArguments&) = delete;
+    PathArguments& operator=(const PathArguments&) = delete;
+
+    virtual ~PathArguments() = default;
+
+    /// Пусто, если такого аргумента в адресе нет.
+    virtual std::string Of(std::string_view name) const = 0;
+
+protected:
+    PathArguments() = default;
+};
+
 /// Опознание пришедшего. Узкий порт: HTTP-слой не знает ни про сессии, ни про
 /// то, где они лежат, ни про то, чем они истекают.
 class Callers {
@@ -51,7 +76,8 @@ public:
     virtual CredentialSource Where() const = 0;
 
     virtual core::Result<Caller> Identify(std::string_view cookie,
-                                          std::string_view header) const = 0;
+                                          std::string_view header,
+                                          const PathArguments& path) const = 0;
 
 protected:
     Callers() = default;
@@ -287,6 +313,34 @@ protected:
     /// Позвать сценарий. ЕДИНСТВЕННОЕ, что хендлер делает, — и он тут зовёт.
     virtual core::Result<Answer> Run(const Call& call) const = 0;
 
+    /// ЧЕМ ОТВЕЧАЕМ. JSON у всех, кроме тех, у кого стандарт другой.
+    ///
+    /// Подписка на календарь отдаёт `text/calendar` по RFC 5545 — не потому,
+    /// что нам так удобнее, а потому, что иначе её не прочитает ни один
+    /// календарь. Своей формы отказа это не касается: отказ по-прежнему
+    /// problem+json и по-прежнему собирается в одном месте.
+    virtual std::string_view MediaType() const {
+        return "application/json";
+    }
+
+    /// Как ответ становится строкой.
+    ///
+    /// Порождённым сериализатором — у всех, у кого ответ порождён из схемы. У
+    /// того, чей ответ САМ ЕСТЬ текст стандарта, — как есть: лента подписки уже
+    /// написана по RFC 5545, и заворачивать её в JSON значило бы отдать
+    /// календарю то, чего он не прочтёт.
+    ///
+    /// Развилка по типу, а не виртуальный метод, и это не лень: виртуальный
+    /// метод пришлось бы переопределять всем, у кого ответ строка, — то есть
+    /// повторять одно и то же в каждой такой ручке.
+    std::string AsBody(const Answer& answer) const {
+        if constexpr (requires { ToJsonString(answer); }) {
+            return ToJsonString(answer);
+        } else {
+            return std::string{answer};
+        }
+    }
+
 private:
     /// Чем кончилась область арендатора: что отдавать и выполнялась ли операция.
     ///
@@ -376,7 +430,7 @@ private:
         if (!produced.HasValue()) {
             throw Rollback{produced.Failure()};
         }
-        return pdr::http::SavedAnswer{kOk, ToJsonString(produced.Value())};
+        return pdr::http::SavedAnswer{kOk, AsBody(produced.Value())};
     }
 
     /// Значение или откат. Отказ внутри области не возвращается наружу
@@ -411,7 +465,7 @@ private:
 
         response.SetStatus(
             static_cast<userver::server::http::HttpStatus>(served.Value().answer.status));
-        response.SetHeader(std::string{"Content-Type"}, std::string{"application/json"});
+        response.SetHeader(std::string{"Content-Type"}, std::string{MediaType()});
         for (const auto& [name, value] : served.Value().handed) {
             response.SetHeader(name, value);
         }
@@ -486,12 +540,29 @@ protected:
                                      const Body& body) const = 0;
 
 private:
+    /// Аргументы адреса, доведённые до порта опознания. Крошечный переходник, и
+    /// живёт он здесь, потому что «как спросить у запроса» — знание транспорта,
+    /// а «что спросить» — знание опознания.
+    class FromRequest final : public PathArguments {
+    public:
+        explicit FromRequest(const Request& request) noexcept : request_{request} {}
+
+        std::string Of(std::string_view name) const override {
+            return request_.GetPathArg(std::string{name});
+        }
+
+    private:
+        const Request& request_;
+    };
+
     Admission Admit(const Request& request,
                     const Body& body,
                     const Occasion& occasion) const final {
         const auto where = callers_.Where();
+        const FromRequest path{request};
         const auto who = callers_.Identify(request.GetCookie(std::string{where.cookie}),
-                                           request.GetHeader(std::string{where.header}));
+                                           request.GetHeader(std::string{where.header}),
+                                           path);
         if (!who.HasValue()) {
             return Admission{std::nullopt, Unidentified(who.Failure(), occasion)};
         }

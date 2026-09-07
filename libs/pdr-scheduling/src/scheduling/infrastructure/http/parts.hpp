@@ -9,13 +9,16 @@
 #include "core/idempotency.hpp"
 #include "events/listeners.hpp"
 #include "identity/contract.hpp"
+#include "infrastructure/crypto_secret_generator.hpp"
 #include "infrastructure/db/tenant_context.hpp"
 #include "infrastructure/http/authorized_handler.hpp"
 #include "infrastructure/http/postgres_idempotency_keys.hpp"
 #include "infrastructure/postgres_tenant_aware_repository.hpp"
 #include "infrastructure/random_id_generator.hpp"
+#include "infrastructure/sha256_digests.hpp"
 #include "infrastructure/userver_clock.hpp"
 #include "scheduling/infrastructure/dynamic_config_booking_windows.hpp"
+#include "scheduling/infrastructure/dynamic_config_calendar_wording.hpp"
 
 namespace pdr::scheduling::http {
 
@@ -71,8 +74,22 @@ public:
     const application::ports::IdGenerator& Ids() const noexcept {
         return ids_;
     }
+
+    /// НЕПРЕДСКАЗУЕМАЯ случайность — отдельным портом от обычного генератора.
+    /// Ссылка на календарь живёт в чужих настройках годами, и предсказуемая
+    /// отдаёт чужое расписание молча; подставить сюда `IdGenerator` не даёт
+    /// компилятор.
+    const application::ports::SecretGenerator& Secrets() const noexcept {
+        return secrets_;
+    }
     const ports::BookingWindowDefaults& Windows() const noexcept {
         return windows_;
+    }
+    const application::ports::Digests& Digests() const noexcept {
+        return digests_;
+    }
+    CalendarWording Words() const {
+        return wording_.Words();
     }
     const events::Listeners<infrastructure::db::ScopedTenantContext>& Listeners() const noexcept {
         return listeners_;
@@ -87,7 +104,10 @@ private:
     infrastructure::http::PostgresIdempotencyKeys keys_;
     infrastructure::UserverClock clock_;
     infrastructure::RandomIdGenerator ids_;
+    infrastructure::CryptoSecretGenerator secrets_;
     DynamicConfigBookingWindows windows_;
+    DynamicConfigCalendarWording wording_;
+    infrastructure::Sha256Digests digests_;
     const events::Listeners<infrastructure::db::ScopedTenantContext>& listeners_;
     const infrastructure::http::Callers& callers_;
     const identity::Contract& permissions_;

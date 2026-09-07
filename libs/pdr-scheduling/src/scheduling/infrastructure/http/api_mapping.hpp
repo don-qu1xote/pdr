@@ -13,6 +13,7 @@
 #include "core/types/time.hpp"
 #include "scheduling/application/list_lessons.hpp"
 #include "scheduling/core/availability.hpp"
+#include "scheduling/core/calendar_feed.hpp"
 #include "scheduling/core/lesson.hpp"
 #include "scheduling/core/recurrence.hpp"
 
@@ -47,6 +48,14 @@ api::Lesson AsAnswer(const Lesson& lesson);
 api::Lessons AsAnswer(const std::vector<Lesson>& lessons);
 api::Series AsAnswer(const RecurrenceSeries& series);
 api::Availability AsAnswer(const Availability& availability);
+
+/// ССЫЛКА НА ЛЕНТУ — ПУТЁМ, А НЕ ПОЛНЫМ АДРЕСОМ.
+///
+/// Своего публичного адреса процесс не знает и знать не может: за ним стоит
+/// балансер, а перед балансером — домен, о котором ему никто не говорил.
+/// Выдумать его значило бы выдать человеку ссылку, ведущую не туда; свой
+/// собственный адрес знает клиент, и приставляет его он.
+api::CalendarSubscription AsAnswer(const core::TenantId& tenant, const CalendarFeedSecret& secret);
 
 core::Result<Availability> AsDomain(const api::Availability& availability);
 

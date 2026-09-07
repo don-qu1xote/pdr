@@ -95,4 +95,24 @@ if(PDR_BUILD_TESTS AND USERVER_FEATURE_TESTSUITE)
                     "--service-config-vars=${CMAKE_CURRENT_SOURCE_DIR}/configs/config_vars.yaml"
                     "-p" "no:cacheprovider"
     )
+
+    # ЛЕНТА ПОДПИСКИ — ЧУЖИМ РАЗБОРЩИКОМ, и это третий набор на том же процессе.
+    #
+    # Отдельный он ради разборщика: свой разбор проверял бы ленту тем же
+    # представлением о стандарте, которым она собрана, — обе стороны ошиблись бы
+    # одинаково и остались бы зелёными. Библиотека icalendar про наши намерения
+    # не знает ничего, она знает RFC 5545.
+    userver_testsuite_add_simple(
+        SERVICE_TARGET pdr_scheduling_service
+        TEST_SUFFIX icalendar
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}/tests/contract/icalendar_conformance"
+        REQUIREMENTS "${CMAKE_SOURCE_DIR}/tests/contract/icalendar_conformance/requirements.txt"
+        PYTEST_ARGS "--service-binary=${CMAKE_CURRENT_BINARY_DIR}/pdr_scheduling_service"
+                    "--service-config=${CMAKE_CURRENT_SOURCE_DIR}/configs/static_config.yaml"
+                    "--service-source-dir=${CMAKE_CURRENT_SOURCE_DIR}"
+                    "--service-secdist=${CMAKE_CURRENT_SOURCE_DIR}/configs/secdist.json"
+                    "--config-fallback=${CMAKE_CURRENT_SOURCE_DIR}/configs/dynamic_config_fallback.json"
+                    "--service-config-vars=${CMAKE_CURRENT_SOURCE_DIR}/configs/config_vars.yaml"
+                    "-p" "no:cacheprovider"
+    )
 endif()

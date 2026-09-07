@@ -55,7 +55,9 @@ infrastructure::http::CredentialSource CallersComponent::Where() const {
 }
 
 core::Result<infrastructure::http::Caller> CallersComponent::Identify(
-    std::string_view cookie, std::string_view header) const {
+    std::string_view cookie,
+    std::string_view header,
+    const infrastructure::http::PathArguments&) const {
     const auto id = http::ReadSessionId(Brought{cookie, header});
     if (!id.has_value()) {
         return NotIdentified();

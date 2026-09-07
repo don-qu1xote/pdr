@@ -931,6 +931,38 @@
         "namespace": "public",
         "version": 0
       },
+      "public.scheduling_calendar_feed": {
+        "columns": [
+          {
+            "name": "tenant_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "person_id",
+            "nullable": false,
+            "type": "uuid"
+          },
+          {
+            "name": "secret_digest",
+            "nullable": false,
+            "type": "character(64)"
+          },
+          {
+            "name": "naming",
+            "nullable": false,
+            "type": "text"
+          },
+          {
+            "name": "issued_at",
+            "nullable": false,
+            "type": "timestamp with time zone"
+          }
+        ],
+        "name": "scheduling_calendar_feed",
+        "namespace": "public",
+        "version": 0
+      },
       "public.scheduling_lesson": {
         "columns": [
           {
@@ -1285,7 +1317,7 @@
     },
     "types": {}
   },
-  "hashsum": "4ac33f02dd034ed95615ecf447ea23d87319fa012f08c4142e5a1d6a66a9b9f0",
+  "hashsum": "91c53e873d3611ea0b53f39c39d5625666fc7f40199d55e317fb142b05c74186",
   "queries": [
     {
       "args": [
@@ -2146,6 +2178,53 @@
           "name": "cancel_before_minutes",
           "nullable": true,
           "type": "integer"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "nullable": true,
+          "type": "character"
+        }
+      ],
+      "cardinality": "many",
+      "name": "scheduling_calendar_feed_by_digest",
+      "returns": [
+        {
+          "name": "person_id",
+          "nullable": true,
+          "type": "text"
+        },
+        {
+          "name": "naming",
+          "nullable": true,
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "args": [
+        {
+          "nullable": true,
+          "type": "uuid"
+        },
+        {
+          "nullable": true,
+          "type": "uuid"
+        }
+      ],
+      "cardinality": "many",
+      "name": "scheduling_calendar_feed_of_person",
+      "returns": [
+        {
+          "name": "naming",
+          "nullable": true,
+          "type": "text"
         }
       ]
     },

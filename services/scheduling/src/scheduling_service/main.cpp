@@ -17,6 +17,8 @@
 #include "notifications/infrastructure/transactional_outbox.hpp"
 #include "observability/infrastructure/product_events_component.hpp"
 #include "scheduling/infrastructure/http/availability_operations.hpp"
+#include "scheduling/infrastructure/http/calendar_operations.hpp"
+#include "scheduling/infrastructure/http/feed_callers.hpp"
 #include "scheduling/infrastructure/http/lesson_operations.hpp"
 #include "scheduling/infrastructure/http/series_operation.hpp"
 #include "scheduling_service/authorized_route.hpp"
@@ -92,6 +94,9 @@ int main(int argc, char* argv[]) {
             .Append<pdr::scheduling::http::CreateLessonOperation>()
             .Append<pdr::scheduling::http::GetLessonOperation>()
             .Append<pdr::scheduling::http::CreateSeriesOperation>()
+            .Append<pdr::scheduling::http::CalendarFeedOperation>()
+            .Append<pdr::scheduling::http::IssueCalendarFeedOperation>()
+            .Append<pdr::scheduling::http::FeedCallersComponent>()
 
             .Append<pdr::scheduling_service::SecretsGuard>()
             .Append<pdr::scheduling_service::HeartbeatJob>()
@@ -104,7 +109,9 @@ int main(int argc, char* argv[]) {
             .Append<pdr::scheduling_service::AuthorizedRoute>("handler-list-lessons")
             .Append<pdr::scheduling_service::AuthorizedRoute>("handler-create-lesson")
             .Append<pdr::scheduling_service::AuthorizedRoute>("handler-get-lesson")
-            .Append<pdr::scheduling_service::AuthorizedRoute>("handler-create-series");
+            .Append<pdr::scheduling_service::AuthorizedRoute>("handler-create-series")
+            .Append<pdr::scheduling_service::AuthorizedRoute>("handler-issue-calendar-feed")
+            .Append<pdr::scheduling_service::AuthorizedRoute>("handler-calendar-feed");
 
     return userver::utils::DaemonMain(argc, argv, components);
 }

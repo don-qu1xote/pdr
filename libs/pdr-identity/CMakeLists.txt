@@ -53,7 +53,6 @@ add_library(pdr_identity STATIC
     src/identity/core/birth_date.cpp
     src/identity/core/contact_list.cpp
     src/identity/core/capabilities.cpp
-    src/identity/core/digest.cpp
     src/identity/core/email.cpp
     src/identity/core/guardian_access.cpp
     src/identity/core/guardian_consent.cpp
@@ -100,7 +99,6 @@ if(userver_FOUND)
         src/identity/infrastructure/auth/postgres_participant_directory.cpp
         src/identity/infrastructure/auth/postgres_session_store.cpp
         src/identity/infrastructure/auth/offloaded_password_hasher.cpp
-        src/identity/infrastructure/auth/sha256_digests.cpp
         src/identity/infrastructure/component/permissions_component.cpp
     )
     # PUBLIC, а не PRIVATE: цель проверок адаптеров (pdr_adapter_tests) включает

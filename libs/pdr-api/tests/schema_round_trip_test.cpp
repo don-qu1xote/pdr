@@ -67,6 +67,7 @@ const Round kRound[] = {
     {"NewLesson", &Circle<NewLesson>},
     {"NewSeries", &Circle<NewSeries>},
     {"Series", &Circle<Series>},
+    {"CalendarSubscription", &Circle<CalendarSubscription>},
 };
 
 Value Schemas() {

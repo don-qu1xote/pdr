@@ -46,6 +46,7 @@
 | [ADR-0021](0021-system-tenant-for-clusterwide-jobs.md) | кластерная работа идёт от арендатора системы |
 | [ADR-0022](0022-outbox-dispatch-across-tenants.md) | разбор исходящей очереди — по отдельному объявлению, а не в обход защиты |
 | [ADR-0023](0023-group-lessons-modelled-not-implemented.md) | групповые занятия заложены в модель, но не введены |
+| [ADR-0024](0024-calendar-is-a-subscription-not-an-integration.md) | календарь — подписка на ленту ICS, а не OAuth-интеграция; чужой календарь мы не читаем |
 | [ADR-0019](0019-one-account-many-practices.md) | один человек на площадке, сколько угодно практик |
 | [ADR-0007](0007-local-without-fake-production.md) | локально, без фиктивного прода |
 | [ADR-0009](0009-monorepo-with-clients.md) | монорепозиторий с несколькими клиентами |

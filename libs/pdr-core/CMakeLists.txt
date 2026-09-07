@@ -7,6 +7,7 @@
 # см. docs/architecture/context-map.md.
 
 add_library(pdr_core STATIC
+    src/core/digest.cpp
     src/core/errors.cpp
     src/core/money.cpp
     src/core/percent.cpp
@@ -49,6 +50,7 @@ if(userver_FOUND)
     add_library(pdr_postgres STATIC
         src/infrastructure/db/tenant_context.cpp
         src/infrastructure/db/tenant_context_component.cpp
+        src/infrastructure/db/postgres_time_zone_rules.cpp
         src/infrastructure/db/unscoped_access.cpp
         src/infrastructure/postgres_tenant_aware_repository.cpp
     )
@@ -96,7 +98,8 @@ endif()
 # которые собираются и без него. Своего перемешивания байтов в дереве нет и не
 # будет — ADR-0013.
 if(userver_FOUND)
-    add_library(pdr_crypto STATIC src/infrastructure/crypto_secret_generator.cpp)
+    add_library(pdr_crypto STATIC src/infrastructure/crypto_secret_generator.cpp
+                                  src/infrastructure/sha256_digests.cpp)
     target_include_directories(pdr_crypto PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/src")
     target_link_libraries(pdr_crypto PUBLIC pdr_core pdr_application userver::core)
 endif()

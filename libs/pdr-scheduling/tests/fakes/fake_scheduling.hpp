@@ -6,12 +6,15 @@
 #include <utility>
 #include <vector>
 
+#include "application/ports/time_zone_rules.hpp"
 #include "scheduling/application/ports/availability_repository.hpp"
+#include "scheduling/application/ports/calendar_feeds.hpp"
 #include "scheduling/application/ports/lesson_history.hpp"
 #include "scheduling/application/ports/lesson_repository.hpp"
 #include "scheduling/application/ports/local_days.hpp"
 #include "scheduling/application/ports/recurrence_repository.hpp"
 #include "scheduling/application/ports/time_off_repository.hpp"
+#include "scheduling/core/calendar_feed.hpp"
 #include "scheduling/core/overlap.hpp"
 #include "scheduling/core/participation.hpp"
 #include "scheduling/core/time_off.hpp"
@@ -403,6 +406,107 @@ public:
 
 private:
     core::Instant::Duration offset_;
+};
+
+/// Подписки на календарь в памяти.
+///
+/// ОТКАЗЫВАЕТ ТАМ ЖЕ, ГДЕ ОТКАЖЕТ БАЗА: подписка у человека одна (первичный
+/// ключ), и вторая выдача заменяет первую, а не ложится рядом. Фейк,
+/// накапливающий ссылки, делал бы зелёной главную проверку задачи — «после
+/// перевыпуска старая ссылка не работает».
+class FakeCalendarFeeds final : public ports::CalendarFeeds {
+public:
+    core::Result<void> Issue(const CalendarFeed& feed, core::Instant issued_at) override {
+        for (auto& kept : kept_) {
+            if (kept.feed.Tenant() == feed.Tenant() && kept.feed.Person() == feed.Person()) {
+                /// Способ называть занятия при перевыпуске сохраняется — как и
+                /// в запросе базы: человек чинил утечку, а не менял настройку.
+                const auto naming = kept.feed.Naming();
+                kept =
+                    Kept{CalendarFeed::Compose(feed.Tenant(), feed.Person(), feed.Secret(), naming)
+                             .Value(),
+                         issued_at};
+                return {};
+            }
+        }
+        kept_.push_back(Kept{feed, issued_at});
+        return {};
+    }
+
+    std::optional<CalendarFeed> ByDigest(const core::TenantId& tenant,
+                                         const core::Digest& digest) const override {
+        for (const auto& kept : kept_) {
+            if (kept.feed.Tenant() == tenant && kept.feed.Secret() == digest) {
+                return kept.feed;
+            }
+        }
+        return std::nullopt;
+    }
+
+    std::optional<CalendarNaming> NamingOf(const core::TenantId& tenant,
+                                           const core::PersonId& person) const override {
+        for (const auto& kept : kept_) {
+            if (kept.feed.Tenant() == tenant && kept.feed.Person() == person) {
+                return kept.feed.Naming();
+            }
+        }
+        return std::nullopt;
+    }
+
+    core::Result<void> Rename(const core::TenantId& tenant,
+                              const core::PersonId& person,
+                              CalendarNaming naming) override {
+        for (auto& kept : kept_) {
+            if (kept.feed.Tenant() == tenant && kept.feed.Person() == person) {
+                kept.feed =
+                    CalendarFeed::Compose(tenant, person, kept.feed.Secret(), naming).Value();
+                return {};
+            }
+        }
+        return core::Error{core::ErrorKind::kNotFound,
+                           "calendar_feed_not_found",
+                           "такой подписки на календарь здесь нет"};
+    }
+
+    std::size_t Size() const noexcept {
+        return kept_.size();
+    }
+
+private:
+    struct Kept final {
+        CalendarFeed feed;
+        core::Instant issued_at;
+    };
+
+    std::vector<Kept> kept_;
+};
+
+/// Правила зоны в памяти — те, что положили руками.
+///
+/// Настоящие приносит база: таблицы переводов часов у ядра нет намеренно.
+/// Фейк не изображает базу IANA даже наполовину — он отдаёт ровно то, что в
+/// него положил тест, и потому проверка «перевод часов не сдвигает занятие»
+/// проверяет сборку ленты, а не чью-то память о датах перевода.
+class FakeTimeZoneRules final : public application::ports::TimeZoneRules {
+public:
+    void Say(core::TimeZone zone, core::ZoneOffsets offsets) {
+        known_.emplace_back(std::move(zone), std::move(offsets));
+    }
+
+    core::Result<core::ZoneOffsets> For(const core::TimeZone& zone,
+                                        const core::TimeRange&) const override {
+        for (const auto& [named, offsets] : known_) {
+            if (named == zone) {
+                return offsets;
+            }
+        }
+        return core::Error{core::ErrorKind::kValidation,
+                           "time_zone_unknown",
+                           "такой часовой зоны нет: проверьте название"};
+    }
+
+private:
+    std::vector<std::pair<core::TimeZone, core::ZoneOffsets>> known_;
 };
 
 }  // namespace pdr::scheduling::testing

@@ -35,6 +35,9 @@ const auto kStudent = Numbered<core::PersonId>(3);
 constexpr std::string_view kCookie = "__Host-pdr_session";
 constexpr std::string_view kAuthorization = "Authorization";
 
+/// Имя аргумента адреса, в котором приходит секрет подписки на календарь.
+constexpr std::string_view kSecretArgument = "secret";
+
 const std::string kGoodBody =
     R"({"student_id": "s-1", "starts_at": "2026-09-01T10:00:00Z", "minutes": 45})";
 
@@ -93,6 +96,18 @@ public:
         return Found(headers_, name);
     }
 
+    /// Аргумент адреса. У настоящего запроса это кусок маршрута
+    /// (`/calendar/{secret}/schedule.ics`), у двойника — то, что в него положили.
+    std::string GetPathArg(const std::string& name) const {
+        const auto found = path_arguments_.find(name);
+        return found == path_arguments_.end() ? std::string{} : found->second;
+    }
+
+    Ask& WithPathArg(std::string name, std::string value) {
+        path_arguments_[std::move(name)] = std::move(value);
+        return *this;
+    }
+
     const std::string& GetCookie(const std::string& name) const {
         return Found(cookies_, name);
     }
@@ -118,6 +133,7 @@ private:
 
     std::map<std::string, std::string> headers_;
     std::map<std::string, std::string> cookies_;
+    std::map<std::string, std::string> path_arguments_;
     std::string body_{kGoodBody};
     std::string path_{"/lessons"};
     pdr::http::Method method_{pdr::http::Method::kGet};
@@ -133,9 +149,12 @@ public:
         return CredentialSource{kCookie, kAuthorization};
     }
 
-    core::Result<Caller> Identify(std::string_view cookie, std::string_view header) const override {
+    core::Result<Caller> Identify(std::string_view cookie,
+                                  std::string_view header,
+                                  const PathArguments& path) const override {
         saw_cookie = std::string{cookie};
         saw_header = std::string{header};
+        saw_path = path.Of(kSecretArgument);
         if (refuse.has_value()) {
             return *refuse;
         }
@@ -145,6 +164,11 @@ public:
     std::optional<core::Error> refuse;
     mutable std::string saw_cookie;
     mutable std::string saw_header;
+
+    /// ТРЕТИЙ ИСТОЧНИК УДОСТОВЕРЕНИЯ: аргумент адреса. Записывается затем, что
+    /// проверить надо именно его доставку — подписка на календарь приходит без
+    /// cookie и без заголовка, и кроме адреса у неё ничего нет.
+    mutable std::string saw_path;
 };
 
 /// Двойник политики: отвечает заранее заданным решением.
@@ -317,6 +341,23 @@ UTEST(AuthorizedHandler, ItLooksWhereTheIdentifierSaidToLook) {
 
     EXPECT_EQ(world.callers.saw_cookie, "из cookie");
     EXPECT_EQ(world.callers.saw_header, "из заголовка");
+}
+
+/// ТРЕТИЙ ИСТОЧНИК УДОСТОВЕРЕНИЯ — АДРЕС, и доезжает он до опознания так же,
+/// как cookie и заголовок.
+///
+/// Нужен он не ради удобства: подписку на календарь забирает чужая программа,
+/// которая умеет сходить по ссылке и больше ничего — ни cookie завести, ни
+/// заголовок поставить. Секрет в такой ссылке и есть удостоверение, и спросить
+/// его форма обязана уметь.
+UTEST(AuthorizedHandler, TheAddressIsACredentialSourceToo) {
+    World world;
+    Ask ask;
+    ask.WithPathArg(std::string{kSecretArgument}, "из адреса");
+
+    world.Serve(ask);
+
+    EXPECT_EQ(world.callers.saw_path, "из адреса");
 }
 
 /// ОБЯЗАТЕЛЬНЫЙ ТЕСТ ЗАДАЧИ: заголовки безопасности есть на ВСЕХ ответах,

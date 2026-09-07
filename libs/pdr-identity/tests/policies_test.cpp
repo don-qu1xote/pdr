@@ -48,6 +48,9 @@ const std::vector<Grant> kGranted{
 
     {Action::kViewSchedule, Role::kTutor, Tie::kMine},
     {Action::kViewSchedule, Role::kStudent, Tie::kAboutMe},
+    /// Своё расписание целиком: ресурс, у которого обе стороны — он сам. Так
+    /// его называет лента подписки, у которой стороны нет вовсе.
+    {Action::kViewSchedule, Role::kStudent, Tie::kMine},
     {Action::kViewSchedule, Role::kGuardian, Tie::kInMyCare},
     {Action::kViewSchedule, Role::kOwner, Tie::kMine},
     {Action::kViewSchedule, Role::kOwner, Tie::kAboutMe},
